@@ -1,0 +1,14 @@
+# --- Cœur de l'application ---
+streamlit>=1.36
+SQLAlchemy>=2.0
+
+# --- IA ---
+google-genai>=1.0  # SDK unifié, remplace l'ancien google-generativeai déprécié
+
+# --- Étapes ultérieures (déjà déclarées pour limiter les surprises d'install) ---
+pdfplumber>=0.11
+PyMuPDF>=1.24
+plotly>=5.20
+icalendar>=5.0
+reportlab>=4.0
+pandas>=2.0
