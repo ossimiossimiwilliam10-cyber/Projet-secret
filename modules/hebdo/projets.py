@@ -131,6 +131,8 @@ def render() -> None:
             if col not in df_regular.columns:
                 df_regular[col] = default
         df_regular = df_regular[["libelle", "duree_min", "deadline", "priorite", "projet_long_terme"]]
+        # Conversion deadline string → datetime (compat avec DatetimeColumn)
+        df_regular["deadline"] = pd.to_datetime(df_regular["deadline"], errors="coerce")
 
         edited_regular = st.data_editor(
             df_regular,

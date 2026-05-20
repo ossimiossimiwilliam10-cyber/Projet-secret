@@ -144,7 +144,9 @@ def render() -> None:
         df_travaux = pd.DataFrame(travaux_ponctuels_db)
         if df_travaux.empty:
             df_travaux = pd.DataFrame(columns=["libelle", "deadline", "duree_min", "priorite"])
-
+        # Conversion deadline string → datetime (compat avec DatetimeColumn)
+        if "deadline" in df_travaux.columns:
+            df_travaux["deadline"] = pd.to_datetime(df_travaux["deadline"], errors="coerce")
         edited_travaux = st.data_editor(
             df_travaux,
             num_rows="dynamic",
