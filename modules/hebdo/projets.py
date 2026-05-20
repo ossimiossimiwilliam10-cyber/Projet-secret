@@ -132,7 +132,7 @@ def render() -> None:
                 df_regular[col] = default
         df_regular = df_regular[["libelle", "duree_min", "deadline", "priorite", "projet_long_terme"]]
         # Conversion deadline string → datetime (compat avec DatetimeColumn)
-        df_regular["deadline"] = pd.to_datetime(df_regular["deadline"], errors="coerce")
+        df_regular["deadline"] = pd.to_datetime(df_regular["deadline"], errors="coerce").astype("datetime64[ns]")
 
         edited_regular = st.data_editor(
             df_regular,
@@ -145,7 +145,7 @@ def render() -> None:
                 "priorite": st.column_config.SelectboxColumn("Priorité", options=PRIORITES, default="Normale"),
                 "projet_long_terme": st.column_config.CheckboxColumn("Projet fil rouge", default=False),
             },
-            key="editor_projets",
+            key="editor_projets_v2",
         )
 
         # === SAUVEGARDE ===================================================

@@ -5,5 +5,5 @@ showErrorDetails = true
 headless = true
 enableCORS = true
 enableXsrfProtection = false
-developmentMode = false
+
 
