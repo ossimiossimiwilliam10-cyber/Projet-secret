@@ -55,7 +55,7 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> Non
     """Met à jour le statut d'une tâche et bumpe la maîtrise des chapitres
     associés si pertinent."""
     with session_scope() as s:
-        t = s.get(Tache, task_id)
+        t = s.query(Tache).get(task_id)
         if t is None:
             return
         t.statut = statut
@@ -66,8 +66,8 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> Non
         if t.cours_id and t.chapitre_ids and statut in ("fait", "partiellement"):
             bump = MAITRISE_BUMP_FAIT if statut == "fait" else MAITRISE_BUMP_PARTIEL
             for ch_id in t.chapitre_ids:
-                ch = s.get(Chapitre, ch_id)
-                if ch and (ch.maitrise_pct or 0) < 100:
+                ch = s.query(Chapitre).get(ch_id)
+                if ch and ch.maitrise_pct < 100:
                     ch.maitrise_pct = min(100, int(ch.maitrise_pct or 0) + bump)
 
 
@@ -86,7 +86,7 @@ def _compute_completion_score(tasks: list[Tache]) -> float:
 
 def _persist_weekly_score(semaine_id: int, score: float) -> None:
     with session_scope() as s:
-        sem = s.get(Semaine, semaine_id)
+        sem = s.query(Semaine).get(semaine_id)
         if sem:
             sem.taux_completion_pct = round(score, 1)
 

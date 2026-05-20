@@ -91,7 +91,7 @@ def transfer_reported_items_to_new_week(
     if not items:
         return 0
 
-    sem_origine = session.get(Semaine, previous_week_id)
+    sem_origine = session.query(Semaine).get(previous_week_id)
     label_origine = (
         f"S{sem_origine.numero_semaine:02d}/{sem_origine.annee}"
         if sem_origine

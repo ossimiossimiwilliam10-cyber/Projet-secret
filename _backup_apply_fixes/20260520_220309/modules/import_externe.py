@@ -92,7 +92,7 @@ def render() -> None:
                         contraintes_actuelles.extend(nouveaux_evenements)
 
                         with session_scope() as write_session:
-                            profil_to_update = write_session.get(Profil, profil.id)
+                            profil_to_update = write_session.query(Profil).get(profil.id)
                             profil_to_update.contraintes_fixes = contraintes_actuelles
 
                         st.success(f"✅ {len(nouveaux_evenements)} contraintes ajoutées à ton profil !")

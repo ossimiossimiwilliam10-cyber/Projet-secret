@@ -16,7 +16,7 @@ from database.models import SaisieHebdo, Semaine
 # Constantes
 # ---------------------------------------------------------------------------
 TYPES_INTENDANCE = ["Ménage / Lessive", "Administratif", "Rendez-vous", "Autre"]
-JOURS = ["peu importe", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+JOURS = ["Peu importe", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -45,10 +45,6 @@ def render() -> None:
             return
 
         config_db: list[dict[str, Any]] = saisie.intendance_config or []
-        # Rétrocompat : minuscule les jour_prefere capitalisés des anciennes sauvegardes
-        for _it in config_db:
-            if isinstance(_it, dict) and _it.get("jour_prefere"):
-                _it["jour_prefere"] = str(_it["jour_prefere"]).lower()
 
         st.subheader("Tâches de la semaine")
         
@@ -59,7 +55,7 @@ def render() -> None:
                 "type": "Ménage / Lessive",
                 "libelle": "Gros rangement et ménage",
                 "duree_min": 60,
-                "jour_prefere": "peu importe"
+                "jour_prefere": "Peu importe"
             }])
             
         edited_intendance = st.data_editor(
@@ -84,12 +80,12 @@ def render() -> None:
                         "type": str(row.get("type", "Autre")),
                         "libelle": str(row["libelle"]).strip(),
                         "duree_min": int(row.get("duree_min", 30)),
-                        "jour_prefere": str(row.get("jour_prefere", "peu importe")).lower()
+                        "jour_prefere": str(row.get("jour_prefere", "Peu importe"))
                     })
 
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                    saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                     saisie_to_update.intendance_config = intendance_propres
                 st.success("✅ Tâches d'intendance enregistrées !")
                 st.toast("Intendance sauvegardée", icon="✅")

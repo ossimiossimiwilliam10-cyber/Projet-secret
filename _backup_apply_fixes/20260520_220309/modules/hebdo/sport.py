@@ -87,7 +87,7 @@ def render() -> None:
             # Sauvegarde
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                    saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                     saisie_to_update.sport_config = sport_propre
                 st.success("✅ Tes séances de sport sont enregistrées !")
                 st.toast("Sport sauvegardé", icon="✅")

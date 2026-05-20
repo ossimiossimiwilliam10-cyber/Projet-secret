@@ -95,7 +95,7 @@ def render() -> None:
             }
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                    saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                     saisie_to_update.courses_config = nouvelle_config
                 st.success("✅ Intendance alimentaire enregistrée !")
                 st.toast("Courses sauvegardées", icon="✅")

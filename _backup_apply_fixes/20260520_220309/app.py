@@ -74,8 +74,8 @@ def main() -> None:
             # Salle d'étude : accessible via clic sur une tâche dans generation.py
             # OU directement depuis la sidebar.
             st.Page("pages/session_etude.py", title="Salle d'étude", icon="🧠", url_path="session-etude"),
-            st.Page("pages/achievements.py",  title="Achievements", icon="🏆", url_path="achievements"),
-            st.Page("pages/objectifs.py", title="Objectifs", icon="🎯", url_path="objectifs")
+            st.Page("pages/achievements.py",  title="🏆 Achievements", icon="🏆", url_path="achievements"),
+            st.Page("pages/objectifs.py", title="🎯 Objectifs", icon="🎯", url_path="objectifs")
         ],
         "Bilan": [
             st.Page(dashboard.render, title="Tableau de bord", icon="📈", url_path="dashboard"),

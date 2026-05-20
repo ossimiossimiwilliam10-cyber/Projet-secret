@@ -899,7 +899,7 @@ def _render_batch_import() -> None:
                     for nom, err in erreurs:
                         st.error(f"**{nom}** : {err}")
             else:
-                st.error("❌ Aucun PDF n'a pu être importé.")
+                st.error(f"❌ Aucun PDF n'a pu être importé.")
                 with st.expander("Détails des erreurs", expanded=True):
                     for nom, err in erreurs:
                         st.error(f"**{nom}** : {err}")

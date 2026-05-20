@@ -186,7 +186,7 @@ def render() -> None:
 
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                    saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                     saisie_to_update.projets_config = nouvelle_config
                 st.success("✅ Tes projets sont enregistrés !")
                 st.toast("Projets sauvegardés", icon="✅")

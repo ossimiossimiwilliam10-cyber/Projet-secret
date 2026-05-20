@@ -15,7 +15,7 @@ from database.models import SaisieHebdo, Semaine
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -54,11 +54,6 @@ def render() -> None:
             return
 
         config_db: dict[str, Any] = saisie.social_config or {}
-        # Rétrocompat : minuscule les jours capitalisés des anciennes sauvegardes
-        # (sinon le SelectboxColumn rejette "Vendredi" qui ne fait plus partie des options)
-        for _ev in config_db.get("evenements", []) or []:
-            if isinstance(_ev, dict) and _ev.get("jour"):
-                _ev["jour"] = str(_ev["jour"]).lower()
 
         # --- Section Décompression Quotidienne ---
         st.subheader("1. Décompression quotidienne")
@@ -81,13 +76,13 @@ def render() -> None:
             df_evenements = pd.DataFrame([
                 {
                     "libelle": "Appel vidéo", 
-                    "jour": "dimanche", 
+                    "jour": "Dimanche", 
                     "heure_debut": "14:00", 
                     "duree_min": 120
                 },
                 {
                     "libelle": "Session gaming (CK3 / Skyrim)", 
-                    "jour": "vendredi", 
+                    "jour": "Vendredi", 
                     "heure_debut": "21:00", 
                     "duree_min": 180
                 }
@@ -120,7 +115,7 @@ def render() -> None:
                         
                     evenements_propres.append({
                         "libelle": str(row["libelle"]).strip(),
-                        "jour": str(row.get("jour", "lundi")).lower(),
+                        "jour": str(row.get("jour", "Lundi")),
                         "heure_debut": hd,
                         "duree_min": int(row.get("duree_min", 120))
                     })
@@ -131,7 +126,7 @@ def render() -> None:
             else:
                 try:
                     with session_scope() as write_session:
-                        saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                        saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                         saisie_to_update.social_config = {
                             "temps_decompression_min": int(temps_decompression),
                             "evenements": evenements_propres

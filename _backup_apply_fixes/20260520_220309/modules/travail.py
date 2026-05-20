@@ -138,7 +138,7 @@ def render() -> None:
                         "🗑️ Supprimer", key=f"del_job_{j.id}", width='stretch'
                     ):
                         with session_scope() as delete_session:
-                            job_to_del = delete_session.get(Job, j.id)
+                            job_to_del = delete_session.query(Job).get(j.id)
                             if job_to_del:
                                 delete_session.delete(job_to_del)
                         st.toast("Activité supprimée", icon="🗑️")

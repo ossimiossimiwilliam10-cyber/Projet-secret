@@ -93,7 +93,7 @@ def render() -> None:
 
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                    saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                     saisie_to_update.dev_perso_config = dev_propres
                 st.success("✅ Tes habitudes de développement personnel sont enregistrées !")
                 st.toast("Habitudes sauvegardées", icon="✅")

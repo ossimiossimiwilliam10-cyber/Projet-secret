@@ -180,7 +180,7 @@ def render() -> None:
 
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                    saisie_to_update = write_session.query(SaisieHebdo).get(saisie.id)
                     saisie_to_update.cours_selectionnes = nouveaux_cours_selectionnes
                     saisie_to_update.travaux_ponctuels = travaux_propres
                 st.success("✅ Tes objectifs d'études pour la semaine sont enregistrés !")

@@ -53,7 +53,7 @@ def _save_planning_to_db(semaine_id: int, planning_json: dict[str, Any]) -> None
     jours_semaine = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     
     with session_scope() as session:
-        semaine = session.get(Semaine, semaine_id)
+        semaine = session.query(Semaine).get(semaine_id)
         if not semaine: return
         
         # Mise à jour des métadonnées de la semaine
