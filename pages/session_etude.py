@@ -58,13 +58,15 @@ def main() -> None:
     _render_header(chap_snapshot)
     st.divider()
 
-    tab_fiche, tab_qcm, tab_quiz = st.tabs(["📋 Fiche IA", "🔘 QCM", "✍️ Quiz ouvert"])
+    tab_fiche, tab_qcm, tab_quiz, tab_feynman = st.tabs(["📋 Fiche IA", "🔘 QCM", "✍️ Quiz ouvert", "🎙️ Feynman"])
     with tab_fiche:
         _render_fiche_tab(chap_id, chap_snapshot)
     with tab_qcm:
         _render_qcm_tab(chap_id)
     with tab_quiz:
         _render_quiz_tab(chap_id)
+    with tab_feynman:
+        _render_feynman_tab(chap_id)
 
 
 # ===========================================================================
@@ -841,8 +843,95 @@ def _achievement_couleur(rarete: str) -> str:
         "legendaire": "#f59e0b",
     }.get(rarete, "#9ca3af")
 
+# ===========================================================================
+# Onglet 4 — Simulateur Feynman (Évaluation IA)
+# ===========================================================================
+def _render_feynman_tab(chap_id: int) -> None:
+    """Interface pour capturer l'audio de l'étudiant et l'évaluer."""
+    st.subheader("🎙️ Simulateur Feynman")
+    st.caption("Explique les concepts de ce chapitre à voix haute, sans regarder tes notes. L'IA corrigera tes erreurs.")
 
-# ===========================================================================
-# Exécution top-level (script Streamlit)
-# ===========================================================================
+    # On utilise le tout nouveau micro NATIVEMENT intégré à Streamlit (sans bug !)
+    audio_file = st.audio_input("Enregistre ton explication ici")
+
+    # Si un audio a bien été enregistré
+    if audio_file is not None:
+        # st.audio_input affiche déjà un petit lecteur audio intégré, c'est magique.
+        
+        if st.button("🧠 Évaluer mon explication", type="primary"):
+            # L'audio est sous forme de fichier, on le convertit en "bytes" pour Gemini
+            audio_bytes = audio_file.read()
+            _evaluer_feynman(audio_bytes, chap_id)
+
+def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
+    """Envoie l'audio à Gemini pour le comparer avec la fiche de cours."""
+    import tempfile
+    import os
+    from google import genai
+    from google.genai import types
+    from database.models import Profil, Chapitre
+
+    with st.spinner("🧠 Gemini écoute, transcrit et évalue ta démonstration... (ça peut prendre 30 sec)"):
+        try:
+            # 1. On récupère la clé API ET le contenu du chapitre
+            with get_session() as session:
+                profil = session.query(Profil).first()
+                chapitre = session.get(Chapitre, chap_id)
+                
+                if not profil or not profil.gemini_api_key:
+                    st.error("❌ Clé API Gemini introuvable.")
+                    return
+                
+                api_key = profil.gemini_api_key.strip()
+                model_name = profil.gemini_model
+                
+                titre_chapitre = chapitre.titre if chapitre else "Inconnu"
+                # On utilise la fiche IA comme correction officielle. 
+                # Si elle n'existe pas, on prévient Gemini.
+                fiche_cours = chapitre.fiche_ia if (chapitre and chapitre.fiche_ia) else "(Aucune fiche IA générée. Base ton évaluation sur le titre du chapitre uniquement.)"
+
+            client = genai.Client(api_key=api_key)
+
+            # 2. Sauvegarde temporaire du fichier audio
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+                tmp_file.write(audio_bytes)
+                tmp_path = tmp_file.name
+
+            try:
+                # 3. Upload et Prompt magistral pour l'IA
+                uploaded_file = client.files.upload(file=tmp_path)
+                
+                prompt = f"""Tu es un professeur de sciences de niveau universitaire, expert et très exigeant. 
+Ton étudiant s'entraîne avec la technique de Feynman.
+
+Voici le sujet précis du chapitre : {titre_chapitre}
+Voici les points clés théoriques attendus (issus de sa Fiche de Révision) :
+{fiche_cours}
+
+Ta tâche :
+1. Écoute l'explication audio de l'étudiant.
+2. Fais une courte transcription (résumé) de ce qu'il a dit dans une section "📝 Ce que j'ai entendu".
+3. Rédige une évaluation stricte dans une section "🎓 Retour du Professeur" :
+   - ✅ Ce qui est mathématiquement ou théoriquement exact.
+   - ❌ Ce qui est faux, confus, ou les termes techniques mal employés (corrige-les de manière didactique).
+   - ⚠️ Les éléments cruciaux de la fiche qu'il a oublié de mentionner.
+4. Donne-lui une note sur 10 de clarté et de maîtrise.
+"""
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[uploaded_file, prompt]
+                )
+                
+                # 4. Affichage du résultat
+                st.success("Analyse terminée !")
+                st.markdown(response.text)
+                
+            finally:
+                # Nettoyage rigoureux des fichiers
+                if 'uploaded_file' in locals():
+                    client.files.delete(name=uploaded_file.name)
+                os.remove(tmp_path)
+                
+        except Exception as e:
+            st.error(f"❌ Erreur lors de l'analyse : {e}")
 main()

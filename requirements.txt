@@ -15,3 +15,4 @@ pandas>=2.0
 
 # --- Image (utilisé par modules/import_externe.py via PIL.Image) ---
 Pillow>=10.0
+audio-recorder-streamlit
