@@ -67,23 +67,30 @@ def _make_minimal_setup(session) -> tuple[Semaine, SaisieHebdo, Profil]:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-def test_build_planner_prompt_returns_string_with_core_sections(session):
-    """Sur un profil minimal, le prompt doit contenir les sections clés."""
+def test_build_planner_prompt_returns_string_with_xml_blocks(session):
+    """Sur un profil minimal, le prompt doit contenir les balises XML
+    structurantes de la refonte ainsi que les ingrédients pré-calculés."""
     semaine, saisie, profil = _make_minimal_setup(session)
 
     prompt = build_planner_prompt(session, semaine, saisie, profil)
 
     assert isinstance(prompt, str)
     assert len(prompt) > 500
-    # Sections structurantes
-    assert "PROFIL ÉTUDIANT" in prompt
-    assert "CONTRAINTES FIXES ABSOLUES" in prompt
-    assert "RÈGLES OBLIGATOIRES À RESPECTER" in prompt
-    assert "FORMAT DE SORTIE ATTENDU" in prompt
-    # Sections issues des chantiers récents
-    assert "CONSIGNES EXCEPTIONNELLES" in prompt
-    assert "TRAJETS HABITUELS" in prompt
-    assert "CHECK-IN BIOMÉCANIQUE" in prompt
+    # Balises XML de la refonte
+    for tag in [
+        "<MISSION>", "</MISSION>",
+        "<CONTRAINTES_VITALES>", "</CONTRAINTES_VITALES>",
+        "<LOGISTIQUE_TRAJETS>", "</LOGISTIQUE_TRAJETS>",
+        "<PEDAGOGIE_ET_RYTHME>", "</PEDAGOGIE_ET_RYTHME>",
+        "<INGREDIENTS_PRE_CALCULES>", "</INGREDIENTS_PRE_CALCULES>",
+        "<CONSIGNES_ETUDIANT>", "</CONSIGNES_ETUDIANT>",
+        "<FORMAT_SORTIE>", "</FORMAT_SORTIE>",
+    ]:
+        assert tag in prompt, f"Balise manquante : {tag}"
+    # Ingrédients déjà pré-calculés
+    assert "Quota d'étude max par jour" in prompt
+    assert "NOUVEAUX CHAPITRES" in prompt
+    assert "RÉVISIONS LEITNER" in prompt
 
 
 def test_consignes_manuelles_are_injected_when_provided(session):
