@@ -76,8 +76,8 @@ def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
             "semestre": ue.semestre,
             "credits_ects": ue.credits_ects,
             "couleur": ue.couleur,
-            "nb_cours": len(ue.cours),
             "nb_matieres": len(ue.matieres),
+            "nb_chapitres": sum(len(m.chapitres) for m in ue.matieres),
         }
         for ue in ues
     ]
@@ -94,7 +94,7 @@ def _get_matieres_snapshot(session: Session) -> list[dict[str, Any]]:
             "ue_id": m.ue_id,
             "ue_nom": m.ue.nom if m.ue else None,
             "ue_couleur": m.ue.couleur if m.ue else "#6b7280",
-            "nb_cours": len(m.cours),
+            "nb_chapitres": len(m.chapitres),
         }
         for m in matieres
     ]
@@ -153,9 +153,9 @@ def _render_ues_section() -> None:
     """Liste les UE existantes + formulaire de création."""
     st.subheader("🎓 Mes Unités d'Enseignement (UE)")
     st.caption(
-        "Une UE regroupe plusieurs cours (matières). Ex: l'UE *Mathématiques* "
-        "contient les cours *Analyse* et *Algèbre linéaire*. Le coefficient et "
-        "la date d'examen restent au niveau de chaque cours."
+        "Une UE regroupe plusieurs matières. Ex: l'UE *Mathématiques* "
+        "contient les matières *Analyse* et *Algèbre linéaire*. L'UE porte "
+        "les crédits ECTS et le code semestre."
     )
 
     with get_session() as session:
@@ -189,7 +189,7 @@ def _render_ues_section() -> None:
                         )
                     with col_b:
                         st.markdown(
-                            f"<div style='padding-top:0.7rem;'>📚 <b>{ue['nb_cours']}</b> cours rattachés</div>",
+                            f"<div style='padding-top:0.7rem;'>📘 <b>{ue['nb_matieres']}</b> matière(s) · 📑 <b>{ue['nb_chapitres']}</b> chapitre(s)</div>",
                             unsafe_allow_html=True,
                         )
                     with col_c1:
@@ -204,7 +204,7 @@ def _render_ues_section() -> None:
                         if st.button(
                             "🗑️",
                             key=f"del_ue_{ue['id']}",
-                            help="Supprimer cette UE (les cours rattachés deviendront autonomes)",
+                            help="Supprimer cette UE (les matières rattachées deviendront autonomes)",
                         ):
                             with session_scope() as s:
                                 ue_db = s.get(UE, ue["id"])
@@ -334,7 +334,7 @@ def _render_matieres_section() -> None:
     st.caption(
         "Une matière est une **sous-discipline** d'une UE. "
         "Ex: l'UE *Maths* contient les matières *Algèbre* et *Analyse*. "
-        "Chaque matière peut contenir plusieurs cours (PDFs : cours magistral, TD…). "
+        "Chaque matière contient plusieurs chapitres, avec leurs PDFs (cours magistral, TD, polycopié…). "
         "La matière hérite de la couleur de son UE."
     )
 
@@ -440,7 +440,7 @@ def _render_matiere_row(m: dict, ue_items: list[dict]) -> None:
         with col_b:
             st.markdown(
                 f"<div style='padding-top:0.6rem; font-size:0.9rem;'>"
-                f"📚 <b>{m['nb_cours']}</b> cours</div>",
+                f"📑 <b>{m['nb_chapitres']}</b> chapitre(s)</div>",
                 unsafe_allow_html=True,
             )
         with col_c1:
@@ -453,7 +453,7 @@ def _render_matiere_row(m: dict, ue_items: list[dict]) -> None:
         with col_c2:
             if st.button(
                 "🗑️", key=f"del_matiere_{m['id']}",
-                help="Supprimer cette matière (les cours rattachés perdront ce rattachement)",
+                help="Supprimer cette matière (ses chapitres et leurs PDFs seront aussi supprimés)",
             ):
                 with session_scope() as s:
                     m_db = s.get(Matiere, m["id"])
