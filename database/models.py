@@ -67,6 +67,9 @@ class Profil(Base):
     methode_travail = Column(String(20), default="mixte")
     capacite_weekend = Column(String(20), default="partiel")
     tolerance_fatigue = Column(String(20), default="moyenne")
+    # Quota d'étude personnel par jour (cours + révision personnelle confondus).
+    # Sert au scheduler_engine pour décider si la semaine est surchargée.
+    heures_etude_cible_par_jour = Column(Float, default=3.0)
 
     # --- Transport ---------------------------------------------------------
     temps_transport_min = Column(Integer, default=0)

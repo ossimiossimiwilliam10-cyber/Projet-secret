@@ -120,6 +120,43 @@ def test_quota_etude_inchange_si_checkin_normal():
     assert q == base
 
 
+def test_quota_etude_utilise_heures_cible_si_renseigne():
+    """Si l'étudiant a réglé son quota dans le profil (heures_etude_cible_par_jour),
+    cette valeur prime sur le calcul historique duree_max_session × N."""
+    profil = SimpleNamespace(
+        duree_max_session_min=50,
+        heures_etude_cible_par_jour=4.0,
+    )
+    q = calculer_quota_etude_minutes(profil, None)
+    # 4 h = 240 min — pas le fallback 50 × 3 = 150 min.
+    assert q == 240
+
+
+def test_quota_etude_heures_cible_reste_module_par_le_checkin():
+    """Le réglage explicite est toujours sujet à la modulation -30 %
+    quand la fatigue ou la charge mentale dépasse 7/10."""
+    profil = SimpleNamespace(
+        duree_max_session_min=50,
+        heures_etude_cible_par_jour=4.0,
+    )
+    q = calculer_quota_etude_minutes(
+        profil, {"fatigue_physique": 9, "charge_mentale": 4}
+    )
+    # 240 × 0.70 = 168
+    assert q == 168
+
+
+def test_quota_etude_fallback_si_heures_cible_zero():
+    """Si heures_etude_cible_par_jour vaut 0 (non renseigné), on retombe sur
+    l'ancien calcul duree_max_session × SESSIONS_PAR_JOUR."""
+    profil = SimpleNamespace(
+        duree_max_session_min=60,
+        heures_etude_cible_par_jour=0.0,
+    )
+    q = calculer_quota_etude_minutes(profil, None)
+    assert q == 60 * SESSIONS_PAR_JOUR
+
+
 # ---------------------------------------------------------------------------
 # 2. Répartition des nouveaux chapitres
 # ---------------------------------------------------------------------------
