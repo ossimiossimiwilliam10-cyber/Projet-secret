@@ -21,9 +21,9 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, CheckInQuotidien, Profil, Semaine, Tache
+from database.models import Chapitre, Profil, Semaine, Tache
 from services.ai_planner import replan_remaining_week
-from services.scheduler_engine import calculer_quota_etude_minutes
+from services.scheduler_engine import calculer_cible_hebdo_minutes
 from services import gamification_service
 
 
@@ -419,7 +419,7 @@ def _render_weekly_stats(session: Session, semaine: Semaine) -> None:
 
 def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
     """Compare les heures d'études effectivement faites (statut = fait)
-    au quota hebdo cible défini dans le profil + check-in du jour."""
+    à l'**objectif hebdomadaire** du profil."""
     etude_min_fait = sum(
         _compute_duree_min(t)
         for t in all_tasks
@@ -433,32 +433,19 @@ def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
     total_fait = int(etude_min_fait + etude_min_partiel)
 
     profil = session.query(Profil).first()
-    checkin_row = (
-        session.query(CheckInQuotidien)
-        .filter(CheckInQuotidien.date == datetime.date.today())
-        .first()
-    )
-    checkin = None
-    if checkin_row:
-        checkin = {
-            "fatigue_physique": int(checkin_row.fatigue_physique or 0),
-            "charge_mentale": int(checkin_row.charge_mentale or 0),
-        }
-    quota_jour_min = calculer_quota_etude_minutes(profil, checkin)
-    quota_semaine_min = quota_jour_min * 7
-
-    if quota_semaine_min <= 0:
+    cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+    if cible_hebdo_min <= 0:
         return
 
-    pct = total_fait / quota_semaine_min * 100
+    pct = total_fait / cible_hebdo_min * 100
     pct_capped = min(pct, 100)
 
     if pct >= 100:
-        color, msg = "#10b981", "🎯 Quota d'étude atteint !"
+        color, msg = "#10b981", "🎯 Objectif hebdomadaire atteint !"
     elif pct >= 70:
-        color, msg = "#f59e0b", f"📚 En bonne voie ({total_fait / 60:.1f} h / {quota_semaine_min / 60:.1f} h)"
+        color, msg = "#f59e0b", f"📚 En bonne voie ({total_fait / 60:.1f} h / {cible_hebdo_min / 60:.1f} h)"
     else:
-        color, msg = "#6b7280", f"📚 {total_fait / 60:.1f} h sur {quota_semaine_min / 60:.1f} h visées"
+        color, msg = "#6b7280", f"📚 {total_fait / 60:.1f} h sur {cible_hebdo_min / 60:.1f} h visées"
 
     st.markdown(
         f"<div style='margin-top:10px;padding:10px 14px;background:{color}15;"
@@ -468,7 +455,7 @@ def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
         f"<div style='background:{color};width:{pct_capped:.1f}%;height:100%;'></div>"
         f"</div>"
         f"<div style='font-size:0.75rem;color:#6b7280;margin-top:4px;'>"
-        f"Quota basé sur ton réglage Profil (heures d'étude/jour) modulé par ton check-in."
+        f"Objectif hebdo défini dans ton Profil (cours + révisions perso confondus)."
         f"</div>"
         f"</div>",
         unsafe_allow_html=True,

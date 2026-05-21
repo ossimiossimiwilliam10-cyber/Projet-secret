@@ -97,7 +97,8 @@ def load_profil() -> dict[str, Any]:
             "methode_travail": p.methode_travail or "mixte",
             "capacite_weekend": p.capacite_weekend or "partiel",
             "tolerance_fatigue": p.tolerance_fatigue or "moyenne",
-            "heures_etude_cible_par_jour": float(p.heures_etude_cible_par_jour or 3.0),
+            "heures_etude_cible_par_semaine": float(p.heures_etude_cible_par_semaine or 21.0),
+            "heures_etude_plafond_par_jour": float(p.heures_etude_plafond_par_jour or 6.0),
             "temps_transport_min": int(p.temps_transport_min or 0),
             "trajets_habituels": dict(p.trajets_habituels or {}),
             "nb_repas_par_jour": int(p.nb_repas_par_jour or 3),
@@ -269,24 +270,52 @@ def render() -> None:
         )
 
         st.divider()
-        st.markdown("##### 🎯 Quota d'étude quotidien")
+        st.markdown("##### 🎯 Quota d'étude (cours + révisions perso)")
         st.caption(
-            "Combien d'heures par jour souhaites-tu consacrer à tes études "
-            "(cours **et** révisions personnelles confondus) ? Cette valeur "
-            "sert de plafond à l'IA quand elle génère ton planning, et au "
-            "bandeau de charge dans l'onglet **Études**. Si tu déclares ton "
-            "check-in du jour fatigué (> 7/10), le quota est automatiquement "
-            "réduit de 30 % pour ce jour-là."
+            "Définis ton **objectif hebdomadaire** (total d'heures visées sur "
+            "la semaine) et ton **plafond journalier** (ne jamais dépasser). "
+            "L'IA répartira intelligemment ton objectif sur les 7 jours sans "
+            "jamais dépasser le plafond. Si tu déclares ton check-in du jour "
+            "fatigué (> 7/10), le plafond est réduit de 30 % pour ce jour-là."
         )
-        heures_etude_cible_par_jour = st.slider(
-            "Heures d'étude visées par jour",
-            min_value=0.5, max_value=10.0,
-            value=float(data["heures_etude_cible_par_jour"]),
-            step=0.5,
-            format="%.1f h",
-            help="Recommandation : 2-3 h en semaine si tu as cours + job, "
-                 "4-6 h en période d'examens. Tu peux ajuster à tout moment.",
-        )
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            heures_etude_cible_par_semaine = st.slider(
+                "📆 Objectif hebdo (total)",
+                min_value=1.0, max_value=70.0,
+                value=float(data["heures_etude_cible_par_semaine"]),
+                step=0.5,
+                format="%.1f h / semaine",
+                help="Ex. : 40 h pour un étudiant en période d'examens, "
+                     "20-25 h en rythme normal avec cours + job.",
+            )
+        with col_h2:
+            heures_etude_plafond_par_jour = st.slider(
+                "🛑 Plafond / jour",
+                min_value=1.0, max_value=14.0,
+                value=float(data["heures_etude_plafond_par_jour"]),
+                step=0.5,
+                format="%.1f h / jour",
+                help="L'IA ne placera jamais plus que ça sur une journée. "
+                     "Au-delà de 8 h, garde en tête que la qualité chute.",
+            )
+
+        # Validation visuelle : objectif hebdo doit être atteignable avec
+        # le plafond × 7. Sinon l'IA ne pourra jamais le tenir.
+        plafond_x_7 = heures_etude_plafond_par_jour * 7
+        if heures_etude_cible_par_semaine > plafond_x_7:
+            st.error(
+                f"⚠️ Incohérence : ton objectif ({heures_etude_cible_par_semaine:.1f} h) "
+                f"est supérieur au plafond multiplié par 7 jours "
+                f"({plafond_x_7:.1f} h). L'IA ne pourra pas l'atteindre. "
+                f"Augmente le plafond ou baisse l'objectif."
+            )
+        elif heures_etude_cible_par_semaine > plafond_x_7 * 0.9:
+            st.warning(
+                f"ℹ️ Ton objectif ({heures_etude_cible_par_semaine:.1f} h) est "
+                f"très proche du maximum théorique ({plafond_x_7:.1f} h). "
+                f"L'IA aura peu de marge pour ajuster en cas d'imprévu."
+            )
 
     # === Section 3 — Contraintes fixes récurrentes =========================
     with st.expander("📌 Contraintes fixes récurrentes", expanded=is_new):
@@ -526,7 +555,8 @@ def render() -> None:
         "methode_travail": methode_travail,
         "capacite_weekend": capacite_weekend,
         "tolerance_fatigue": tolerance_fatigue,
-        "heures_etude_cible_par_jour": float(heures_etude_cible_par_jour),
+        "heures_etude_cible_par_semaine": float(heures_etude_cible_par_semaine),
+        "heures_etude_plafond_par_jour": float(heures_etude_plafond_par_jour),
         "temps_transport_min": int(temps_transport),
         "trajets_habituels": trajets_valides,
         "nb_repas_par_jour": int(nb_repas),
@@ -567,7 +597,8 @@ def _defaults() -> dict[str, Any]:
         "methode_travail": "mixte",
         "capacite_weekend": "partiel",
         "tolerance_fatigue": "moyenne",
-        "heures_etude_cible_par_jour": 3.0,
+        "heures_etude_cible_par_semaine": 21.0,
+        "heures_etude_plafond_par_jour": 6.0,
         "temps_transport_min": 0,
         "trajets_habituels": {},
         "nb_repas_par_jour": 3,

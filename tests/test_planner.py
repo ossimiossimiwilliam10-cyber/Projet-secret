@@ -88,7 +88,9 @@ def test_build_planner_prompt_returns_string_with_xml_blocks(session):
     ]:
         assert tag in prompt, f"Balise manquante : {tag}"
     # Ingrédients déjà pré-calculés
-    assert "Quota d'étude max par jour" in prompt
+    assert "QUOTAS D'ÉTUDE" in prompt
+    assert "Objectif HEBDOMADAIRE" in prompt
+    assert "Plafond JOURNALIER" in prompt
     assert "NOUVEAUX CHAPITRES" in prompt
     assert "RÉVISIONS LEITNER" in prompt
 
