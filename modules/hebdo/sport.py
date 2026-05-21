@@ -95,15 +95,26 @@ def render() -> None:
         
         # Préparation du dataframe pour le data_editor
         df_sport = pd.DataFrame(sport_config_db)
+        
+        # Migration à la volée des anciennes données sans 'type'
+        if not df_sport.empty and "type" not in df_sport.columns:
+            df_sport["type"] = "🎯 Autre"
+            
         if df_sport.empty:
             df_sport = pd.DataFrame([{
-                "type": list(TYPES_SPORT.keys())[0],
+                "type": "🏃‍♂️ Course / Cardio",
                 "nom": "", 
                 "duree_min": 60, 
                 "intensite": INTENSITES[1], 
                 "creneau_pref": "Soir"
             }])
             
+        # S'assurer que les colonnes sont dans le bon ordre pour l'affichage
+        cols_order = ["type", "nom", "duree_min", "intensite", "creneau_pref"]
+        # Filtrer seulement les colonnes qui existent (au cas où)
+        existing_cols = [c for c in cols_order if c in df_sport.columns]
+        df_sport = df_sport[existing_cols]
+
         edited_sport = st.data_editor(
             df_sport,
             num_rows="dynamic",
@@ -115,7 +126,7 @@ def render() -> None:
                 "intensite": st.column_config.SelectboxColumn("Intensité", options=INTENSITES, default=INTENSITES[1]),
                 "creneau_pref": st.column_config.SelectboxColumn("Créneau préféré", options=CRENEAUX, default="Peu importe")
             },
-            key="editor_sport_v2"
+            key="editor_sport_v3" # On change encore la clé pour forcer le reset Streamlit
         )
 
         st.divider()
