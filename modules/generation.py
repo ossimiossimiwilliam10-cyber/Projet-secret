@@ -16,7 +16,10 @@ from sqlalchemy.orm import Session
 from database.db import get_session, session_scope
 from database.models import CheckInQuotidien, Profil, Semaine, Tache
 from services.ai_planner import generate_schedule_from_ai
-from services.scheduler_engine import calculer_quota_etude_minutes
+from services.scheduler_engine import (
+    calculer_cible_hebdo_minutes,
+    calculer_quota_etude_minutes,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +188,12 @@ def _compute_planning_stats(taches: list[Tache]) -> dict[str, Any]:
     }
 
 
-def _render_planning_stats(stats: dict[str, Any], quota_etude_jour_min: int) -> None:
-    """Affiche les KPIs synthétiques sous le score."""
-    quota_semaine_min = quota_etude_jour_min * 7
+def _render_planning_stats(stats: dict[str, Any], cible_hebdo_min: int) -> None:
+    """Affiche les KPIs synthétiques sous le score, calibrés sur l'objectif
+    hebdomadaire d'études du profil."""
     etude_pct = (
-        round(stats["etude_min"] / quota_semaine_min * 100)
-        if quota_semaine_min > 0
+        round(stats["etude_min"] / cible_hebdo_min * 100)
+        if cible_hebdo_min > 0
         else 0
     )
 
@@ -204,7 +207,7 @@ def _render_planning_stats(stats: dict[str, Any], quota_etude_jour_min: int) -> 
     cols[1].metric(
         "📚 Heures d'étude",
         f"{stats['etude_min'] / 60:.1f} h",
-        delta=f"{etude_pct}% du quota hebdo",
+        delta=f"{etude_pct}% de l'objectif hebdo",
         delta_color="off",
     )
     cols[2].metric(
@@ -214,14 +217,22 @@ def _render_planning_stats(stats: dict[str, Any], quota_etude_jour_min: int) -> 
         delta_color="off",
     )
 
-    if quota_semaine_min == 0:
-        cols[3].metric("🎯 Quota étude", "—")
-    elif stats["etude_min"] > quota_semaine_min * 1.2:
-        cols[3].metric("🎯 Quota étude", "⚠️ Dépassé", delta=f"+{(stats['etude_min'] - quota_semaine_min) / 60:.1f} h", delta_color="inverse")
-    elif stats["etude_min"] < quota_semaine_min * 0.6:
-        cols[3].metric("🎯 Quota étude", "🌱 Léger", delta=f"-{(quota_semaine_min - stats['etude_min']) / 60:.1f} h", delta_color="off")
+    if cible_hebdo_min == 0:
+        cols[3].metric("🎯 Objectif hebdo", "—")
+    elif stats["etude_min"] > cible_hebdo_min * 1.2:
+        cols[3].metric(
+            "🎯 Objectif hebdo", "⚠️ Dépassé",
+            delta=f"+{(stats['etude_min'] - cible_hebdo_min) / 60:.1f} h",
+            delta_color="inverse",
+        )
+    elif stats["etude_min"] < cible_hebdo_min * 0.6:
+        cols[3].metric(
+            "🎯 Objectif hebdo", "🌱 Léger",
+            delta=f"-{(cible_hebdo_min - stats['etude_min']) / 60:.1f} h",
+            delta_color="off",
+        )
     else:
-        cols[3].metric("🎯 Quota étude", "✅ Bien dosé", delta_color="off")
+        cols[3].metric("🎯 Objectif hebdo", "✅ Bien dosé", delta_color="off")
 
 
 def _render_repartition_par_type(stats: dict[str, Any]) -> None:
@@ -400,6 +411,7 @@ def render() -> None:
                 "qualite_sommeil": int(checkin_row.qualite_sommeil or 0),
             }
         quota_etude_jour_min = calculer_quota_etude_minutes(profil, checkin)
+        cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
 
         # === Bandeau d'aide & contexte ===
         col_h1, col_h2, col_h3 = st.columns([2, 1, 1])
@@ -409,10 +421,15 @@ def render() -> None:
                 f"du {semaine.date_debut.strftime('%d/%m')} au {semaine.date_fin.strftime('%d/%m/%Y')}"
             )
         with col_h2:
-            st.metric("🎯 Quota d'étude / jour", f"{quota_etude_jour_min / 60:.1f} h")
+            st.metric(
+                "🎯 Objectif hebdo",
+                f"{cible_hebdo_min / 60:.1f} h",
+                help=f"Plafond journalier : {quota_etude_jour_min / 60:.1f} h "
+                     "(modulé par ton check-in).",
+            )
         with col_h3:
             if checkin and (checkin["fatigue_physique"] > 7 or checkin["charge_mentale"] > 7):
-                st.warning("⚠️ Check-in fatigué : quota réduit de 30 %")
+                st.warning("⚠️ Check-in fatigué : plafond -30 %")
             elif checkin:
                 st.success("✅ Check-in OK")
             else:
@@ -483,7 +500,7 @@ def render() -> None:
             .all()
         )
         stats = _compute_planning_stats(taches)
-        _render_planning_stats(stats, quota_etude_jour_min)
+        _render_planning_stats(stats, cible_hebdo_min)
         _render_repartition_par_type(stats)
 
         st.markdown("---")

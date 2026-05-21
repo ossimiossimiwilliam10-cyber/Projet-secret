@@ -23,7 +23,7 @@ from services.gamification_service import (
     progression_niveau,
     NIVEAU_MAX,
 )
-from services.scheduler_engine import calculer_quota_etude_minutes
+from services.scheduler_engine import calculer_cible_hebdo_minutes
 
 
 # ===========================================================================
@@ -858,17 +858,15 @@ def _render_charge_hebdo(session: Session) -> None:
     fig.update_traces(line_color="#4cd137", marker=dict(size=8))
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=300, yaxis_title="Heures")
 
-    # Ligne de référence : quota hebdo cible du profil (sans modulation
-    # check-in, on prend la valeur brute pour avoir une référence stable).
+    # Ligne de référence : objectif hebdomadaire du profil.
     profil = session.query(Profil).first()
     if profil is not None:
-        quota_jour_min = calculer_quota_etude_minutes(profil, None)
-        quota_semaine_h = quota_jour_min * 7 / 60
+        cible_h = calculer_cible_hebdo_minutes(profil) / 60
         fig.add_hline(
-            y=quota_semaine_h,
+            y=cible_h,
             line_dash="dash",
             line_color="#9ca3af",
-            annotation_text=f"Quota hebdo cible : {quota_semaine_h:.1f} h",
+            annotation_text=f"Objectif hebdo : {cible_h:.1f} h",
             annotation_position="top right",
             annotation_font_size=10,
             annotation_font_color="#6b7280",
@@ -881,8 +879,8 @@ def _render_charge_hebdo(session: Session) -> None:
 # Section 1bis — Bandeau quota d'étude (connecté au réglage Profil)
 # ===========================================================================
 def _render_quota_etude_banner(session: Session) -> None:
-    """Compare les heures d'étude validées CETTE semaine au quota cible
-    du profil. C'est le miroir grand format de l'indicateur dans Suivi.
+    """Compare les heures d'étude validées CETTE semaine à l'objectif
+    hebdomadaire du profil. Miroir grand format de l'indicateur de Suivi.
     """
     today = datetime.date.today()
     iso_year, iso_week, _ = today.isocalendar()
@@ -908,31 +906,22 @@ def _render_quota_etude_banner(session: Session) -> None:
     total_fait = int(etude_min_fait + etude_min_partiel * 0.5)
 
     profil = session.query(Profil).first()
-    checkin_row = (
-        session.query(CheckInQuotidien)
-        .filter(CheckInQuotidien.date == today)
-        .first()
-    )
-    checkin = None
-    if checkin_row:
-        checkin = {
-            "fatigue_physique": int(checkin_row.fatigue_physique or 0),
-            "charge_mentale": int(checkin_row.charge_mentale or 0),
-        }
-    quota_jour_min = calculer_quota_etude_minutes(profil, checkin)
-    quota_semaine_min = quota_jour_min * 7
-    if quota_semaine_min <= 0:
+    cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+    if cible_hebdo_min <= 0:
         return
 
-    pct = total_fait / quota_semaine_min * 100
+    pct = total_fait / cible_hebdo_min * 100
     pct_capped = min(pct, 100)
 
     if pct >= 100:
-        color, label = "#10b981", "🎯 Quota d'étude atteint pour cette semaine !"
+        color, label = "#10b981", "🎯 Objectif hebdomadaire atteint !"
     elif pct >= 70:
         color, label = "#f59e0b", "📚 En bonne voie — continue sur ta lancée."
     else:
         color, label = "#6b7280", "📚 Marge à rattraper d'ici dimanche soir."
+
+    cible_h = (profil.heures_etude_cible_par_semaine if profil else 21.0)
+    plafond_h = (profil.heures_etude_plafond_par_jour if profil else 6.0)
 
     st.markdown(
         f"<div style='padding:14px 18px;background:{color}15;"
@@ -940,13 +929,14 @@ def _render_quota_etude_banner(session: Session) -> None:
         f"<div style='display:flex;justify-content:space-between;align-items:baseline;'>"
         f"<div style='color:{color};font-weight:700;font-size:1rem;'>{label}</div>"
         f"<div style='color:#374151;font-size:0.95rem;'>"
-        f"<b>{total_fait / 60:.1f} h</b> / {quota_semaine_min / 60:.1f} h "
+        f"<b>{total_fait / 60:.1f} h</b> / {cible_hebdo_min / 60:.1f} h "
         f"<span style='color:#6b7280;'>({pct:.0f}%)</span></div></div>"
         f"<div style='background:#e5e7eb;height:10px;border-radius:5px;margin-top:8px;overflow:hidden;'>"
         f"<div style='background:{color};width:{pct_capped:.1f}%;height:100%;'></div>"
         f"</div>"
         f"<div style='font-size:0.75rem;color:#6b7280;margin-top:6px;'>"
-        f"Quota basé sur ton réglage Profil ({(profil.heures_etude_cible_par_jour if profil else 3.0):.1f} h/jour) modulé par ton check-in du jour."
+        f"Objectif hebdo : <b>{cible_h:.1f} h</b> · Plafond / jour : <b>{plafond_h:.1f} h</b> "
+        f"(modulé par ton check-in)."
         f"</div></div>",
         unsafe_allow_html=True,
     )
