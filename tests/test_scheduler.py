@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.db import Base
-from database.models import Chapitre, Cours, Semaine
+from database.models import Chapitre, Matiere, Semaine
 from services.scheduler_engine import (
     DUREE_REVISION_MIN,
     JOURS,
@@ -60,18 +60,18 @@ def semaine_courante(session):
     return s
 
 
-def _make_cours(session, nom: str, matiere: str) -> Cours:
-    c = Cours(nom=nom, matiere=matiere)
-    session.add(c)
+def _make_matiere(session, nom: str) -> Matiere:
+    m = Matiere(nom=nom)
+    session.add(m)
     session.commit()
-    return c
+    return m
 
 
-def _make_chap(session, cours: Cours, numero: int, niveau: int = 0) -> Chapitre:
+def _make_chap(session, matiere: Matiere, numero: int, niveau: int = 0) -> Chapitre:
     ch = Chapitre(
-        cours_id=cours.id,
+        matiere_id=matiere.id,
         numero=numero,
-        titre=f"{cours.nom} - Chap {numero}",
+        titre=f"{matiere.nom} - Chap {numero}",
         niveau_actuel=niveau,
         temps_estime_h=1.0,
     )
@@ -126,11 +126,11 @@ def test_quota_etude_inchange_si_checkin_normal():
 def test_max_un_nouveau_chapitre_par_matiere_par_jour(session, semaine_courante):
     """L'invariant central de la refonte : jamais deux nouveaux chapitres
     de la même matière le même jour."""
-    cours = _make_cours(session, "Algèbre L1", "Maths")
-    chaps = [_make_chap(session, cours, i + 1) for i in range(7)]
-    cours_sel = [{"cours_id": cours.id, "chapitre_ids": [c.id for c in chaps]}]
+    matiere = _make_matiere(session, "Algèbre L1")
+    chaps = [_make_chap(session, matiere, i + 1) for i in range(7)]
+    sel = [{"matiere_id": matiere.id, "chapitre_ids": [c.id for c in chaps]}]
 
-    repartition = repartir_nouveaux_chapitres(session, cours_sel, semaine_courante)
+    repartition = repartir_nouveaux_chapitres(session, sel, semaine_courante)
 
     for jour in JOURS:
         matieres_du_jour = [c["matiere"] for c in repartition[jour]]
@@ -145,12 +145,12 @@ def test_max_un_nouveau_chapitre_par_matiere_par_jour(session, semaine_courante)
 def test_chapitres_deja_vus_sont_ignores(session, semaine_courante):
     """Un chapitre avec niveau_actuel > 0 n'est PAS un nouveau chapitre :
     il ne doit pas être inclus dans la répartition des nouveaux."""
-    cours = _make_cours(session, "Physique L1", "Physique")
-    ch_nouveau = _make_chap(session, cours, 1, niveau=0)
-    ch_revu = _make_chap(session, cours, 2, niveau=3)
-    cours_sel = [{"cours_id": cours.id, "chapitre_ids": [ch_nouveau.id, ch_revu.id]}]
+    matiere = _make_matiere(session, "Physique L1")
+    ch_nouveau = _make_chap(session, matiere, 1, niveau=0)
+    ch_revu = _make_chap(session, matiere, 2, niveau=3)
+    sel = [{"matiere_id": matiere.id, "chapitre_ids": [ch_nouveau.id, ch_revu.id]}]
 
-    repartition = repartir_nouveaux_chapitres(session, cours_sel, semaine_courante)
+    repartition = repartir_nouveaux_chapitres(session, sel, semaine_courante)
 
     tous_les_ids = [c["chapitre_id"] for v in repartition.values() for c in v]
     assert ch_nouveau.id in tous_les_ids
@@ -160,18 +160,18 @@ def test_chapitres_deja_vus_sont_ignores(session, semaine_courante):
 def test_matieres_differentes_peuvent_partager_un_jour(session, semaine_courante):
     """Deux nouveaux chapitres de MATIÈRES DIFFÉRENTES peuvent tomber le
     même jour — la règle limite seulement les doublons par matière."""
-    cours_a = _make_cours(session, "Algèbre", "Maths")
-    cours_b = _make_cours(session, "Mécanique", "Physique")
-    ch_a = _make_chap(session, cours_a, 1)
-    ch_b = _make_chap(session, cours_b, 1)
-    cours_sel = [
-        {"cours_id": cours_a.id, "chapitre_ids": [ch_a.id]},
-        {"cours_id": cours_b.id, "chapitre_ids": [ch_b.id]},
+    m_a = _make_matiere(session, "Algèbre")
+    m_b = _make_matiere(session, "Mécanique")
+    ch_a = _make_chap(session, m_a, 1)
+    ch_b = _make_chap(session, m_b, 1)
+    sel = [
+        {"matiere_id": m_a.id, "chapitre_ids": [ch_a.id]},
+        {"matiere_id": m_b.id, "chapitre_ids": [ch_b.id]},
     ]
 
-    repartition = repartir_nouveaux_chapitres(session, cours_sel, semaine_courante)
+    repartition = repartir_nouveaux_chapitres(session, sel, semaine_courante)
 
-    # On vérifie juste qu'aucun jour ne contient deux fois "Maths" ou "Physique".
+    # On vérifie juste qu'aucun jour ne contient deux fois "Algèbre" ou "Mécanique".
     for jour in JOURS:
         matieres = [c["matiere"] for c in repartition[jour]]
         assert len(matieres) == len(set(matieres))

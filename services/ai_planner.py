@@ -77,12 +77,7 @@ def _get_chapitres_dus_pour_semaine(session: Session, semaine: Semaine) -> list[
         else:
             etat = f"⏰ à réviser dans {delta} jour(s)"
 
-        if chap.matiere_obj:
-            matiere_nom = chap.matiere_obj.nom
-        elif chap.cours:
-            matiere_nom = chap.cours.matiere or chap.cours.nom
-        else:
-            matiere_nom = "?"
+        matiere_nom = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
         items.append({
             "chapitre_id": chap.id,
@@ -116,12 +111,7 @@ def _get_ponderations_objectifs(session: Session) -> list[dict[str, Any]]:
     for chap in chapitres:
         coef = pond_dict.get(chap.id, 1.0)
         
-        if chap.matiere_obj:
-            matiere_nom = chap.matiere_obj.nom
-        elif chap.cours:
-            matiere_nom = chap.cours.matiere or chap.cours.nom
-        else:
-            matiere_nom = "?"
+        matiere_nom = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
         items.append({
             "chapitre_id": chap.id,

@@ -18,13 +18,9 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session
 
-from database import Chapitre, Cours, Matiere, Profil, UE, get_session, session_scope
+from database import Chapitre, Matiere, Profil, UE, get_session, session_scope
 from database.db import PDF_DIR
-from services.pdf_analyzer import (
-    analyze_pdf,
-    apply_analysis_to_course,
-    apply_analysis_to_matiere,
-)
+from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
 from services.revision_service import (
     initialiser_chapitre_pour_revision,
     label_couleur_status,
@@ -66,18 +62,6 @@ def _get_api_config() -> tuple[str, str]:
         if not p or not p.gemini_api_key:
             return "", "gemini-2.5-flash"
         return p.gemini_api_key, p.gemini_model
-
-
-def _delete_cours(cours_id: int) -> None:
-    """Supprime un cours et son fichier PDF associé."""
-    with session_scope() as session:
-        cours = session.get(Cours, cours_id)
-        if cours:
-            if cours.pdf_path:
-                pdf_file = PDF_DIR / f"{cours_id}.pdf"
-                if pdf_file.exists():
-                    pdf_file.unlink()
-            session.delete(cours)
 
 
 def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
@@ -945,20 +929,14 @@ def render() -> None:
             )
             return
 
-        # Index pour O(1) lookups
+        # Index pour O(1) lookups : un chapitre est soit rattaché à une
+        # matière, soit autonome (rare, surtout pendant la transition).
         chaps_par_matiere: dict[int, list[Chapitre]] = {}
-        chaps_par_ue_directe: dict[int, list[Chapitre]] = {}  # UE sans matière
         chaps_autonomes: list[Chapitre] = []
-        
+
         for ch in chapitres:
-            # Compatibilité : utiliser le nouveau matiere_id, sinon fallback sur l'ancien cours
-            m_id = ch.matiere_id if ch.matiere_id else (ch.cours.matiere_id if ch.cours else None)
-            u_id = ch.cours.ue_id if (ch.cours and not m_id) else None
-            
-            if m_id:
-                chaps_par_matiere.setdefault(m_id, []).append(ch)
-            elif u_id:
-                chaps_par_ue_directe.setdefault(u_id, []).append(ch)
+            if ch.matiere_id:
+                chaps_par_matiere.setdefault(ch.matiere_id, []).append(ch)
             else:
                 chaps_autonomes.append(ch)
 
@@ -973,9 +951,8 @@ def render() -> None:
         # --- Affichage hiérarchique : UE → Matière → Chapitre -------------
         for ue in ues:
             ue_matieres = matieres_par_ue.get(ue.id, [])
-            ue_chaps_directs = chaps_par_ue_directe.get(ue.id, [])
-            # Skip cette UE si elle n'a rien à afficher
-            if not ue_matieres and not ue_chaps_directs:
+            # Skip cette UE si elle n'a pas de matières rattachées.
+            if not ue_matieres:
                 continue
 
             meta_parts = []
@@ -1015,18 +992,6 @@ def render() -> None:
                 else:
                     for ch in matiere_chaps:
                         _render_carte_chapitre(ch, session)
-
-            # Puis chapitres directement rattachés à l'UE (sans matière)
-            if ue_chaps_directs:
-                st.markdown(
-                    "<div style='margin-top:0.8rem; margin-bottom:0.6rem; "
-                    "margin-left:1rem; color:#374151;'>"
-                    "<b style='font-size:1rem;'>📑 Chapitres sans matière (directement dans l'UE)</b>"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-                for ch in ue_chaps_directs:
-                    _render_carte_chapitre(ch, session)
 
         # --- Matières sans UE -------------------------------------------
         for matiere in matieres_sans_ue:

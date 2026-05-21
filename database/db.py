@@ -123,12 +123,6 @@ _EXPECTED_COLUMNS = {
         "created_at":      "DATETIME",
         "updated_at":      "DATETIME",
     },
-    "cours": {
-        # Rattachement optionnel à une UE (F1 — hiérarchie UE → Cours → Chapitre)
-        "ue_id":           "INTEGER REFERENCES ues(id) ON DELETE SET NULL",
-        # Rattachement optionnel à une matière (F2 — UE → Matière → Cours → Chapitre)
-        "matiere_id":      "INTEGER REFERENCES matieres(id) ON DELETE SET NULL",
-    },
     "profil": {
         # Gamification (F3a)
         "xp":                       "INTEGER DEFAULT 0",

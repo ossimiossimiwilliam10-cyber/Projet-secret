@@ -27,7 +27,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from database import Chapitre, Cours, Matiere
+from database import Chapitre, Matiere
 
 # ---------------------------------------------------------------------------
 # Imports optionnels — l'app reste importable même si ces paquets manquent.
@@ -453,46 +453,6 @@ def _validate_and_normalize(analysis: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 4. Persistance en base
 # ---------------------------------------------------------------------------
-def apply_analysis_to_course(
-    session: Session,
-    cours_id: int,
-    analysis: dict[str, Any],
-) -> None:
-    """Persiste l'analyse sur le cours et (re)crée ses chapitres.
-
-    Cette fonction est idempotente : si on ré-analyse le PDF d'un cours, les
-    anciens chapitres sont supprimés et remplacés. Le pourcentage de maîtrise
-    est donc perdu en cas de ré-analyse — pour l'instant on accepte ce
-    comportement (à l'usage, on ré-analyse rarement).
-    """
-    cours = session.query(Cours).filter_by(id=cours_id).one()
-
-    # On ne stocke pas la clé interne _meta dans pdf_analyse (cohérence)
-    analyse_clean = {k: v for k, v in analysis.items() if k != "_meta"}
-    cours.pdf_analyse = analyse_clean
-
-    chapitres_data = analysis.get("chapitres", [])
-    cours.nb_chapitres = len(chapitres_data)
-    cours.temps_total_estime_h = float(analysis.get("temps_total_estime_h", 0.0))
-
-    # Suppression des anciens chapitres (cascade gérée par la relation)
-    for ch in list(cours.chapitres):
-        session.delete(ch)
-    session.flush()
-
-    for ch_data in chapitres_data:
-        session.add(
-            Chapitre(
-                cours_id=cours_id,
-                numero=int(ch_data["numero"]),
-                titre=ch_data["titre"],
-                maitrise_pct=0,
-                type_travail_restant="premiere_lecture",
-                temps_estime_h=_estimate_chapter_time(ch_data, analysis),
-            )
-        )
-
-
 def apply_analysis_to_matiere(
     session: Session,
     matiere_id: int,
@@ -573,7 +533,7 @@ __all__ = [
     "build_analysis_prompt",
     "analyze_pdf",
     "parse_gemini_json",
-    "apply_analysis_to_course",
+    "apply_analysis_to_matiere",
     "MAX_PROMPT_CHARS",
     "TYPES_CONTENU_VALIDES",
 ]

@@ -219,8 +219,8 @@ def initialiser_chapitre_pour_revision(
 
     Utilisée par ``modules/bibliotheque._process_import_unifie`` après la
     création d'un chapitre via ``apply_analysis_to_matiere``. Équivalent
-    de ``initialiser_chapitres_pour_revision`` mais à granularité unitaire,
-    et indépendante du rattachement (Matière ou Cours).
+    Utilisée par l'import unifié de la bibliothèque, après création
+    individuelle d'un chapitre via ``apply_analysis_to_matiere``.
 
     Returns:
         ``True`` si le chapitre a reçu une date_prochaine, ``False`` s'il
@@ -236,43 +236,6 @@ def initialiser_chapitre_pour_revision(
     chap.niveau_actuel = int(chap.niveau_actuel or 0)
     chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
     return True
-
-
-def initialiser_chapitres_pour_revision(
-    session: Session,
-    cours_id: int,
-    delai_initial_jours: int | None = None,
-) -> int:
-    """Pose une date_prochaine pour les chapitres d'un cours qui n'en ont pas.
-
-    À appeler après ``apply_analysis_to_course()`` pour que les nouveaux
-    chapitres apparaissent immédiatement dans la file de révision.
-
-    Args:
-        cours_id: id du cours dont on initialise les chapitres.
-        delai_initial_jours: nombre de jours avant la 1ʳᵉ révision. Si None,
-            utilise ``INTERVALLES_J[0]`` (= 1 jour).
-
-    Returns:
-        Le nombre de chapitres mis à jour.
-    """
-    if delai_initial_jours is None:
-        delai_initial_jours = INTERVALLES_J[0]
-
-    chapitres = (
-        session.query(Chapitre)
-        .filter(
-            Chapitre.cours_id == cours_id,
-            Chapitre.date_prochaine.is_(None),
-        )
-        .all()
-    )
-
-    target = date.today() + timedelta(days=delai_initial_jours)
-    for c in chapitres:
-        c.niveau_actuel = int(c.niveau_actuel or 0)
-        c.date_prochaine = target
-    return len(chapitres)
 
 
 # ===========================================================================
@@ -803,7 +766,7 @@ __all__ = [
     "appliquer_resultat_quiz",
     "label_couleur_status",
     "chapitres_a_reviser",
-    "initialiser_chapitres_pour_revision",
+    "initialiser_chapitre_pour_revision",
     "get_or_extract_chapter_text",
     "generer_fiche_ia",
     "generer_qcm",

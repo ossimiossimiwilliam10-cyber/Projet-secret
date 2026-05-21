@@ -4,8 +4,7 @@ Vérifie les ajouts strictement structurels — pas de logique métier ici,
 juste le contrat du modèle :
 
 - ``Matiere.professeur`` accepte une valeur texte.
-- ``Chapitre.matiere_id`` permet le rattachement direct à une Matière
-  sans passer par un Cours.
+- ``Chapitre.matiere_id`` rattache directement le chapitre à une Matière.
 - ``Chapitre.pdfs`` accepte une liste arbitraire de dicts décrivant les
   documents pédagogiques attachés.
 - ``Matiere.chapitres`` remonte bien les chapitres rattachés.
@@ -44,10 +43,9 @@ def test_matiere_accepte_un_professeur(session):
     assert rechargee.professeur == "Mme Dupont"
 
 
-def test_chapitre_rattache_a_matiere_sans_cours(session):
-    """Un chapitre peut désormais exister avec uniquement un ``matiere_id``,
-    sans avoir besoin d'un Cours parent (la couche intermédiaire disparaît
-    à l'étape 3)."""
+def test_chapitre_rattache_a_matiere(session):
+    """Un chapitre est rattaché directement à une Matière via ``matiere_id``.
+    La couche intermédiaire « Cours » a été supprimée."""
     m = Matiere(nom="Mécanique du point")
     session.add(m)
     session.flush()
@@ -62,7 +60,6 @@ def test_chapitre_rattache_a_matiere_sans_cours(session):
 
     rechargé = session.query(Chapitre).filter_by(titre="Cinématique 1D").first()
     assert rechargé.matiere_id == m.id
-    assert rechargé.cours_id is None
     assert rechargé.matiere_obj.nom == "Mécanique du point"
 
 

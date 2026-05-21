@@ -20,13 +20,13 @@ from .models import (
     Achievement,
     UE,
     Matiere,
-    Cours,
     Chapitre,
     Semaine,
     Tache,
     SaisieHebdo,
     Job,
     Objectif,
+    CheckInQuotidien,
 )
 
 __all__ = [
@@ -49,11 +49,11 @@ __all__ = [
     "Achievement",
     "UE",
     "Matiere",
-    "Cours",
     "Chapitre",
     "Semaine",
     "Tache",
     "SaisieHebdo",
     "Job",
     "Objectif",
+    "CheckInQuotidien",
 ]
