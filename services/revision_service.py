@@ -210,6 +210,34 @@ def chapitres_a_reviser(
 # ===========================================================================
 # 4. Initialisation — pour les chapitres fraîchement créés
 # ===========================================================================
+def initialiser_chapitre_pour_revision(
+    session: Session,
+    chapitre_id: int,
+    delai_initial_jours: int | None = None,
+) -> bool:
+    """Pose une date_prochaine sur UN chapitre s'il n'en a pas encore.
+
+    Utilisée par ``modules/bibliotheque._process_import_unifie`` après la
+    création d'un chapitre via ``apply_analysis_to_matiere``. Équivalent
+    de ``initialiser_chapitres_pour_revision`` mais à granularité unitaire,
+    et indépendante du rattachement (Matière ou Cours).
+
+    Returns:
+        ``True`` si le chapitre a reçu une date_prochaine, ``False`` s'il
+        en avait déjà une (ou s'il n'existe pas).
+    """
+    if delai_initial_jours is None:
+        delai_initial_jours = INTERVALLES_J[0]
+
+    chap = session.get(Chapitre, chapitre_id)
+    if chap is None or chap.date_prochaine is not None:
+        return False
+
+    chap.niveau_actuel = int(chap.niveau_actuel or 0)
+    chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
+    return True
+
+
 def initialiser_chapitres_pour_revision(
     session: Session,
     cours_id: int,

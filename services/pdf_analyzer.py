@@ -23,9 +23,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
-from database import Chapitre, Cours
+from database import Chapitre, Cours, Matiere
 
 # ---------------------------------------------------------------------------
 # Imports optionnels — l'app reste importable même si ces paquets manquent.
@@ -489,6 +491,57 @@ def apply_analysis_to_course(
                 temps_estime_h=_estimate_chapter_time(ch_data, analysis),
             )
         )
+
+
+def apply_analysis_to_matiere(
+    session: Session,
+    matiere_id: int,
+    analysis: dict[str, Any],
+    pdf_path: str,
+    pdf_label: str = "",
+) -> list[int]:
+    """Crée les chapitres détectés par Gemini, rattachés à une Matière.
+
+    Refonte bibliothèque : remplace ``apply_analysis_to_course``. Le PDF
+    qui a généré l'analyse est référencé dans le champ ``pdfs`` de chaque
+    chapitre créé.
+
+    Args:
+        session: session SQLAlchemy ouverte.
+        matiere_id: id de la matière de rattachement (obligatoire).
+        analysis: dict normalisé renvoyé par ``analyze_pdf``.
+        pdf_path: chemin (relatif au repo) du PDF analysé.
+        pdf_label: libellé optionnel du document (ex. "Cours magistral",
+            "Polycopié"). Vide si non précisé.
+
+    Returns:
+        Liste des IDs des chapitres créés.
+    """
+    matiere = session.query(Matiere).filter_by(id=matiere_id).one()
+    chapitres_data = analysis.get("chapitres", [])
+
+    pdf_entry = {
+        "path": pdf_path,
+        "label": pdf_label or "Document",
+        "uploaded_at": datetime.utcnow().isoformat(timespec="seconds"),
+    }
+
+    new_ids: list[int] = []
+    for ch_data in chapitres_data:
+        chap = Chapitre(
+            matiere_id=matiere.id,
+            numero=int(ch_data["numero"]),
+            titre=ch_data["titre"],
+            maitrise_pct=0,
+            type_travail_restant="premiere_lecture",
+            temps_estime_h=_estimate_chapter_time(ch_data, analysis),
+            pdfs=[pdf_entry],
+        )
+        session.add(chap)
+        session.flush()
+        new_ids.append(chap.id)
+
+    return new_ids
 
 
 def _estimate_chapter_time(

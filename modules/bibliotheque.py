@@ -20,8 +20,13 @@ from sqlalchemy.orm import Session
 
 from database import Chapitre, Cours, Matiere, Profil, UE, get_session, session_scope
 from database.db import PDF_DIR
-from services.pdf_analyzer import analyze_pdf, apply_analysis_to_course
+from services.pdf_analyzer import (
+    analyze_pdf,
+    apply_analysis_to_course,
+    apply_analysis_to_matiere,
+)
 from services.revision_service import (
+    initialiser_chapitre_pour_revision,
     initialiser_chapitres_pour_revision,
     label_couleur_status,
     MAX_NIVEAU,
@@ -541,145 +546,209 @@ def _render_matiere_edit_form(m: dict, ue_items: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Formulaire d'ajout d'un cours (single PDF)
+# Import unifié — 1 ou N PDFs vers une Matière (refonte bibliothèque)
 # ---------------------------------------------------------------------------
-def _render_form_ajout() -> None:
-    """Affiche et traite le formulaire d'ajout d'UN cours détaillé."""
-    api_key, model = _get_api_config()
+def _process_import_unifie(
+    uploaded_pdfs: list,
+    matiere_id: int,
+    labels: list[str],
+    api_key: str,
+    model: str,
+) -> tuple[int, int, list[tuple[str, str]]]:
+    """Analyse un ou plusieurs PDFs et crée les chapitres rattachés à la Matière.
 
+    Chaque PDF est analysé indépendamment par Gemini, qui détecte les chapitres
+    présents dans le document. Chaque chapitre détecté devient une ligne en
+    base, avec le PDF source référencé dans le champ ``pdfs``.
+
+    Returns:
+        ``(nb_pdfs_ok, nb_chapitres_total, erreurs)`` où ``erreurs`` est une
+        liste de tuples ``(nom_fichier, message)``.
+    """
+    with session_scope() as session:
+        matiere = session.get(Matiere, matiere_id)
+        matiere_nom = matiere.nom if matiere else "?"
+
+    total = len(uploaded_pdfs)
+    progress = st.progress(0.0, text="Initialisation…")
+    placeholder = st.empty()
+
+    pdfs_ok = 0
+    chapitres_total = 0
+    erreurs: list[tuple[str, str]] = []
+
+    for i, (pdf_file, label) in enumerate(zip(uploaded_pdfs, labels), 1):
+        label_clean = (label or "").strip() or _nom_cours_from_filename(pdf_file.name)
+        progress.progress((i - 1) / total, text=f"PDF {i}/{total} : {label_clean}…")
+        placeholder.info(
+            f"🧠 Analyse Gemini en cours pour **{label_clean}** "
+            f"({pdf_file.name}) — PDF {i}/{total}"
+        )
+
+        try:
+            # 1. Écriture du PDF sur disque, sous un nom unique horodaté.
+            pdf_filename = f"m{matiere_id}-{int(_time.time())}-{i}.pdf"
+            pdf_path = PDF_DIR / pdf_filename
+            pdf_path.write_bytes(pdf_file.getvalue())
+            pdf_rel = str(pdf_path.relative_to(PDF_DIR.parent.parent))
+
+            # 2. Analyse Gemini du PDF.
+            analyse = analyze_pdf(
+                pdf_path=pdf_path,
+                cours_nom=label_clean,
+                matiere=matiere_nom,
+                api_key=api_key,
+                model=model,
+            )
+
+            # 3. Création des chapitres directement rattachés à la Matière.
+            with session_scope() as session:
+                new_ids = apply_analysis_to_matiere(
+                    session=session,
+                    matiere_id=matiere_id,
+                    analysis=analyse,
+                    pdf_path=pdf_rel,
+                    pdf_label=label_clean,
+                )
+                for chap_id in new_ids:
+                    initialiser_chapitre_pour_revision(session, chap_id)
+
+            pdfs_ok += 1
+            chapitres_total += len(new_ids)
+        except Exception as exc:
+            erreurs.append((pdf_file.name, str(exc)))
+
+    progress.progress(1.0, text=f"Terminé : {pdfs_ok}/{total} PDFs traités.")
+    placeholder.empty()
+    return pdfs_ok, chapitres_total, erreurs
+
+
+def _render_import_unifie() -> None:
+    """Section d'import unifiée — 1 ou plusieurs PDFs rattachés à une Matière.
+
+    Remplace les deux anciens formulaires séparés ("formulaire détaillé" avec
+    coef/ECTS/dates d'examen, et "import batch multi-PDFs"). Tout passe par
+    un seul mécanisme : tu choisis une matière, tu déposes 1 à N PDFs,
+    Gemini détecte les chapitres dans chacun et les crée.
+    """
+    api_key, model = _get_api_config()
     if not api_key:
         st.warning(
             "⚠️ Aucune clé API Gemini n'est configurée. "
-            "Rends-toi dans l'onglet **Profil** pour en ajouter une avant d'importer un cours."
+            "Rends-toi dans l'onglet **Profil** pour en ajouter une avant "
+            "d'importer un PDF."
         )
         return
 
-    # Liste des UE et matières pour le selectbox combiné
     with get_session() as session:
-        ue_items = _get_ues_snapshot(session)
-        matiere_items = _get_matieres_snapshot(session)
-    rattachement_options = _build_rattachement_options(ue_items, matiere_items)
+        matieres = (
+            session.query(Matiere)
+            .filter_by(actif=True)
+            .order_by(Matiere.nom)
+            .all()
+        )
+        matiere_options = {m.nom: m.id for m in matieres}
 
-    with st.expander("➕ Ajouter un cours (formulaire détaillé)", expanded=False):
-        with st.form("form_ajout_cours", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                nom = st.text_input("Nom du cours*", max_chars=200,
-                                    placeholder="Ex: Cours d'algèbre - polycopié")
-                matiere = st.text_input("Libellé matière (libre, optionnel)", max_chars=100,
-                                        help="Pour mémo. Le rattachement formel se fait via le selectbox ci-dessous.")
-                professeur = st.text_input("Professeur", max_chars=200)
-            with col2:
-                coef = st.number_input("Coefficient", min_value=0.1, value=1.0, step=0.5)
-                ects = st.number_input("Crédits ECTS du cours", min_value=0.0, value=3.0, step=0.5)
-                date_exam = st.date_input("Date de l'examen", value=None)
-                duree_exam = st.number_input("Durée de l'examen (min)", min_value=30, value=120, step=30)
+    if not matiere_options:
+        st.info(
+            "📘 Crée d'abord une **Matière** dans la section ci-dessus avant "
+            "d'importer des PDFs."
+        )
+        return
 
-            # Selectbox combiné UE ▸ Matière (F2)
-            rattachement_choice = st.selectbox(
-                "Rattachement (optionnel)",
-                options=list(rattachement_options.keys()),
-                help="Crée d'abord tes UE / matières dans les sections ci-dessus.",
+    with st.expander("📥 Importer des PDFs (1 ou plusieurs)", expanded=False):
+        st.caption(
+            "Sélectionne **la matière** de rattachement, puis dépose **un ou "
+            "plusieurs PDFs**. Pour chacun, Gemini détecte les chapitres et "
+            "les crée. Un même chapitre peut recueillir plusieurs PDFs plus "
+            "tard via sa carte ci-dessous."
+        )
+
+        matiere_label = st.selectbox(
+            "📘 Matière de rattachement*",
+            options=list(matiere_options.keys()),
+            key="import_unifie_matiere",
+        )
+        matiere_id = matiere_options[matiere_label]
+
+        uploaded_pdfs = st.file_uploader(
+            "Dépose 1 à N PDFs*",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key="import_unifie_uploader",
+        )
+
+        if not uploaded_pdfs:
+            return
+
+        st.caption(
+            f"📄 **{len(uploaded_pdfs)} PDF(s) sélectionné(s)** — "
+            "le libellé sert juste de mémo (modifiable) :"
+        )
+        df_preview = pd.DataFrame([
+            {
+                "Fichier": pdf.name,
+                "Taille": f"{len(pdf.getvalue()) / 1024:.0f} ko",
+                "Libellé": _nom_cours_from_filename(pdf.name),
+            }
+            for pdf in uploaded_pdfs
+        ])
+        edited_df = st.data_editor(
+            df_preview,
+            hide_index=True,
+            width="stretch",
+            disabled=["Fichier", "Taille"],
+            column_config={
+                "Fichier":  st.column_config.TextColumn(width="medium"),
+                "Taille":   st.column_config.TextColumn(width="small"),
+                "Libellé":  st.column_config.TextColumn(
+                    width="medium", required=True,
+                    help="Ex. : « Cours magistral », « Polycopié », « TD série 1 »",
+                ),
+            },
+            key="import_unifie_editor",
+        )
+
+        eta_min = len(uploaded_pdfs) * 45 / 60
+        st.caption(
+            f"⏱️ Temps estimé : ~**{eta_min:.1f} min** "
+            f"({len(uploaded_pdfs)} PDF × ~45 s d'analyse Gemini)."
+        )
+
+        if st.button(
+            f"🚀 Importer et analyser ({len(uploaded_pdfs)} PDF{'s' if len(uploaded_pdfs) > 1 else ''})",
+            type="primary",
+            width="stretch",
+            key="btn_import_unifie",
+        ):
+            labels = edited_df["Libellé"].fillna("").tolist()
+            pdfs_ok, chapitres_total, erreurs = _process_import_unifie(
+                uploaded_pdfs, matiere_id, labels, api_key, model,
             )
-            rattachement = rattachement_options[rattachement_choice]
-            ue_id_choisi = rattachement["ue_id"]
-            matiere_id_choisi = rattachement["matiere_id"]
 
-            st.divider()
-            uploaded_pdf = st.file_uploader("Document du cours (PDF)*", type=["pdf"])
-
-            submit = st.form_submit_button(
-                "Ajouter et analyser (IA)",
-                type="primary",
-                width='stretch',
-            )
-
-        if submit:
-            if not nom.strip():
-                st.error("Le nom du cours est obligatoire.")
-                return
-            if not uploaded_pdf:
-                st.error("Veuillez uploader un fichier PDF.")
-                return
-
-            # ÉTAPE 1 : Création coquille
-            try:
-                with session_scope() as session:
-                    nouveau_cours = Cours(
-                        nom=nom.strip(),
-                        matiere=matiere.strip(),
-                        professeur=professeur.strip(),
-                        coefficient=coef,
-                        credits_ects=ects,
-                        date_examen=date_exam,
-                        duree_examen_min=int(duree_exam),
-                        actif=True,
-                        ue_id=ue_id_choisi,
-                        matiere_id=matiere_id_choisi,
-                    )
-                    session.add(nouveau_cours)
-                    session.flush()
-                    cours_id = nouveau_cours.id
-
-                    pdf_path = PDF_DIR / f"{cours_id}.pdf"
-                    pdf_path.write_bytes(uploaded_pdf.getvalue())
-                    nouveau_cours.pdf_path = str(
-                        pdf_path.relative_to(PDF_DIR.parent.parent)
-                    )
-            except Exception as e:
-                st.error(f"Erreur lors de l'enregistrement initial : {e}")
-                return
-
-            # ÉTAPE 2 : Analyse Gemini
-            analyse_reussie = False
-            with st.spinner("🧠 Analyse du PDF par Gemini (30s à 1 min)..."):
-                try:
-                    analyse = analyze_pdf(
-                        pdf_path=pdf_path,
-                        cours_nom=nom.strip(),
-                        matiere=matiere.strip(),
-                        api_key=api_key,
-                        model=model,
-                    )
-                    analyse_reussie = True
-                except Exception as e:
-                    st.error(f"❌ Échec de l'analyse IA : {e}")
-                    _delete_cours(cours_id)
-                    return
-
-            # ÉTAPE 3 : Création chapitres + activation révision
-            if analyse_reussie:
-                try:
-                    with session_scope() as session:
-                        apply_analysis_to_course(session, cours_id, analyse)
-                        session.flush()  # rend les chapitres visibles à la query suivante
-                        
-                        # Phase 3 : bascule vers la Matière et ajout du PDF au chapitre
-                        cours_db = session.get(Cours, cours_id)
-                        if cours_db:
-                            pdf_info = {
-                                "path": cours_db.pdf_path,
-                                "label": "Document source",
-                                "uploaded_at": datetime.datetime.now().isoformat()
-                            }
-                            for ch in cours_db.chapitres:
-                                ch.matiere_id = matiere_id_choisi
-                                ch.pdfs = [pdf_info]
-                                
-                        n_init = initialiser_chapitres_pour_revision(session, cours_id)
-                    st.toast(
-                        f"Cours '{nom}' ajouté — {n_init} chapitres rattachés à la matière ✅",
-                        icon="✅",
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de la création des chapitres : {e}")
-                    _delete_cours(cours_id)
-                    return
+            total = len(uploaded_pdfs)
+            if pdfs_ok == total and not erreurs:
+                st.success(
+                    f"✅ **{pdfs_ok}/{total}** PDF(s) analysé(s), "
+                    f"**{chapitres_total}** chapitre(s) créé(s) dans « {matiere_label} »."
+                )
+                st.balloons()
+                st.rerun()
+            elif pdfs_ok > 0:
+                st.warning(
+                    f"⚠️ **{pdfs_ok}/{total}** PDFs traités "
+                    f"({chapitres_total} chapitres), **{len(erreurs)}** erreur(s) :"
+                )
+                for nom, err in erreurs:
+                    st.error(f"**{nom}** : {err}")
+            else:
+                st.error("❌ Aucun PDF n'a pu être importé.")
+                for nom, err in erreurs:
+                    st.error(f"**{nom}** : {err}")
 
 
 # ---------------------------------------------------------------------------
-# Import batch multi-PDFs
+# Helpers d'import — utilisés par _render_import_unifie
 # ---------------------------------------------------------------------------
 def _nom_cours_from_filename(filename: str) -> str:
     """Convertit un nom de fichier en nom de cours lisible.
@@ -699,236 +768,6 @@ def _nom_cours_from_filename(filename: str) -> str:
         return "Nouveau cours"
     return stem[0].upper() + stem[1:]
 
-
-def _process_batch_import(
-    uploaded_pdfs: list,
-    noms_cours: list[str],
-    matiere_commune: str,
-    ects_default: float,
-    duree_examen_default: int,
-    api_key: str,
-    model: str,
-    ue_id_commune: int | None,
-    matiere_id_commune: int | None,
-) -> tuple[int, list[tuple[str, str]]]:
-    """Importe en série N PDFs."""
-    total = len(uploaded_pdfs)
-    progress = st.progress(0.0, text="Initialisation…")
-    placeholder = st.empty()
-
-    success = 0
-    erreurs: list[tuple[str, str]] = []
-    t_global = _time.time()
-
-    for i, (pdf_file, nom_cours) in enumerate(zip(uploaded_pdfs, noms_cours), 1):
-        nom_cours = (nom_cours or "").strip() or _nom_cours_from_filename(pdf_file.name)
-        progress.progress((i - 1) / total, text=f"PDF {i}/{total} : {nom_cours}…")
-        placeholder.info(
-            f"🧠 Analyse Gemini en cours pour **{nom_cours}** "
-            f"({pdf_file.name}) — PDF {i}/{total}"
-        )
-
-        cours_id = None
-        try:
-            with session_scope() as session:
-                nouveau_cours = Cours(
-                    nom=nom_cours,
-                    matiere=matiere_commune.strip(),
-                    professeur="",
-                    coefficient=1.0,
-                    credits_ects=ects_default,
-                    date_examen=None,
-                    duree_examen_min=int(duree_examen_default),
-                    actif=True,
-                    ue_id=ue_id_commune,
-                    matiere_id=matiere_id_commune,
-                )
-                session.add(nouveau_cours)
-                session.flush()
-                cours_id = nouveau_cours.id
-
-                pdf_path = PDF_DIR / f"{cours_id}.pdf"
-                pdf_path.write_bytes(pdf_file.getvalue())
-                nouveau_cours.pdf_path = str(
-                    pdf_path.relative_to(PDF_DIR.parent.parent)
-                )
-
-            analyse = analyze_pdf(
-                pdf_path=pdf_path,
-                cours_nom=nom_cours,
-                matiere=matiere_commune.strip(),
-                api_key=api_key,
-                model=model,
-            )
-
-            with session_scope() as session:
-                apply_analysis_to_course(session, cours_id, analyse)
-                session.flush()
-                
-                # Phase 3 : bascule vers la Matière et ajout du PDF au chapitre
-                cours_db = session.get(Cours, cours_id)
-                if cours_db:
-                    pdf_info = {
-                        "path": cours_db.pdf_path,
-                        "label": "Document source",
-                        "uploaded_at": datetime.datetime.now().isoformat()
-                    }
-                    for ch in cours_db.chapitres:
-                        ch.matiere_id = matiere_id_commune
-                        ch.pdfs = [pdf_info]
-                        
-                initialiser_chapitres_pour_revision(session, cours_id)
-
-            success += 1
-        except Exception as exc:
-            erreurs.append((pdf_file.name, str(exc)))
-            if cours_id is not None:
-                try:
-                    _delete_cours(cours_id)
-                except Exception:
-                    pass
-
-    progress.progress(1.0, text=f"Terminé en {int(_time.time() - t_global)}s")
-    placeholder.empty()
-    return success, erreurs
-
-
-def _render_batch_import() -> None:
-    """Section pour importer plusieurs PDFs d'un coup."""
-    api_key, model = _get_api_config()
-    if not api_key:
-        return
-
-    with get_session() as session:
-        ue_items = _get_ues_snapshot(session)
-        matiere_items = _get_matieres_snapshot(session)
-    rattachement_options = _build_rattachement_options(ue_items, matiere_items)
-
-    with st.expander("📦 Importer plusieurs PDFs d'un coup", expanded=False):
-        st.caption(
-            "Sélectionne plusieurs cours en PDF. Le nom de chaque cours est "
-            "déduit du nom de fichier (modifiable). L'IA analyse les PDFs **en série** "
-            "(~30-60 s/PDF), ne ferme pas l'onglet. Tu pourras éditer les dates "
-            "d'examen, coefficients, etc. dans la liste des cours ci-dessous."
-        )
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            matiere_commune = st.text_input(
-                "Libellé matière (libre, optionnel)",
-                placeholder="Pour mémo",
-                key="batch_matiere",
-            )
-        with col2:
-            ects_default = st.number_input(
-                "ECTS par défaut", min_value=0.0, value=3.0, step=0.5,
-                key="batch_ects",
-            )
-        with col3:
-            duree_examen_default = st.number_input(
-                "Durée examen défaut (min)", min_value=30, value=120, step=30,
-                key="batch_duree",
-            )
-
-        # Selectbox combiné UE ▸ Matière (F2)
-        rattachement_choice_batch = st.selectbox(
-            "Rattachement commun (optionnel)",
-            options=list(rattachement_options.keys()),
-            help="Tous les PDFs importés seront rattachés au même UE/Matière.",
-            key="batch_rattachement",
-        )
-        rattachement_batch = rattachement_options[rattachement_choice_batch]
-        ue_id_batch = rattachement_batch["ue_id"]
-        matiere_id_batch = rattachement_batch["matiere_id"]
-
-        uploaded_pdfs = st.file_uploader(
-            "Sélectionne tes PDFs (Ctrl+clic pour plusieurs)*",
-            type=["pdf"],
-            accept_multiple_files=True,
-            key="batch_pdf_uploader",
-        )
-
-        if not uploaded_pdfs:
-            return
-
-        st.caption(
-            f"📄 **{len(uploaded_pdfs)} PDF(s) sélectionné(s)** — édite les noms si besoin :"
-        )
-        df_preview = pd.DataFrame([
-            {
-                "Fichier": pdf.name,
-                "Taille": f"{len(pdf.getvalue()) / 1024:.0f} ko",
-                "Nom du cours": _nom_cours_from_filename(pdf.name),
-            }
-            for pdf in uploaded_pdfs
-        ])
-
-        edited_df = st.data_editor(
-            df_preview,
-            hide_index=True,
-            width='stretch',
-            disabled=["Fichier", "Taille"],
-            column_config={
-                "Fichier":      st.column_config.TextColumn(width="medium"),
-                "Taille":       st.column_config.TextColumn(width="small"),
-                "Nom du cours": st.column_config.TextColumn(
-                    width="medium",
-                    required=True,
-                    help="Tu peux modifier avant l'analyse IA.",
-                ),
-            },
-            key="batch_names_editor",
-        )
-
-        eta_min = len(uploaded_pdfs) * 45 / 60
-        st.caption(
-            f"⏱️ Temps estimé : ~**{eta_min:.1f} min** "
-            f"({len(uploaded_pdfs)} PDF × ~45s)"
-        )
-
-        if st.button(
-            f"🚀 Importer les {len(uploaded_pdfs)} PDFs (analyse IA)",
-            type="primary",
-            width='stretch',
-            key="btn_batch_import",
-        ):
-            noms_edites = edited_df["Nom du cours"].fillna("").tolist()
-            if any(not n.strip() for n in noms_edites):
-                st.error("❌ Tous les cours doivent avoir un nom.")
-                return
-
-            success, erreurs = _process_batch_import(
-                uploaded_pdfs,
-                noms_edites,
-                matiere_commune,
-                ects_default,
-                int(duree_examen_default),
-                api_key,
-                model,
-                ue_id_batch,
-                matiere_id_batch,
-            )
-
-            total = len(uploaded_pdfs)
-            if success == total:
-                st.success(f"✅ **{success}/{total}** cours importés avec succès !")
-                st.balloons()
-                st.info(
-                    "💡 Pense à éditer les **dates d'examen** et **coefficients** "
-                    "dans la liste des cours ci-dessous."
-                )
-            elif success > 0:
-                st.warning(
-                    f"⚠️ **{success}/{total}** importés, **{len(erreurs)}** erreur(s)."
-                )
-                with st.expander("Détails des erreurs", expanded=True):
-                    for nom, err in erreurs:
-                        st.error(f"**{nom}** : {err}")
-            else:
-                st.error("❌ Aucun PDF n'a pu être importé.")
-                with st.expander("Détails des erreurs", expanded=True):
-                    for nom, err in erreurs:
-                        st.error(f"**{nom}** : {err}")
 
 
 # ---------------------------------------------------------------------------
@@ -1078,9 +917,9 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
 # ---------------------------------------------------------------------------
 def render() -> None:
     """Point d'entrée appelé par st.Page."""
-    st.title("📚 Bibliothèque de cours")
+    st.title("📚 Bibliothèque")
     st.caption(
-        "Organise tes cours selon la hiérarchie **🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, "
+        "Organise ton programme selon la hiérarchie **🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, "
         "importe les PDFs, et active la révision espacée."
     )
 
@@ -1090,9 +929,8 @@ def render() -> None:
     _render_matieres_section()
     st.divider()
 
-    # 2. Imports
-    _render_form_ajout()
-    _render_batch_import()
+    # 2. Import unifié — 1 ou N PDFs → 1 ou N chapitres rattachés à une Matière
+    _render_import_unifie()
 
     st.divider()
     st.subheader("Mon Programme")
