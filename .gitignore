@@ -62,3 +62,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# --- Backups locaux de tooling ----------------------------------------------
+# apply_fixes.py génère des snapshots horodatés qui n'ont rien à faire en
+# versionning. Ils restent disponibles sur le disque local.
+_backup_apply_fixes/

@@ -9,15 +9,15 @@ Conventions :
 - Les horodatages ``created_at`` / ``updated_at`` utilisent UTC pour rester
   comparables d'un fuseau à l'autre.
 
-Hiérarchie pédagogique : ``UE → Cours → Chapitre``.
-- ``UE`` (Unité d'Enseignement) : conteneur logique, ex. "Mathématiques", "Physique".
-  Contient plusieurs cours.
-- ``Cours`` : une matière concrète, ex. "Analyse", "Algèbre linéaire". A son
-  propre coefficient et sa date d'examen.
-- ``Chapitre`` : subdivision d'un cours, granularité de la révision espacée.
+Hiérarchie pédagogique : ``UE → Matière → Chapitre``.
+- ``UE`` (Unité d'Enseignement) : conteneur logique, ex. "Mathématiques",
+  "Physique". Porte les crédits ECTS et le code semestre.
+- ``Matiere`` : sous-discipline d'une UE, ex. "Algèbre", "Analyse". Porte
+  le professeur.
+- ``Chapitre`` : subdivision d'une matière, granularité de la révision
+  espacée et porteuse des PDFs pédagogiques (liste).
 
-Le rattachement à une UE est OPTIONNEL — un cours peut exister sans UE
-(``ue_id = NULL``), pour les utilisateurs qui n'ont pas cette hiérarchie.
+Le rattachement à une UE est OPTIONNEL pour Matière.
 """
 
 from __future__ import annotations
@@ -129,12 +129,11 @@ class Achievement(Base):
 # UE — Unité d'Enseignement (regroupement de cours)
 # ---------------------------------------------------------------------------
 class UE(Base):
-    """Unité d'Enseignement — regroupe plusieurs cours (matières).
+    """Unité d'Enseignement — regroupe plusieurs matières.
 
-    Ex: UE 'Mathématiques' contient les cours 'Analyse' et 'Algèbre linéaire'.
-
-    Le coefficient et la date d'examen restent au niveau **Cours** (chaque
-    matière a son propre exam). L'UE est purement organisationnelle.
+    Ex: UE 'Mathématiques' contient les matières 'Analyse' et 'Algèbre
+    linéaire'. L'UE porte les crédits ECTS et le code semestre ; l'UE
+    est purement organisationnelle.
     """
 
     __tablename__ = "ues"
@@ -151,15 +150,8 @@ class UE(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relations
-    # Quand une UE est supprimée → les cours sont détachés (ue_id = NULL),
-    # pas supprimés. C'est ce que veut un étudiant qui se rend compte qu'il
-    # a mal classé un cours.
-    cours = relationship(
-        "Cours",
-        back_populates="ue",
-        order_by="Cours.nom",
-    )
-    # Matières rattachées (ex: UE Maths → Algèbre, Analyse)
+    # Matières rattachées (ex: UE Maths → Algèbre, Analyse). Quand l'UE
+    # est supprimée, les matières sont détachées (ue_id = NULL).
     matieres = relationship(
         "Matiere",
         back_populates="ue",
@@ -206,13 +198,7 @@ class Matiere(Base):
 
     # Relations
     ue = relationship("UE", back_populates="matieres")
-    cours = relationship(
-        "Cours",
-        back_populates="matiere_obj",
-        order_by="Cours.nom",
-    )
-    # Refonte bibliothèque — étape 1 : rattachement direct Matière → Chapitre.
-    # La couche intermédiaire « Cours » disparaîtra à l'étape 3.
+    # Rattachement direct Matière → Chapitre (refonte bibliothèque).
     chapitres = relationship(
         "Chapitre",
         back_populates="matiere_obj",
@@ -225,75 +211,6 @@ class Matiere(Base):
 
 
 # ---------------------------------------------------------------------------
-# Cours & chapitres — bibliothèque du semestre
-# ---------------------------------------------------------------------------
-class Cours(Base):
-    """Un cours (une matière) du semestre, avec son PDF et son analyse IA.
-
-    Optionnellement rattaché à une UE (``ue_id``) pour le regroupement.
-    """
-
-    __tablename__ = "cours"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    nom = Column(String(200), nullable=False)
-    # Libellé matière en texte libre, conservé pour compatibilité avec
-    # les modules existants (dashboard, ai_planner, revision_service…) qui
-    # font ``cours.matiere`` pour afficher un nom. La relation vers l'objet
-    # Matiere est nommée ``matiere_obj`` pour éviter le conflit.
-    matiere = Column(String(100), default="")
-    professeur = Column(String(200), default="")
-    coefficient = Column(Float, default=1.0)
-    credits_ects = Column(Float, default=0.0)
-
-    date_examen = Column(Date, nullable=True)
-    duree_examen_min = Column(Integer, default=120)
-
-    pdf_path = Column(String(500), default="")
-    pdf_analyse = Column(JSON, nullable=True)
-
-    temps_total_estime_h = Column(Float, default=0.0)
-    nb_chapitres = Column(Integer, default=0)
-    actif = Column(Boolean, default=True)
-
-    # Rattachement à une UE (optionnel). SET NULL = si l'UE est supprimée,
-    # le cours reste mais devient autonome.
-    ue_id = Column(
-        Integer,
-        ForeignKey("ues.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    # Rattachement à une matière (optionnel). Si défini, ue_id doit refléter
-    # matiere.ue_id (synchronisation gérée côté code lors du rattachement).
-    matiere_id = Column(
-        Integer,
-        ForeignKey("matieres.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relations
-    ue = relationship("UE", back_populates="cours")
-    # Renommée 'matiere_obj' (et non 'matiere') pour ne pas écraser le
-    # champ string 'matiere' historique utilisé par les autres modules.
-    matiere_obj = relationship("Matiere", back_populates="cours")
-    chapitres = relationship(
-        "Chapitre",
-        back_populates="cours",
-        cascade="all, delete-orphan",
-        order_by="Chapitre.numero",
-    )
-    taches = relationship("Tache", back_populates="cours")
-
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"<Cours id={self.id} nom={self.nom!r} ue_id={self.ue_id}>"
-
-
-# ---------------------------------------------------------------------------
 # Chapitre — avec révision espacée (Leitner) + caches IA
 # ---------------------------------------------------------------------------
 class Chapitre(Base):
@@ -301,28 +218,17 @@ class Chapitre(Base):
     pour la révision espacée (algo Leitner), et pour stocker les PDFs
     pédagogiques.
 
-    Refonte bibliothèque — étape 1 :
-      - Ancien rattachement ``cours_id`` rendu nullable (sera supprimé à
-        l'étape 3).
-      - Nouveau rattachement direct ``matiere_id`` vers ``Matiere``.
-      - Nouveau champ ``pdfs`` (liste JSON) qui remplace l'unique
-        ``Cours.pdf_path`` : un chapitre peut désormais avoir plusieurs
-        documents (cours magistral, TD, polycopié…).
+    Rattaché directement à une ``Matiere`` via ``matiere_id``. Porte un
+    champ ``pdfs`` (liste JSON de ``{path, label, uploaded_at}``) qui
+    permet à un chapitre d'avoir plusieurs documents (cours magistral,
+    TD, polycopié…).
     """
 
     __tablename__ = "chapitres"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Ancien rattachement — devient optionnel le temps de la migration
-    # progressive. Sera supprimé à l'étape 3 de la refonte.
-    cours_id = Column(
-        Integer,
-        ForeignKey("cours.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-    # Nouveau rattachement direct à la matière.
+    # Rattachement direct à la matière (refonte bibliothèque).
     matiere_id = Column(
         Integer,
         ForeignKey("matieres.id", ondelete="CASCADE"),
@@ -362,7 +268,6 @@ class Chapitre(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relations
-    cours = relationship("Cours", back_populates="chapitres")
     matiere_obj = relationship("Matiere", back_populates="chapitres")
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -437,9 +342,10 @@ class Tache(Base):
     obligatoire = Column(Boolean, default=False)
     statut = Column(String(20), default="a_faire")
 
-    cours_id = Column(
+    # Rattachement direct à la matière (refonte bibliothèque).
+    matiere_id = Column(
         Integer,
-        ForeignKey("cours.id", ondelete="SET NULL"),
+        ForeignKey("matieres.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -465,7 +371,7 @@ class Tache(Base):
         "Semaine",
         foreign_keys=[reportee_depuis_semaine_id],
     )
-    cours = relationship("Cours", back_populates="taches")
+    matiere_obj = relationship("Matiere", foreign_keys=[matiere_id])
 
     def __repr__(self) -> str:  # pragma: no cover
         return (
@@ -489,7 +395,9 @@ class SaisieHebdo(Base):
         index=True,
     )
 
-    cours_selectionnes = Column(JSON, default=list)
+    # Liste de dicts {matiere_id, chapitre_ids, type_travail, urgence}
+    # (anciennement "cours_selectionnes" — renommé refonte bibliothèque).
+    matieres_selectionnees = Column(JSON, default=list)
     travaux_ponctuels = Column(JSON, default=list)
     sport_config = Column(JSON, default=list)
     courses_config = Column(JSON, default=dict)
@@ -621,7 +529,6 @@ __all__ = [
     "Achievement",
     "UE",
     "Matiere",
-    "Cours",
     "Chapitre",
     "Semaine",
     "Tache",

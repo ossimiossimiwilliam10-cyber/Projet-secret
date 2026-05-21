@@ -22,7 +22,7 @@ from datetime import date
 import streamlit as st
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, Cours
+from database.models import Chapitre, Matiere
 from services import revision_service as rs
 from services.gamification_service import (
     attribuer_xp_quiz,
@@ -50,9 +50,9 @@ def main() -> None:
             if st.button("← Retour"):
                 st.rerun()
             return
-        cours = chap.cours
+        matiere = chap.matiere_obj
         # On lit toutes les infos nécessaires AVANT de fermer la session
-        chap_snapshot = _snapshot_chapitre(chap, cours)
+        chap_snapshot = _snapshot_chapitre(chap, matiere)
 
     _render_back_button()
     _render_header(chap_snapshot)
@@ -72,7 +72,7 @@ def main() -> None:
 # ===========================================================================
 # Helpers de présentation
 # ===========================================================================
-def _snapshot_chapitre(chap: Chapitre, cours: Cours | None) -> dict:
+def _snapshot_chapitre(chap: Chapitre, matiere: Matiere | None) -> dict:
     """Capture toutes les infos d'un chapitre dans un dict — survit à la fermeture de la session."""
     label, color = rs.label_couleur_status(chap)
     return {
@@ -86,8 +86,8 @@ def _snapshot_chapitre(chap: Chapitre, cours: Cours | None) -> dict:
         "notes": chap.notes or "",
         "has_qcm_cache": bool(chap.qcm_cache),
         "has_quiz_cache": bool(chap.quiz_cache),
-        "cours_nom": cours.nom if cours else "(cours inconnu)",
-        "cours_matiere": cours.matiere if cours else "",
+        "matiere_nom": matiere.nom if matiere else "(matière inconnue)",
+        "ue_nom": (matiere.ue.nom if matiere and matiere.ue else ""),
         "status_label": label,
         "status_color": color,
     }
@@ -95,10 +95,10 @@ def _snapshot_chapitre(chap: Chapitre, cours: Cours | None) -> dict:
 
 def _render_header(snap: dict) -> None:
     """Affiche le breadcrumb, le titre et les 4 métriques principales."""
-    breadcrumb = f"🎓 **{snap['cours_nom']}**"
-    if snap["cours_matiere"]:
-        breadcrumb += f" — _{snap['cours_matiere']}_"
-    breadcrumb += f" → 📑 Chapitre {snap['numero']}"
+    breadcrumb = ""
+    if snap["ue_nom"]:
+        breadcrumb += f"🎓 **{snap['ue_nom']}** → "
+    breadcrumb += f"📘 **{snap['matiere_nom']}** → 📑 Chapitre {snap['numero']}"
     st.caption(breadcrumb)
     st.title(f"🧠 {snap['titre']}")
 
@@ -168,7 +168,7 @@ def _render_no_chapter_view() -> None:
                 items.append({
                     "id": chap.id,
                     "titre": chap.titre,
-                    "cours_nom": chap.cours.nom if chap.cours else "?",
+                    "matiere_nom": chap.matiere_obj.nom if chap.matiere_obj else "?",
                     "niveau": chap.niveau_actuel or 0,
                     "label": label,
                     "color": color,
@@ -183,7 +183,7 @@ def _render_no_chapter_view() -> None:
         for it in items:
             with st.container(border=True):
                 c1, c2, c3 = st.columns([4, 2, 1])
-                c1.markdown(f"**{it['titre']}**  \n_{it['cours_nom']}_")
+                c1.markdown(f"**{it['titre']}**  \n_{it['matiere_nom']}_")
                 c2.markdown(
                     f"<div style='color:{it['color']}; padding-top:0.4rem;'>{it['label']} "
                     f"<span style='color:gray;'>· Niv. {it['niveau']}</span></div>",

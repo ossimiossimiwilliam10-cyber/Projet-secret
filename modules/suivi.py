@@ -62,7 +62,7 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> Non
             t.commentaire_etudiant = commentaire
 
         # Bump de maîtrise si tâche d'étude liée à un ou plusieurs chapitres
-        if t.cours_id and t.chapitre_ids and statut in ("fait", "partiellement"):
+        if t.chapitre_ids and statut in ("fait", "partiellement"):
             bump = MAITRISE_BUMP_FAIT if statut == "fait" else MAITRISE_BUMP_PARTIEL
             for ch_id in t.chapitre_ids:
                 ch = s.get(Chapitre, ch_id)

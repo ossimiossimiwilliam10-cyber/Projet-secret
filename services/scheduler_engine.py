@@ -82,7 +82,7 @@ def calculer_quota_etude_minutes(
 # ---------------------------------------------------------------------------
 def repartir_nouveaux_chapitres(
     session: Session,
-    cours_selectionnes: list[dict[str, Any]] | None,
+    matieres_selectionnees: list[dict[str, Any]] | None,
     semaine: Semaine,
 ) -> dict[str, list[dict[str, Any]]]:
     """Répartit les chapitres « nouveaux » (niveau Leitner = 0) sur la
@@ -97,16 +97,16 @@ def repartir_nouveaux_chapitres(
     Returns:
         ``{"lundi": [<chapitre_dict>, ...], "mardi": [...], ...}``
         où ``<chapitre_dict>`` contient
-        ``{chapitre_id, cours_id, matiere, titre, numero, temps_estime_min}``.
+        ``{chapitre_id, matiere_id, matiere, titre, numero, temps_estime_min}``.
     """
     repartition: dict[str, list[dict[str, Any]]] = {j: [] for j in JOURS}
 
-    if not cours_selectionnes:
+    if not matieres_selectionnees:
         return repartition
 
     # Regrouper les chapitres nouveaux par matière (clé d'agrégation).
     par_matiere: dict[str, list[dict[str, Any]]] = {}
-    for c_sel in cours_selectionnes:
+    for c_sel in matieres_selectionnees:
         ch_ids = c_sel.get("chapitre_ids") or []
         if not ch_ids:
             continue
@@ -120,17 +120,10 @@ def repartir_nouveaux_chapitres(
         for ch in chapitres_db:
             if (ch.niveau_actuel or 0) != 0:
                 continue  # déjà vu — c'est une révision, pas un nouveau chap.
-            
-            if ch.matiere_obj:
-                matiere_nom = ch.matiere_obj.nom
-            elif ch.cours:
-                matiere_nom = ch.cours.matiere or ch.cours.nom or "Sans matière"
-            else:
-                matiere_nom = "Sans matière"
 
+            matiere_nom = ch.matiere_obj.nom if ch.matiere_obj else "Sans matière"
             par_matiere.setdefault(matiere_nom, []).append({
                 "chapitre_id": ch.id,
-                "cours_id": ch.cours_id,
                 "matiere_id": ch.matiere_id,
                 "matiere": matiere_nom,
                 "titre": ch.titre,

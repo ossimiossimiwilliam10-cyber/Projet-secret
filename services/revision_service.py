@@ -210,41 +210,32 @@ def chapitres_a_reviser(
 # ===========================================================================
 # 4. Initialisation — pour les chapitres fraîchement créés
 # ===========================================================================
-def initialiser_chapitres_pour_revision(
+def initialiser_chapitre_pour_revision(
     session: Session,
-    cours_id: int,
+    chapitre_id: int,
     delai_initial_jours: int | None = None,
-) -> int:
-    """Pose une date_prochaine pour les chapitres d'un cours qui n'en ont pas.
+) -> bool:
+    """Pose une date_prochaine sur UN chapitre s'il n'en a pas encore.
 
-    À appeler après ``apply_analysis_to_course()`` pour que les nouveaux
-    chapitres apparaissent immédiatement dans la file de révision.
-
-    Args:
-        cours_id: id du cours dont on initialise les chapitres.
-        delai_initial_jours: nombre de jours avant la 1ʳᵉ révision. Si None,
-            utilise ``INTERVALLES_J[0]`` (= 1 jour).
+    Utilisée par ``modules/bibliotheque._process_import_unifie`` après la
+    création d'un chapitre via ``apply_analysis_to_matiere``. Équivalent
+    Utilisée par l'import unifié de la bibliothèque, après création
+    individuelle d'un chapitre via ``apply_analysis_to_matiere``.
 
     Returns:
-        Le nombre de chapitres mis à jour.
+        ``True`` si le chapitre a reçu une date_prochaine, ``False`` s'il
+        en avait déjà une (ou s'il n'existe pas).
     """
     if delai_initial_jours is None:
         delai_initial_jours = INTERVALLES_J[0]
 
-    chapitres = (
-        session.query(Chapitre)
-        .filter(
-            Chapitre.cours_id == cours_id,
-            Chapitre.date_prochaine.is_(None),
-        )
-        .all()
-    )
+    chap = session.get(Chapitre, chapitre_id)
+    if chap is None or chap.date_prochaine is not None:
+        return False
 
-    target = date.today() + timedelta(days=delai_initial_jours)
-    for c in chapitres:
-        c.niveau_actuel = int(c.niveau_actuel or 0)
-        c.date_prochaine = target
-    return len(chapitres)
+    chap.niveau_actuel = int(chap.niveau_actuel or 0)
+    chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
+    return True
 
 
 # ===========================================================================
@@ -273,47 +264,28 @@ def get_or_extract_chapter_text(session: Session, chapitre_id: int) -> str:
     if chap.texte_cache:
         return chap.texte_cache
 
-    cours = chap.cours
-    if not cours or not cours.pdf_path:
-        raise ValueError("Aucun PDF associé à ce chapitre (cours sans pdf_path).")
+    # Refonte : un chapitre peut avoir 1 à N PDFs dans chap.pdfs.
+    # On prend le premier pour l'extraction de texte (cas dominant).
+    pdfs_list = list(chap.pdfs or [])
+    if not pdfs_list:
+        raise ValueError(
+            f"Aucun PDF associé au chapitre #{chap.id} ({chap.titre!r})."
+        )
 
-    # Résolution du chemin : peut être absolu OU relatif au projet
-    pdf_path = Path(cours.pdf_path)
+    pdf_path = Path(pdfs_list[0].get("path", ""))
     if not pdf_path.is_absolute():
         pdf_path = BASE_DIR / pdf_path
     if not pdf_path.exists():
-        # Fallback : data/pdfs/{cours_id}.pdf (convention de la bibliothèque)
-        from database.db import PDF_DIR
-        fallback = PDF_DIR / f"{cours.id}.pdf"
-        if fallback.exists():
-            pdf_path = fallback
-        else:
-            raise FileNotFoundError(
-                f"PDF introuvable : ni {cours.pdf_path}, ni {fallback}"
-            )
+        raise FileNotFoundError(f"PDF introuvable sur disque : {pdf_path}")
 
     try:
         import pdfplumber  # type: ignore
     except ImportError as exc:
         raise RuntimeError("`pdfplumber` non installé.") from exc
 
-    # Détermine la plage de pages depuis l'analyse IA, si disponible
-    pages_str = ""
-    if cours.pdf_analyse:
-        analyses_chap = cours.pdf_analyse.get("chapitres") or []
-        # Match par numéro (méthode robuste)
-        match_obj = next(
-            (a for a in analyses_chap if a.get("numero") == chap.numero), None,
-        )
-        # Sinon match par titre approximatif
-        if match_obj is None and chap.titre:
-            match_obj = next(
-                (a for a in analyses_chap
-                 if a.get("titre", "").strip().lower() == chap.titre.strip().lower()),
-                None,
-            )
-        if match_obj:
-            pages_str = str(match_obj.get("pages") or "")
+    # Plage de pages optionnellement stockée dans pdfs[0]["pages"] (ex. "12-25").
+    # Si absente, on extrait tout le PDF (le cache_truncate plafonne la taille).
+    pages_str = str(pdfs_list[0].get("pages") or "")
 
     # Extraction
     with pdfplumber.open(str(pdf_path)) as pdf:
@@ -420,8 +392,7 @@ def generer_fiche_ia(
         return chap.fiche_ia
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -508,8 +479,7 @@ def generer_qcm(
         return list(chap.qcm_cache)
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -595,8 +565,7 @@ def generer_quiz_ouvert(
         return list(chap.quiz_cache)
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -674,8 +643,7 @@ def evaluer_quiz_ouvert(
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -798,7 +766,7 @@ __all__ = [
     "appliquer_resultat_quiz",
     "label_couleur_status",
     "chapitres_a_reviser",
-    "initialiser_chapitres_pour_revision",
+    "initialiser_chapitre_pour_revision",
     "get_or_extract_chapter_text",
     "generer_fiche_ia",
     "generer_qcm",
