@@ -22,6 +22,59 @@ from database.models import SaisieHebdo, Semaine
 PRIORITES = ["Basse", "Moyenne", "Haute"]
 TYPES_PROJET = ["Scolaire (Devoir/Projet)", "Personnel", "Administratif", "Autre"]
 
+# Mapping des types techniques venant du report_service (tâches reportées
+# de la semaine précédente) vers les libellés affichables de TYPES_PROJET.
+_TYPE_ORIGINAL_TO_PROJET: dict[str, str] = {
+    "etude":      "Scolaire (Devoir/Projet)",
+    "projet":     "Scolaire (Devoir/Projet)",
+    "intendance": "Administratif",
+    "dev_perso":  "Personnel",
+    "social":     "Personnel",
+    "sport":      "Personnel",
+}
+
+
+def _normaliser_item(item: dict) -> dict:
+    """Normalise un item de ``projets_config`` au schéma attendu par le
+    data_editor : ``{titre, type, duree_min, priorite, echeance}``.
+
+    Tolère les items reportés par ``services.report_service`` qui ont une
+    structure différente (clés ``type_original``,
+    ``reportee_depuis_semaine_id``, etc.). Sans cette normalisation, le
+    DataFrame mélange des colonnes incompatibles avec la column_config et
+    le SelectboxColumn affiche du vide pour les valeurs hors enum.
+    """
+    titre = (item.get("titre") or item.get("libelle") or "").strip()
+
+    # Si c'est un item reporté, on dérive le type depuis type_original.
+    if "type_original" in item and "type" not in item:
+        type_label = _TYPE_ORIGINAL_TO_PROJET.get(
+            str(item.get("type_original") or "").lower(),
+            TYPES_PROJET[0],
+        )
+    else:
+        type_label = item.get("type") or TYPES_PROJET[0]
+        if type_label not in TYPES_PROJET:
+            type_label = TYPES_PROJET[0]
+
+    priorite = item.get("priorite") or "Moyenne"
+    if priorite not in PRIORITES:
+        priorite = "Moyenne"
+
+    # Si l'item provient d'un report, on l'indique dans l'échéance.
+    if item.get("reportee_depuis_semaine_id"):
+        echeance = item.get("echeance") or "🔁 Reportée de la semaine précédente"
+    else:
+        echeance = item.get("echeance") or "Peu importe"
+
+    return {
+        "titre": titre,
+        "type": type_label,
+        "duree_min": int(item.get("duree_min") or 60),
+        "priorite": priorite,
+        "echeance": str(echeance),
+    }
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -47,25 +100,27 @@ def render() -> None:
             st.warning("⚠️ Ouvre d'abord l'onglet 'Études' pour initialiser la semaine en cours.")
             return
 
-        # Récupération de la configuration existante
+        # Récupération de la configuration existante + normalisation
+        # tolérante (items hétérogènes : natifs vs reportés du report_service).
         config_db = saisie.projets_config or []
-        
-        # Éditeur de projets
-        df_projets = pd.DataFrame(config_db)
-        if df_projets.empty:
-            df_projets = pd.DataFrame([{
-                "titre": "", 
-                "type": TYPES_PROJET[0],
-                "duree_min": 60, 
-                "priorite": "Moyenne",
-                "echeance": "Peu importe"
-            }])
+        items_normalises = [_normaliser_item(it) for it in config_db if isinstance(it, dict)]
+
+        if items_normalises:
+            df_projets = pd.DataFrame(items_normalises)
         else:
-            # Migration à la volée
-            if "priorite" not in df_projets.columns:
-                df_projets["priorite"] = "Moyenne"
-            if "type" not in df_projets.columns:
-                df_projets["type"] = "Personnel"
+            df_projets = pd.DataFrame([{
+                "titre": "",
+                "type": TYPES_PROJET[0],
+                "duree_min": 60,
+                "priorite": "Moyenne",
+                "echeance": "Peu importe",
+            }])
+
+        # Ne garder que les colonnes attendues, dans l'ordre attendu.
+        # (Sécurité contre les clés résiduelles si _normaliser_item a un trou.)
+        df_projets = df_projets.reindex(
+            columns=["titre", "type", "duree_min", "priorite", "echeance"]
+        )
 
         st.subheader("Liste de tes projets de la semaine")
         edited_projets = st.data_editor(

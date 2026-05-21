@@ -404,7 +404,10 @@ class SaisieHebdo(Base):
     courses_config = Column(JSON, default=dict)
     projets_config = Column(JSON, default=list)
     dev_perso_config = Column(JSON, default=list)
-    social_config = Column(JSON, default=dict)
+    # Liste de dicts {activite, type, duree_min, jour_pref, creneau_pref} —
+    # le code modules/hebdo/social.py traite cette colonne comme une liste
+    # (data_editor), pas comme un dict. Cohérent avec sport_config/projets_config.
+    social_config = Column(JSON, default=list)
     intendance_config = Column(JSON, default=list)
     ajustements = Column(JSON, default=dict)
 
