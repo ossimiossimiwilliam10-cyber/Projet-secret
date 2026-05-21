@@ -132,6 +132,7 @@ _EXPECTED_COLUMNS = {
         "derniere_activite_xp":     "DATE",
         "nb_quiz_total":            "INTEGER DEFAULT 0",
         "nb_chapitres_maitrise":    "INTEGER DEFAULT 0",
+        "nb_seances_sport_total":   "INTEGER DEFAULT 0",
         "replanning_auto_actif":    "BOOLEAN DEFAULT 1",
     },
     # `ues`, `matieres`, `achievements`, `objectifs` et `jobs` sont ENTIÈREMENT
