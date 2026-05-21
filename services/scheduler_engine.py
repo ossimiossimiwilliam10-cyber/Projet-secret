@@ -107,11 +107,6 @@ def repartir_nouveaux_chapitres(
     # Regrouper les chapitres nouveaux par matière (clé d'agrégation).
     par_matiere: dict[str, list[dict[str, Any]]] = {}
     for c_sel in cours_selectionnes:
-        cours_id = c_sel.get("cours_id")
-        cours_db = session.get(Cours, cours_id) if cours_id else None
-        if cours_db is None:
-            continue
-
         ch_ids = c_sel.get("chapitre_ids") or []
         if not ch_ids:
             continue
@@ -121,15 +116,23 @@ def repartir_nouveaux_chapitres(
             .filter(Chapitre.id.in_(ch_ids))
             .all()
         )
-        matiere = cours_db.matiere or cours_db.nom or "Sans matière"
 
         for ch in chapitres_db:
             if (ch.niveau_actuel or 0) != 0:
                 continue  # déjà vu — c'est une révision, pas un nouveau chap.
-            par_matiere.setdefault(matiere, []).append({
+            
+            if ch.matiere_obj:
+                matiere_nom = ch.matiere_obj.nom
+            elif ch.cours:
+                matiere_nom = ch.cours.matiere or ch.cours.nom or "Sans matière"
+            else:
+                matiere_nom = "Sans matière"
+
+            par_matiere.setdefault(matiere_nom, []).append({
                 "chapitre_id": ch.id,
-                "cours_id": cours_db.id,
-                "matiere": matiere,
+                "cours_id": ch.cours_id,
+                "matiere_id": ch.matiere_id,
+                "matiere": matiere_nom,
                 "titre": ch.titre,
                 "numero": ch.numero,
                 "temps_estime_min": int(round((ch.temps_estime_h or 1.0) * 60)),
@@ -178,7 +181,7 @@ def lisser_revisions_leitner(
     Args:
         chapitres_dus: liste fournie par
             ``ai_planner._get_chapitres_dus_pour_semaine`` (dicts contenant
-            au moins ``chapitre_id``, ``cours``, ``titre``, ``date_due``).
+            au moins ``chapitre_id``, ``matiere``, ``titre``, ``date_due``).
         semaine: pour convertir ``date_due`` en index de jour.
         quota_par_jour_min: charge d'étude max autorisée par jour.
         charges_etude_existantes: minutes d'étude déjà allouées par jour
@@ -191,7 +194,7 @@ def lisser_revisions_leitner(
             des révisions.
 
     Chaque revision porte :
-        ``{chapitre_id, cours, titre, duree_estimee_min, jour_initial_cible,
+        ``{chapitre_id, matiere, titre, duree_estimee_min, jour_initial_cible,
            decale (bool), surcharge (bool)}``.
     """
     repartition: dict[str, list[dict[str, Any]]] = {j: [] for j in JOURS}
@@ -211,7 +214,7 @@ def lisser_revisions_leitner(
 
         revision: dict[str, Any] = {
             "chapitre_id": chap.get("chapitre_id"),
-            "cours": chap.get("cours"),
+            "matiere": chap.get("matiere") or chap.get("cours"),
             "titre": chap.get("titre"),
             "duree_estimee_min": DUREE_REVISION_MIN,
             "jour_initial_cible": jour_cible,

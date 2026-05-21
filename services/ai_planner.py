@@ -55,7 +55,7 @@ def _get_chapitres_dus_pour_semaine(session: Session, semaine: Semaine) -> list[
 
     Returns:
         Liste de dicts décrivant chaque chapitre dû, formatée pour le prompt :
-        ``[{"chapitre_id", "cours", "titre", "niveau_leitner", "date_due", "etat"}, ...]``
+        ``[{"chapitre_id", "matiere", "titre", "niveau_leitner", "date_due", "etat"}, ...]``
     """
     # Import local : évite tout risque de cycle d'import au démarrage
     from services.revision_service import chapitres_a_reviser, MAX_NIVEAU
@@ -77,9 +77,16 @@ def _get_chapitres_dus_pour_semaine(session: Session, semaine: Semaine) -> list[
         else:
             etat = f"⏰ à réviser dans {delta} jour(s)"
 
+        if chap.matiere_obj:
+            matiere_nom = chap.matiere_obj.nom
+        elif chap.cours:
+            matiere_nom = chap.cours.matiere or chap.cours.nom
+        else:
+            matiere_nom = "?"
+
         items.append({
             "chapitre_id": chap.id,
-            "cours": chap.cours.nom if chap.cours else "?",
+            "matiere": matiere_nom,
             "titre": chap.titre,
             "niveau_leitner": f"{chap.niveau_actuel or 0}/{MAX_NIVEAU}",
             "date_due": chap.date_prochaine.isoformat(),
@@ -108,9 +115,17 @@ def _get_ponderations_objectifs(session: Session) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for chap in chapitres:
         coef = pond_dict.get(chap.id, 1.0)
+        
+        if chap.matiere_obj:
+            matiere_nom = chap.matiere_obj.nom
+        elif chap.cours:
+            matiere_nom = chap.cours.matiere or chap.cours.nom
+        else:
+            matiere_nom = "?"
+
         items.append({
             "chapitre_id": chap.id,
-            "cours": chap.cours.nom if chap.cours else "?",
+            "matiere": matiere_nom,
             "titre": chap.titre,
             "coefficient_priorite": round(coef, 2),
             "maitrise_actuelle_pct": float(chap.maitrise_pct or 0.0),
