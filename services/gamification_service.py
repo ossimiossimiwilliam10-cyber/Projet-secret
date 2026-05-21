@@ -546,6 +546,18 @@ def attribuer_xp_sport(
     return _appliquer_gain(session, profil, xp, raison, "sport_fait", {"intensite": intensite})
 
 
+def attribuer_xp_intendance_alimentaire(
+    session: Session,
+    profil: Profil,
+    type_tache: str,  # "courses" | "meal_prep"
+    titre: str = "",
+) -> GainXP:
+    """À appeler quand les courses ou le meal prep sont terminés."""
+    xp = XP_COURSES_FAITES if type_tache == "courses" else XP_MEAL_PREP_FAIT
+    raison = f"Intendance : {titre[:30]}" if titre else f"Intendance ({type_tache})"
+    return _appliquer_gain(session, profil, xp, raison, f"{type_tache}_fait", {})
+
+
 # ===========================================================================
 # Helper : récupère ou crée le profil singleton
 # ===========================================================================
@@ -579,6 +591,7 @@ __all__ = [
     "attribuer_xp_promotion_leitner",
     "attribuer_xp_tache",
     "attribuer_xp_sport",
+    "attribuer_xp_intendance_alimentaire",
     "check_nouveaux_achievements",
     # Helper
     "get_or_create_profil",

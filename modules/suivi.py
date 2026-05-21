@@ -72,6 +72,8 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
                 if "Intense" in t.justification_ia or "🔴" in t.justification_ia:
                     intensite = "Intense"
                 gain = gamification_service.attribuer_xp_sport(s, profil, intensite=intensite, titre=t.titre)
+            elif t.type in ("courses", "meal_prep"):
+                gain = gamification_service.attribuer_xp_intendance_alimentaire(s, profil, type_tache=t.type, titre=t.titre)
             else:
                 gain = gamification_service.attribuer_xp_tache(s, profil, duree_min=t.duree_min or 30, obligatoire=t.obligatoire, titre=t.titre)
 

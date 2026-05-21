@@ -248,9 +248,11 @@ DATES : Semaine du {semaine.date_debut} au {semaine.date_fin}.
 Règles non-négociables. Ne JAMAIS les violer.
 
 - SOMMEIL : lever {_format_time(profil.heure_lever)}, coucher {_format_time(profil.heure_coucher)}. Cible {profil.heures_sommeil_cible} h/nuit.
-- REPAS : {profil.nb_repas_par_jour} repas/jour ({profil.duree_repas_min} min chacun, prep {profil.duree_prep_repas_min} min).
+- REPAS : {profil.nb_repas_par_jour} repas/jour ({profil.duree_repas_min} min chacun, prep {profil.duree_prep_repas_min if not (saisie.courses_config or {}).get("meal_prep") else 10} min).
 - SIESTE : {"Oui (" + str(profil.duree_sieste_min) + " min)" if profil.besoin_sieste else "Non"}.
-- OBLIGATOIRE : repas, sommeil, contraintes fixes, sport, transport, jobs ont {{"obligatoire": true}}. Le reste a {{"obligatoire": false}}.
+- OBLIGATOIRE : repas, sommeil, contraintes fixes, sport, transport, jobs ont {"obligatoire": true}. Le reste a {"obligatoire": false}.
+- MEAL PREP : Si {"meal_prep": true} dans Courses, la préparation quotidienne des repas est réduite à 10 min.
+- MENU : Si un "menu_hebdo" est présent, mentionne-le brièvement dans les suggestions.
 
 Contraintes fixes absolues (placer aux heures exactes indiquées) :
 {_safe_json_str(contraintes_totales)}
