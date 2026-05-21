@@ -94,6 +94,7 @@ class Profil(Base):
     derniere_activite_xp = Column(Date, nullable=True)    # dernière date où XP gagnés (pour streak)
     nb_quiz_total = Column(Integer, default=0)            # cumul quiz faits
     nb_chapitres_maitrise = Column(Integer, default=0)    # cumul chap au niveau max
+    nb_seances_sport_total = Column(Integer, default=0)   # cumul séances de sport faites
     replanning_auto_actif = Column(Boolean, default=True) # A1 : auto-replanning ?
 
     # --- Horodatages -------------------------------------------------------

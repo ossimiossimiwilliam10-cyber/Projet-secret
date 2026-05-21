@@ -21,8 +21,9 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, Semaine, Tache
+from database.models import Chapitre, Profil, Semaine, Tache
 from services.ai_planner import replan_remaining_week
+from services import gamification_service
 
 
 # ---------------------------------------------------------------------------
@@ -50,24 +51,38 @@ def _jour_from_date(d: datetime.date) -> str:
     return JOURS[d.weekday()]
 
 
-def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> None:
-    """Met à jour le statut d'une tâche et bumpe la maîtrise des chapitres
-    associés si pertinent."""
+def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gamification_service.GainXP | None:
+    """Met à jour le statut d'une tâche et bumpe la maîtrise / XP."""
+    gain = None
     with session_scope() as s:
         t = s.get(Tache, task_id)
         if t is None:
-            return
+            return None
         t.statut = statut
         if commentaire:
             t.commentaire_etudiant = commentaire
 
-        # Bump de maîtrise si tâche d'étude liée à un ou plusieurs chapitres
+        profil = gamification_service.get_or_create_profil(s)
+
+        # 1. Gain d'XP
+        if statut == "fait":
+            if t.type == "sport":
+                # Pour le sport, on essaie de retrouver l'intensité dans le titre ou la justification
+                intensite = "Modérée"
+                if "Intense" in t.justification_ia or "🔴" in t.justification_ia:
+                    intensite = "Intense"
+                gain = gamification_service.attribuer_xp_sport(s, profil, intensite=intensite, titre=t.titre)
+            else:
+                gain = gamification_service.attribuer_xp_tache(s, profil, duree_min=t.duree_min or 30, obligatoire=t.obligatoire, titre=t.titre)
+
+        # 2. Bump de maîtrise si tâche d'étude liée à un ou plusieurs chapitres
         if t.chapitre_ids and statut in ("fait", "partiellement"):
             bump = MAITRISE_BUMP_FAIT if statut == "fait" else MAITRISE_BUMP_PARTIEL
             for ch_id in t.chapitre_ids:
                 ch = s.get(Chapitre, ch_id)
                 if ch and (ch.maitrise_pct or 0) < 100:
                     ch.maitrise_pct = min(100, int(ch.maitrise_pct or 0) + bump)
+    return gain
 
 
 def _compute_completion_score(tasks: list[Tache]) -> float:
@@ -200,14 +215,23 @@ def _render_task_row(t: Tache) -> None:
             st.markdown(f":{color}[{emoji} {label}]")
 
         # Boutons : pas affichés pour les tâches obligatoires (immutables)
-        if t.obligatoire:
+        # SAUF pour le sport qui peut être validé pour l'XP
+        if t.obligatoire and t.type != "sport":
             return
 
         col_a, col_b, col_c, col_d = st.columns(4)
         with col_a:
             if st.button("✅ Terminée", key=f"fait_{t.id}", width="stretch"):
-                _update_task_status(t.id, "fait")
-                st.toast("Tâche terminée", icon="✅")
+                gain = _update_task_status(t.id, "fait")
+                if gain:
+                    st.success(f"✨ **+{gain.xp_gagne} XP** : {gain.raison}")
+                    if gain.level_up:
+                        st.balloons()
+                        st.info(f"🎊 NIVEAU SUPÉRIEUR ! Tu es maintenant niveau **{gain.niveau_apres}**")
+                    for ach in gain.nouveaux_achievements:
+                        st.toast(f"🏆 Badge débloqué : {ach.nom}", icon=ach.icone)
+                else:
+                    st.toast("Tâche terminée", icon="✅")
                 st.rerun()
         with col_b:
             if st.button("⚠️ Partielle", key=f"partiel_{t.id}", width="stretch"):

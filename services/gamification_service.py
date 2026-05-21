@@ -35,6 +35,10 @@ XP_QUIZ_BASE: int = 10                  # base, même pour score raté
 XP_QUIZ_REUSSI_BONUS: int = 20          # score ≥ 0.7
 XP_QUIZ_BRILLANT_BONUS: int = 30        # score ≥ 0.9 (cumulé avec REUSSI)
 
+# Sport
+XP_SPORT_BASE: int = 40                 # XP de base pour une séance
+XP_SPORT_INTENSE_BONUS: int = 20        # Bonus pour séance intense
+
 # Promotion Leitner
 XP_NIVEAU_LEITNER_UP: int = 30          # chaque +1 niveau Leitner
 XP_CHAPITRE_MAITRISE: int = 200         # quand chapitre atteint niveau max
@@ -107,6 +111,12 @@ def _check_nb_quiz(seuil: int):
 def _check_xp(seuil: int):
     def _f(profil: Profil, event_type: str, data: dict) -> bool:
         return profil.xp >= seuil
+    return _f
+
+
+def _check_nb_sport(seuil: int):
+    def _f(profil: Profil, event_type: str, data: dict) -> bool:
+        return (profil.nb_seances_sport_total or 0) >= seuil
     return _f
 
 
@@ -210,6 +220,22 @@ ACHIEVEMENTS: list[AchievementDef] = [
         code="xp_50k", icone="🌌", nom="Légende vivante",
         description="50 000 XP cumulés.",
         rarete="legendaire", check=_check_xp(50_000),
+    ),
+    # === Sport ===
+    AchievementDef(
+        code="first_sport", icone="🏋️‍♀️", nom="Mens sana in corpore sano",
+        description="Première séance de sport enregistrée.",
+        rarete="commun", check=_check_nb_sport(1),
+    ),
+    AchievementDef(
+        code="sport_10", icone="🏃‍♂️", nom="Athlète en herbe",
+        description="10 séances de sport complétées.",
+        rarete="peu_commun", check=_check_nb_sport(10),
+    ),
+    AchievementDef(
+        code="sport_50", icone="🏆", nom="Guerrier",
+        description="50 séances de sport. La discipline est ton alliée.",
+        rarete="rare", check=_check_nb_sport(50),
     ),
 ]
 
@@ -503,6 +529,23 @@ def attribuer_xp_tache(
     return _appliquer_gain(session, profil, xp, raison, "tache_faite", {"duree_min": duree_min})
 
 
+def attribuer_xp_sport(
+    session: Session,
+    profil: Profil,
+    intensite: str = "",
+    titre: str = "",
+) -> GainXP:
+    """À appeler quand une séance de sport est marquée terminée."""
+    profil.nb_seances_sport_total = (profil.nb_seances_sport_total or 0) + 1
+    
+    xp = XP_SPORT_BASE
+    if "Intense" in intensite:
+        xp += XP_SPORT_INTENSE_BONUS
+    
+    raison = f"Séance de sport : {titre[:30]}" if titre else "Séance de sport"
+    return _appliquer_gain(session, profil, xp, raison, "sport_fait", {"intensite": intensite})
+
+
 # ===========================================================================
 # Helper : récupère ou crée le profil singleton
 # ===========================================================================
@@ -535,6 +578,7 @@ __all__ = [
     "attribuer_xp_quiz",
     "attribuer_xp_promotion_leitner",
     "attribuer_xp_tache",
+    "attribuer_xp_sport",
     "check_nouveaux_achievements",
     # Helper
     "get_or_create_profil",
