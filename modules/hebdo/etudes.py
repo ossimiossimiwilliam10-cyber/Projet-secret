@@ -159,8 +159,19 @@ def render() -> None:
         nouvelles_matieres_selectionnees: list[dict[str, Any]] = []
 
         # --- 2. Détail par matière choisie ---
-        if matieres_choisies:
-            for matiere in matieres_choisies:
+        # Dédoublonnage défensif : Streamlit ne devrait pas retourner deux fois
+        # la même matière, mais un état corrompu (saisie historique avec doublon)
+        # rendrait toutes les clés `ch_{matiere.id}` / `type_{matiere.id}` etc.
+        # en collision. Mieux vaut blinder.
+        matieres_choisies_uniques: list[Matiere] = []
+        _seen_ids: set[int] = set()
+        for _m in matieres_choisies:
+            if _m.id not in _seen_ids:
+                _seen_ids.add(_m.id)
+                matieres_choisies_uniques.append(_m)
+
+        if matieres_choisies_uniques:
+            for matiere in matieres_choisies_uniques:
                 config_existante = next(
                     (m for m in matieres_selectionnees_db
                      if m.get("matiere_id") == matiere.id),
@@ -202,15 +213,19 @@ def render() -> None:
                     )
 
                     # Lien direct vers la salle d'étude pour chaque chapitre coché.
+                    # On dédoublonne défensivement et on préfixe la clé par
+                    # matiere.id pour éviter toute collision Streamlit si un
+                    # chapitre est cité deux fois (état corrompu, rerun, etc.).
                     if chapitres_choisis:
                         st.caption("🧠 Ouvrir un chapitre dans la salle d'étude :")
-                        cols = st.columns(min(len(chapitres_choisis), 4) or 1)
-                        for idx, ch_id in enumerate(chapitres_choisis):
+                        ids_uniques = list(dict.fromkeys(chapitres_choisis))
+                        cols = st.columns(min(len(ids_uniques), 4) or 1)
+                        for idx, ch_id in enumerate(ids_uniques):
                             with cols[idx % len(cols)]:
                                 ch = chap_by_id[ch_id]
                                 if st.button(
                                     f"🧠 Ch. {ch.numero}",
-                                    key=f"goto_chap_{ch.id}",
+                                    key=f"goto_chap_m{matiere.id}_c{ch.id}",
                                     help=ch.titre,
                                 ):
                                     _open_chapitre_in_session_etude(ch.id)
