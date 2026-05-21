@@ -653,9 +653,22 @@ def _render_form_ajout() -> None:
                     with session_scope() as session:
                         apply_analysis_to_course(session, cours_id, analyse)
                         session.flush()  # rend les chapitres visibles à la query suivante
+                        
+                        # Phase 3 : bascule vers la Matière et ajout du PDF au chapitre
+                        cours_db = session.get(Cours, cours_id)
+                        if cours_db:
+                            pdf_info = {
+                                "path": cours_db.pdf_path,
+                                "label": "Document source",
+                                "uploaded_at": datetime.datetime.now().isoformat()
+                            }
+                            for ch in cours_db.chapitres:
+                                ch.matiere_id = matiere_id_choisi
+                                ch.pdfs = [pdf_info]
+                                
                         n_init = initialiser_chapitres_pour_revision(session, cours_id)
                     st.toast(
-                        f"Cours '{nom}' ajouté — {n_init} chapitres en file de révision ✅",
+                        f"Cours '{nom}' ajouté — {n_init} chapitres rattachés à la matière ✅",
                         icon="✅",
                     )
                     st.rerun()
@@ -751,6 +764,19 @@ def _process_batch_import(
             with session_scope() as session:
                 apply_analysis_to_course(session, cours_id, analyse)
                 session.flush()
+                
+                # Phase 3 : bascule vers la Matière et ajout du PDF au chapitre
+                cours_db = session.get(Cours, cours_id)
+                if cours_db:
+                    pdf_info = {
+                        "path": cours_db.pdf_path,
+                        "label": "Document source",
+                        "uploaded_at": datetime.datetime.now().isoformat()
+                    }
+                    for ch in cours_db.chapitres:
+                        ch.matiere_id = matiere_id_commune
+                        ch.pdfs = [pdf_info]
+                        
                 initialiser_chapitres_pour_revision(session, cours_id)
 
             success += 1
@@ -906,331 +932,145 @@ def _render_batch_import() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Carte d'un cours (inchangé, juste raccourci par rapport au précédent)
+# Carte d'un Chapitre (Nouvelle UI centré Chapitre)
 # ---------------------------------------------------------------------------
-def _render_carte_cours(cours: Cours, session: Session) -> None:
-    """Affiche la carte détaillée d'un cours."""
-    nb_chapitres = len(cours.chapitres)
-    maitrise_globale = (
-        sum(c.maitrise_pct for c in cours.chapitres) / nb_chapitres
-        if nb_chapitres > 0 else 0
-    )
+def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
+    """Affiche la carte détaillée d'un chapitre (remplace la carte cours)."""
+    maitrise = chap.maitrise_pct or 0.0
+    alerte = False
+    
+    # On détermine si on doit afficher une alerte basée sur la révision
+    label_rev, color_rev = label_couleur_status(chap)
+    if chap.date_prochaine:
+        delta = (chap.date_prochaine - datetime.date.today()).days
+        if delta <= 0 and maitrise < 50:
+            alerte = True
 
-    alerte_exam = False
-    jours_restants_str = "Pas de date"
-    if cours.date_examen:
-        jours_restants = (cours.date_examen - datetime.date.today()).days
-        if jours_restants < 0:
-            jours_restants_str = "Passé"
-        elif jours_restants == 0:
-            jours_restants_str = "Aujourd'hui"
-        else:
-            jours_restants_str = f"Dans {jours_restants} j."
-            if jours_restants <= 15 and maitrise_globale < 50:
-                alerte_exam = True
+    # Header du chapitre
+    titre_expander = f"📑 Ch. {chap.numero} : {chap.titre}"
+    titre_expander += f" — Maîtrise : {int(maitrise)}%"
 
-    titre_expander = f"📚 {cours.nom}"
-    if cours.matiere:
-        titre_expander += f" | {cours.matiere}"
-    titre_expander += f" — Maîtrise : {int(maitrise_globale)}%"
-
-    with st.expander(titre_expander, expanded=alerte_exam):
-        if alerte_exam:
+    with st.expander(titre_expander, expanded=alerte):
+        if alerte:
             st.error(
-                f"⚠️ **Alerte :** Examen {jours_restants_str.lower()} et maîtrise "
-                f"globale faible ({int(maitrise_globale)}%). Prévoyez des sessions "
-                f"de révision intensives."
+                f"⚠️ **Alerte :** Révision en retard et maîtrise "
+                f"faible ({int(maitrise)}%)."
             )
 
+        # Ligne 1 : Progression & Info IA
         col_prog, col_meta = st.columns([3, 1])
         with col_prog:
             st.progress(
-                int(maitrise_globale) / 100.0,
-                text=f"Progression globale : {int(maitrise_globale)}%",
+                int(maitrise) / 100.0,
+                text=f"Maîtrise actuelle : {int(maitrise)}%",
             )
         with col_meta:
-            st.caption(f"🎯 Exam : {jours_restants_str}")
-            st.caption(f"⏱️ IA : ~{cours.temps_total_estime_h}h de travail")
-
-        if cours.pdf_analyse:
-            st.info(
-                f"**Résumé IA :** "
-                f"{cours.pdf_analyse.get('resume_100_mots', 'Non disponible')}"
-            )
-            st.success(
-                f"**Conseil de méthode :** "
-                f"{cours.pdf_analyse.get('conseils_methode', 'Non disponible')}"
-            )
-
-        if not cours.chapitres:
-            st.info("Aucun chapitre détecté pour ce cours.")
-            col_save, col_del = st.columns([4, 1])
-            with col_del:
-                if st.button("🗑️ Supprimer", type="secondary", key=f"del_empty_{cours.id}"):
-                    _delete_cours(cours.id)
-                    st.toast("Cours supprimé.", icon="🗑️")
-                    st.rerun()
-            return
-
-        st.markdown("##### Chapitres & Progression")
-        df_chapitres = pd.DataFrame([
-            {
-                "id": ch.id,
-                "Numéro": ch.numero,
-                "Titre": ch.titre,
-                "Niveau": ch.niveau_actuel or 0,
-                "Prochaine révision": ch.date_prochaine,
-                "Maîtrise (%)": ch.maitrise_pct,
-                "Prochaine étape": ch.type_travail_restant,
-                "Densité": (
-                    cours.pdf_analyse.get("chapitres", [])[i].get("densite", 3)
-                    if cours.pdf_analyse
-                    and i < len(cours.pdf_analyse.get("chapitres", []))
-                    else 3
-                ),
-                "Temps estimé (h)": ch.temps_estime_h,
-            }
-            for i, ch in enumerate(cours.chapitres)
-        ])
-
-        edited_df = st.data_editor(
-            df_chapitres,
-            hide_index=True,
-            width='stretch',
-            disabled=["id", "Numéro", "Titre", "Niveau", "Prochaine révision",
-                      "Densité", "Temps estimé (h)"],
-            column_config={
-                "id": None,
-                "Numéro": st.column_config.NumberColumn(width="small"),
-                "Niveau": st.column_config.NumberColumn(
-                    width="small",
-                    help=f"Niveau Leitner (0 à {MAX_NIVEAU})",
-                    format=f"%d/{MAX_NIVEAU}",
-                ),
-                "Prochaine révision": st.column_config.DateColumn(
-                    width="small",
-                    format="DD/MM/YYYY",
-                    help="Date où ce chapitre doit être revu (algo Leitner)",
-                ),
-                "Maîtrise (%)": st.column_config.ProgressColumn(
-                    min_value=0, max_value=100, format="%d%%",
-                ),
-                "Prochaine étape": st.column_config.SelectboxColumn(
-                    options=TYPES_TRAVAIL,
-                ),
-            },
-            key=f"editor_cours_{cours.id}",
-        )
-
-        col_save, col_edit, col_del, col_ue = st.columns([3, 1.5, 1, 2])
-        with col_save:
-            if st.button("💾 Enregistrer la progression", key=f"save_{cours.id}"):
-                try:
-                    for _, row in edited_df.iterrows():
-                        ch_db = next(
-                            (c for c in cours.chapitres if c.id == row["id"]), None,
-                        )
-                        if ch_db:
-                            ch_db.maitrise_pct = int(row["Maîtrise (%)"])
-                            ch_db.type_travail_restant = str(row["Prochaine étape"])
-                    session.commit()
-                    st.toast("Progression mise à jour !", icon="✅")
-                    st.rerun()
-                except Exception as e:
-                    session.rollback()
-                    st.error(f"Erreur lors de la sauvegarde : {e}")
-        with col_edit:
-            if st.button("✏️ Modifier les méta", key=f"edit_cours_{cours.id}"):
-                st.session_state["editing_cours"] = cours.id
-                st.rerun()
-        with col_del:
-            if st.button("🗑️ Supprimer", type="secondary", key=f"del_{cours.id}"):
-                _delete_cours(cours.id)
-                st.toast("Cours supprimé.", icon="🗑️")
-                st.rerun()
-        with col_ue:
-            _render_ue_change_widget(cours, session)
-
-        # Si en mode édition des méta de ce cours, on affiche le form
-        if st.session_state.get("editing_cours") == cours.id:
-            st.divider()
-            _render_cours_edit_form(cours)
-
+            st.caption(f"⏱️ Temps estimé : {chap.temps_estime_h}h")
+            
         st.divider()
-        _render_section_revision(cours, session)
 
-
-def _render_cours_edit_form(cours: Cours) -> None:
-    """Formulaire inline d'édition des métadonnées d'un cours."""
-    st.markdown(f"**✏️ Modifier les méta : {cours.nom}**")
-    col1, col2 = st.columns(2)
-    with col1:
-        new_nom = st.text_input(
-            "Nom du cours*",
-            value=cours.nom,
-            key=f"edit_cours_nom_{cours.id}",
-        )
-        new_matiere = st.text_input(
-            "Libellé matière (libre, optionnel)",
-            value=cours.matiere or "",
-            key=f"edit_cours_matiere_{cours.id}",
-        )
-        new_prof = st.text_input(
-            "Professeur",
-            value=cours.professeur or "",
-            key=f"edit_cours_prof_{cours.id}",
-        )
-    with col2:
-        new_coef = st.number_input(
-            "Coefficient",
-            min_value=0.1,
-            value=float(cours.coefficient or 1.0),
-            step=0.5,
-            key=f"edit_cours_coef_{cours.id}",
-        )
-        new_ects = st.number_input(
-            "Crédits ECTS",
-            min_value=0.0,
-            value=float(cours.credits_ects or 0.0),
-            step=0.5,
-            key=f"edit_cours_ects_{cours.id}",
-        )
-        new_date_exam = st.date_input(
-            "Date de l'examen",
-            value=cours.date_examen,
-            key=f"edit_cours_date_{cours.id}",
-        )
-        new_duree_exam = st.number_input(
-            "Durée examen (min)",
-            min_value=30,
-            value=int(cours.duree_examen_min or 120),
-            step=30,
-            key=f"edit_cours_duree_{cours.id}",
-        )
-
-    col_save, col_cancel = st.columns(2)
-    with col_save:
-        if st.button(
-            "💾 Enregistrer",
-            key=f"save_cours_meta_{cours.id}",
-            type="primary",
-            width='stretch',
-        ):
-            if not new_nom.strip():
-                st.error("Le nom du cours est obligatoire.")
-                return
-            with session_scope() as session:
-                c_db = session.get(Cours, cours.id)
-                if c_db:
-                    c_db.nom = new_nom.strip()
-                    c_db.matiere = new_matiere.strip()
-                    c_db.professeur = new_prof.strip()
-                    c_db.coefficient = float(new_coef)
-                    c_db.credits_ects = float(new_ects)
-                    c_db.date_examen = new_date_exam
-                    c_db.duree_examen_min = int(new_duree_exam)
-            st.session_state.pop("editing_cours", None)
-            st.toast(f"Cours '{new_nom}' mis à jour ✅", icon="✏️")
-            st.rerun()
-    with col_cancel:
-        if st.button(
-            "✖ Annuler",
-            key=f"cancel_cours_meta_{cours.id}",
-            width='stretch',
-        ):
-            st.session_state.pop("editing_cours", None)
-            st.rerun()
-
-
-def _render_ue_change_widget(cours: Cours, session: Session) -> None:
-    """Widget pour changer le rattachement d'un cours (UE/Matière)."""
-    ue_items = _get_ues_snapshot(session)
-    matiere_items = _get_matieres_snapshot(session)
-    if not ue_items and not matiere_items:
-        return
-
-    options = _build_rattachement_options(ue_items, matiere_items)
-    current_label = _find_rattachement_label(options, cours.matiere_id, cours.ue_id)
-    current_idx = list(options.keys()).index(current_label)
-
-    new_label = st.selectbox(
-        "Rattacher à",
-        options=list(options.keys()),
-        index=current_idx,
-        key=f"rattachement_change_{cours.id}",
-        label_visibility="collapsed",
-    )
-    new_vals = options[new_label]
-
-    if (new_vals["ue_id"] != cours.ue_id) or (new_vals["matiere_id"] != cours.matiere_id):
-        with session_scope() as s:
-            c_db = s.get(Cours, cours.id)
-            if c_db:
-                c_db.ue_id = new_vals["ue_id"]
-                c_db.matiere_id = new_vals["matiere_id"]
-        st.toast(f"Cours rattaché à : {new_label}", icon="🔗")
-        st.rerun()
-
-
-def _render_section_revision(cours: Cours, session: Session) -> None:
-    """Section dédiée à la révision espacée d'un cours."""
-    st.markdown("##### 🧠 Réviser un chapitre")
-
-    items = []
-    for ch in cours.chapitres:
-        label, color = label_couleur_status(ch)
-        items.append({
-            "id": ch.id,
-            "numero": ch.numero,
-            "titre": ch.titre,
-            "niveau": ch.niveau_actuel or 0,
-            "label": label,
-            "color": color,
-            "has_date": ch.date_prochaine is not None,
-        })
-
-    nb_sans_date = sum(1 for it in items if not it["has_date"])
-    if nb_sans_date > 0:
-        st.caption(
-            f"ℹ️ {nb_sans_date} chapitre(s) ne sont pas encore dans la file de révision."
-        )
-        if st.button(
-            "🎯 Activer la révision espacée pour ces chapitres",
-            key=f"init_rev_{cours.id}",
-        ):
-            with session_scope() as s:
-                n = initialiser_chapitres_pour_revision(s, cours.id)
-            st.toast(f"{n} chapitre(s) ajoutés ✅", icon="🎯")
-            st.rerun()
-
-    st.caption(
-        "Clique sur un chapitre pour ouvrir la **🧠 Salle d'étude** "
-        "(fiche IA, QCM, quiz ouvert)."
-    )
-    n_per_row = 3
-    for row_start in range(0, len(items), n_per_row):
-        cols = st.columns(n_per_row)
-        for i, it in enumerate(items[row_start:row_start + n_per_row]):
-            with cols[i]:
-                titre_court = it["titre"][:35] + "…" if len(it["titre"]) > 35 else it["titre"]
-                btn_label = f"📖 Ch. {it['numero']} — {titre_court}"
-                st.markdown(
-                    f"<div style='color:{it['color']}; font-size:0.85rem; "
-                    f"margin-bottom:-0.5rem;'>{it['label']} "
-                    f"<span style='color:gray;'>· Niv. {it['niveau']}/{MAX_NIVEAU}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                if st.button(
-                    btn_label,
-                    key=f"rev_btn_{it['id']}",
-                    width='stretch',
-                ):
-                    st.session_state.target_chapitre_id = it["id"]
+        # Ligne 2 : Actions & PDF
+        col_act, col_pdf = st.columns([1, 1])
+        
+        with col_act:
+            st.markdown("##### ⚙️ Progression & Révision")
+            
+            with st.form(f"form_prog_{chap.id}", border=False):
+                new_maitrise = st.slider("Niveau de maîtrise (%)", 0, 100, int(maitrise), 5)
+                new_etape = st.selectbox("Prochaine étape", options=TYPES_TRAVAIL, index=TYPES_TRAVAIL.index(chap.type_travail_restant) if chap.type_travail_restant in TYPES_TRAVAIL else 0)
+                
+                if st.form_submit_button("💾 Enregistrer"):
                     try:
-                        st.switch_page("pages/session_etude.py")
-                    except Exception:
-                        st.rerun()
+                        ch_db = session.get(Chapitre, chap.id)
+                        if ch_db:
+                            ch_db.maitrise_pct = new_maitrise
+                            ch_db.type_travail_restant = new_etape
+                            session.commit()
+                            st.toast("Progression mise à jour !", icon="✅")
+                            st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Erreur : {e}")
+
+            st.markdown(
+                f"<div style='color:{color_rev}; font-size:0.9rem; margin-top:10px;'>"
+                f"<b>{label_rev}</b> (Niveau Leitner : {chap.niveau_actuel or 0}/{MAX_NIVEAU})"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+            
+            if st.button("🧠 Ouvrir la Salle d'étude", key=f"btn_study_{chap.id}", type="primary"):
+                st.session_state.target_chapitre_id = chap.id
+                try:
+                    st.switch_page("pages/session_etude.py")
+                except Exception:
+                    st.rerun()
+
+        with col_pdf:
+            st.markdown("##### 📄 Documents (PDF)")
+            pdfs = chap.pdfs or []
+            
+            if not pdfs:
+                st.info("Aucun document associé.")
+            else:
+                for idx, pdf_info in enumerate(pdfs):
+                    col_p1, col_p2 = st.columns([4, 1])
+                    with col_p1:
+                        st.markdown(f"📎 **{pdf_info.get('label', 'Document')}**\n<small>{pdf_info.get('path')}</small>", unsafe_allow_html=True)
+                    with col_p2:
+                        if st.button("🗑️", key=f"del_pdf_{chap.id}_{idx}"):
+                            try:
+                                ch_db = session.get(Chapitre, chap.id)
+                                if ch_db:
+                                    current_pdfs = list(ch_db.pdfs)
+                                    current_pdfs.pop(idx)
+                                    # Pour forcer SQLAlchemy à détecter la modif du JSON
+                                    ch_db.pdfs = current_pdfs
+                                    session.commit()
+                                    st.rerun()
+                            except Exception as e:
+                                session.rollback()
+                                st.error(f"Erreur : {e}")
+
+            with st.expander("➕ Ajouter un PDF"):
+                with st.form(f"form_pdf_{chap.id}", clear_on_submit=True, border=False):
+                    new_pdf = st.file_uploader("Fichier", type=["pdf"])
+                    new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document")
+                    if st.form_submit_button("Ajouter"):
+                        if new_pdf:
+                            pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
+                            pdf_path.write_bytes(new_pdf.getvalue())
+                            
+                            try:
+                                ch_db = session.get(Chapitre, chap.id)
+                                if ch_db:
+                                    current_pdfs = list(ch_db.pdfs or [])
+                                    current_pdfs.append({
+                                        "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
+                                        "label": new_label,
+                                        "uploaded_at": datetime.datetime.now().isoformat()
+                                    })
+                                    ch_db.pdfs = current_pdfs
+                                    session.commit()
+                                    st.toast("PDF ajouté !", icon="📄")
+                                    st.rerun()
+                            except Exception as e:
+                                session.rollback()
+                                st.error(f"Erreur : {e}")
+
+        # Zone danger
+        st.divider()
+        if st.button("🗑️ Supprimer le chapitre", key=f"del_chap_{chap.id}", type="secondary"):
+            try:
+                ch_db = session.get(Chapitre, chap.id)
+                if ch_db:
+                    session.delete(ch_db)
+                    session.commit()
+                    st.toast("Chapitre supprimé.", icon="🗑️")
+                    st.rerun()
+            except Exception as e:
+                session.rollback()
+                st.error(f"Erreur : {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -1240,7 +1080,7 @@ def render() -> None:
     """Point d'entrée appelé par st.Page."""
     st.title("📚 Bibliothèque de cours")
     st.caption(
-        "Organise tes cours selon la hiérarchie **🎓 UE ▸ 📘 Matière ▸ 📚 Cours ▸ 📑 Chapitre**, "
+        "Organise tes cours selon la hiérarchie **🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, "
         "importe les PDFs, et active la révision espacée."
     )
 
@@ -1255,35 +1095,35 @@ def render() -> None:
     _render_batch_import()
 
     st.divider()
-    st.subheader("Mes cours du semestre")
+    st.subheader("Mon Programme")
 
     with get_session() as session:
         ues = session.query(UE).filter_by(actif=True).order_by(UE.nom).all()
         matieres = session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
-        cours_actifs = (
-            session.query(Cours)
-            .filter(Cours.actif == True)
-            .order_by(Cours.date_examen)
-            .all()
-        )
+        chapitres = session.query(Chapitre).all()
 
-        if not cours_actifs:
+        if not chapitres:
             st.info(
                 "Ta bibliothèque est vide. Ajoute un premier cours via le formulaire ci-dessus."
             )
             return
 
         # Index pour O(1) lookups
-        cours_par_matiere: dict[int, list[Cours]] = {}
-        cours_par_ue_directe: dict[int, list[Cours]] = {}  # UE sans matière
-        cours_autonomes: list[Cours] = []
-        for c in cours_actifs:
-            if c.matiere_id:
-                cours_par_matiere.setdefault(c.matiere_id, []).append(c)
-            elif c.ue_id:
-                cours_par_ue_directe.setdefault(c.ue_id, []).append(c)
+        chaps_par_matiere: dict[int, list[Chapitre]] = {}
+        chaps_par_ue_directe: dict[int, list[Chapitre]] = {}  # UE sans matière
+        chaps_autonomes: list[Chapitre] = []
+        
+        for ch in chapitres:
+            # Compatibilité : utiliser le nouveau matiere_id, sinon fallback sur l'ancien cours
+            m_id = ch.matiere_id if ch.matiere_id else (ch.cours.matiere_id if ch.cours else None)
+            u_id = ch.cours.ue_id if (ch.cours and not m_id) else None
+            
+            if m_id:
+                chaps_par_matiere.setdefault(m_id, []).append(ch)
+            elif u_id:
+                chaps_par_ue_directe.setdefault(u_id, []).append(ch)
             else:
-                cours_autonomes.append(c)
+                chaps_autonomes.append(ch)
 
         matieres_par_ue: dict[int, list[Matiere]] = {}
         matieres_sans_ue: list[Matiere] = []
@@ -1293,12 +1133,12 @@ def render() -> None:
             else:
                 matieres_sans_ue.append(m)
 
-        # --- Affichage hiérarchique : UE → Matière → Cours -------------
+        # --- Affichage hiérarchique : UE → Matière → Chapitre -------------
         for ue in ues:
             ue_matieres = matieres_par_ue.get(ue.id, [])
-            ue_cours_directs = cours_par_ue_directe.get(ue.id, [])
+            ue_chaps_directs = chaps_par_ue_directe.get(ue.id, [])
             # Skip cette UE si elle n'a rien à afficher
-            if not ue_matieres and not ue_cours_directs:
+            if not ue_matieres and not ue_chaps_directs:
                 continue
 
             meta_parts = []
@@ -1321,39 +1161,40 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
 
-            # Affiche d'abord les matières (avec leurs cours)
+            # Affiche d'abord les matières (avec leurs chapitres)
             for matiere in ue_matieres:
-                matiere_cours = cours_par_matiere.get(matiere.id, [])
+                matiere_chaps = chaps_par_matiere.get(matiere.id, [])
                 code_part = f" · `{matiere.code}`" if matiere.code else ""
                 st.markdown(
-                    f"<div style='margin-top:0.8rem; margin-bottom:0.2rem; "
+                    f"<div style='margin-top:0.8rem; margin-bottom:0.6rem; "
                     f"margin-left:1rem; color:#374151;'>"
                     f"<b style='font-size:1.05rem;'>📘 {matiere.nom}</b>"
                     f"<span style='color:#9ca3af; font-size:0.85rem;'>{code_part}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-                if not matiere_cours:
-                    st.caption("  ↳ _Aucun cours rattaché pour le moment._")
-                for cours in matiere_cours:
-                    _render_carte_cours(cours, session)
+                if not matiere_chaps:
+                    st.caption("  ↳ _Aucun chapitre rattaché pour le moment._")
+                else:
+                    for ch in matiere_chaps:
+                        _render_carte_chapitre(ch, session)
 
-            # Puis cours directement rattachés à l'UE (sans matière)
-            if ue_cours_directs:
+            # Puis chapitres directement rattachés à l'UE (sans matière)
+            if ue_chaps_directs:
                 st.markdown(
-                    "<div style='margin-top:0.8rem; margin-bottom:0.2rem; "
+                    "<div style='margin-top:0.8rem; margin-bottom:0.6rem; "
                     "margin-left:1rem; color:#374151;'>"
-                    "<b style='font-size:1rem;'>📚 Cours sans matière (directement dans l'UE)</b>"
+                    "<b style='font-size:1rem;'>📑 Chapitres sans matière (directement dans l'UE)</b>"
                     "</div>",
                     unsafe_allow_html=True,
                 )
-                for cours in ue_cours_directs:
-                    _render_carte_cours(cours, session)
+                for ch in ue_chaps_directs:
+                    _render_carte_chapitre(ch, session)
 
         # --- Matières sans UE -------------------------------------------
         for matiere in matieres_sans_ue:
-            matiere_cours = cours_par_matiere.get(matiere.id, [])
-            if not matiere_cours:
+            matiere_chaps = chaps_par_matiere.get(matiere.id, [])
+            if not matiere_chaps:
                 continue
             st.markdown(
                 f"<div style='display:flex; align-items:center; gap:10px; "
@@ -1365,21 +1206,21 @@ def render() -> None:
                 f"</div>",
                 unsafe_allow_html=True,
             )
-            for cours in matiere_cours:
-                _render_carte_cours(cours, session)
+            for ch in matiere_chaps:
+                _render_carte_chapitre(ch, session)
 
-        # --- Cours totalement autonomes (ni UE ni matière) --------------
-        if cours_autonomes:
+        # --- Chapitres totalement autonomes (ni UE ni matière) --------------
+        if chaps_autonomes:
             st.markdown(
                 "<div style='display:flex; align-items:center; gap:10px; "
                 "margin-top:1.5rem; margin-bottom:0.5rem; "
                 "border-left:4px solid #6b7280; padding:6px 12px; "
                 "background:#6b728015; border-radius:4px;'>"
-                "<div style='font-size:1.2rem; font-weight:600;'>📁 Cours autonomes</div>"
+                "<div style='font-size:1.2rem; font-weight:600;'>📁 Chapitres autonomes</div>"
                 "<div style='color:#6b7280; font-size:0.9rem;'>"
-                "Cours non rattachés — utilise le menu de rattachement de chaque cours pour les classer."
+                "Chapitres orphelins (issus d'anciens cours sans rattachement)."
                 "</div></div>",
                 unsafe_allow_html=True,
             )
-            for cours in cours_autonomes:
-                _render_carte_cours(cours, session)
+            for ch in chaps_autonomes:
+                _render_carte_chapitre(ch, session)
