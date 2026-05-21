@@ -39,6 +39,25 @@ XP_QUIZ_BRILLANT_BONUS: int = 30        # score ≥ 0.9 (cumulé avec REUSSI)
 XP_SPORT_BASE: int = 40                 # XP de base pour une séance
 XP_SPORT_INTENSE_BONUS: int = 20        # Bonus pour séance intense
 
+# Intendance
+XP_COURSES_FAITES: int = 20             # XP pour avoir fait les courses
+XP_MEAL_PREP_FAIT: int = 50             # XP pour une session de meal prep (discipline)
+XP_INTENDANCE_BASE: int = 15            # Ménage, admin, etc.
+
+# Projets & Tâches
+XP_PROJET_BASE: int = 10                # par tranche de 30min
+XP_PROJET_PRIO_BONUS: int = 10          # Bonus si tâche haute priorité
+
+# Dev Perso
+XP_DEV_PERSO_BASE: int = 25             # Méditation, lecture, etc.
+
+# Social & Loisirs
+XP_SOCIAL_REPOS: int = 10               # Se ressourcer (sieste, repos)
+XP_SOCIAL_SORTIE: int = 5               # Moins d'XP car c'est déjà une récompense en soi !
+
+# Travail / Job
+XP_JOB_HEURE: int = 5                   # XP symbolique pour le travail rémunéré
+
 # Promotion Leitner
 XP_NIVEAU_LEITNER_UP: int = 30          # chaque +1 niveau Leitner
 XP_CHAPITRE_MAITRISE: int = 200         # quand chapitre atteint niveau max
@@ -558,6 +577,41 @@ def attribuer_xp_intendance_alimentaire(
     return _appliquer_gain(session, profil, xp, raison, f"{type_tache}_fait", {})
 
 
+def attribuer_xp_categorie(
+    session: Session,
+    profil: Profil,
+    categorie: str,
+    duree_min: int = 30,
+    titre: str = "",
+    extra_data: dict | None = None,
+) -> GainXP:
+    """Fonction générique pour les catégories harmonisées."""
+    extra_data = extra_data or {}
+    xp = 0
+    raison = titre or categorie.capitalize()
+
+    if categorie == "projet":
+        xp = (duree_min / 30) * XP_PROJET_BASE
+        if extra_data.get("priorite") == "Haute":
+            xp += XP_PROJET_PRIO_BONUS
+            raison = f"🔥 {raison}"
+    elif categorie == "dev_perso":
+        xp = XP_DEV_PERSO_BASE * (duree_min / 30)
+    elif categorie == "social":
+        # Si c'est du repos (type_social dans extra_data)
+        if extra_data.get("type_social") == "Repos / Ressourcement":
+            xp = XP_SOCIAL_REPOS
+        else:
+            xp = XP_SOCIAL_SORTIE
+    elif categorie == "intendance":
+        xp = XP_INTENDANCE_BASE
+    elif categorie == "travail":
+        xp = (duree_min / 60) * XP_JOB_HEURE
+
+    xp = max(5, int(round(xp)))
+    return _appliquer_gain(session, profil, xp, raison, f"{categorie}_fait", extra_data)
+
+
 # ===========================================================================
 # Helper : récupère ou crée le profil singleton
 # ===========================================================================
@@ -592,6 +646,7 @@ __all__ = [
     "attribuer_xp_tache",
     "attribuer_xp_sport",
     "attribuer_xp_intendance_alimentaire",
+    "attribuer_xp_categorie",
     "check_nouveaux_achievements",
     # Helper
     "get_or_create_profil",

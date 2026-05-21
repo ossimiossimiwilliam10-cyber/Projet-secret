@@ -1,4 +1,8 @@
-"""Onglet **Développement Personnel** de la saisie hebdomadaire."""
+"""Onglet **Développement Personnel** de la saisie hebdomadaire.
+
+Permet de planifier des activités de croissance (lecture, méditation, langues)
+qui enrichissent le planning au-delà des études pures.
+"""
 
 from __future__ import annotations
 
@@ -15,87 +19,88 @@ from database.models import SaisieHebdo, Semaine
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-TYPES_DEV = ["Langue étrangère", "Lecture", "Apprentissage (Code, etc.)", "Méditation / Journaling", "Autre"]
-FREQUENCES = ["Quotidien", "1x / semaine", "3x / semaine", "5x / semaine"]
+CATEGORIES = [
+    "🧠 Méditation / Mindfulness",
+    "📚 Lecture (non-scolaire)",
+    "🗣️ Langues / Duolingo",
+    "💻 Veille Techno / Side-project",
+    "🎨 Créativité (Dessin, Musique)",
+    "🌱 Autre / Réflexion"
+]
 
 # ---------------------------------------------------------------------------
-# Helper
+# Helpers
 # ---------------------------------------------------------------------------
-def _get_current_saisie(session: Session) -> tuple[Semaine | None, SaisieHebdo | None]:
+def _get_current_saisie(session: Session) -> SaisieHebdo | None:
     today = datetime.date.today()
     iso_year, iso_week, _ = today.isocalendar()
     semaine = session.query(Semaine).filter_by(annee=iso_year, numero_semaine=iso_week).first()
     if semaine:
-        saisie = session.query(SaisieHebdo).filter_by(semaine_id=semaine.id).first()
-        return semaine, saisie
-    return None, None
+        return session.query(SaisieHebdo).filter_by(semaine_id=semaine.id).first()
+    return None
 
 # ---------------------------------------------------------------------------
 # Rendu UI
 # ---------------------------------------------------------------------------
 def render() -> None:
     st.title("🌱 Développement Personnel")
-    st.caption("Sanctuarise du temps pour tes habitudes quotidiennes (langues, lecture, etc.). L'IA placera ces petits blocs intelligemment.")
+    st.caption("Investis en toi-même. L'IA utilisera ces blocs comme des respirations productives.")
 
     with get_session() as session:
-        semaine, saisie = _get_current_saisie(session)
+        saisie = _get_current_saisie(session)
         
-        if not saisie or not semaine:
+        if not saisie:
             st.warning("⚠️ Ouvre d'abord l'onglet 'Études' pour initialiser la semaine en cours.")
             return
 
-        config_db: list[dict[str, Any]] = saisie.dev_perso_config or []
-
-        st.subheader("Mes habitudes de la semaine")
+        config_db = saisie.dev_perso_config or []
         
         df_dev = pd.DataFrame(config_db)
         if df_dev.empty:
-            # Lignes d'exemple par défaut
-            df_dev = pd.DataFrame([
-                {
-                    "type": "Langue étrangère", 
-                    "libelle": "Anki - Vocabulaire Anglais (Objectif B2)", 
-                    "duree_min": 15, 
-                    "frequence": "Quotidien"
-                },
-                {
-                    "type": "Lecture", 
-                    "libelle": "Lecture théorique (Feynman / Sciences cognitives)", 
-                    "duree_min": 30, 
-                    "frequence": "3x / semaine"
-                }
-            ])
-            
+            df_dev = pd.DataFrame([{
+                "activite": CATEGORIES[0], 
+                "frequence": "3x par semaine",
+                "duree_min": 20,
+                "creneau_pref": "Matin"
+            }])
+
+        st.subheader("Tes habitudes de croissance")
         edited_dev = st.data_editor(
             df_dev,
             num_rows="dynamic",
-            width='stretch',
+            use_container_width=True,
             column_config={
-                "type": st.column_config.SelectboxColumn("Catégorie", options=TYPES_DEV, required=True),
-                "libelle": st.column_config.TextColumn("Description de l'activité", required=True),
-                "duree_min": st.column_config.NumberColumn("Durée par session (min)", min_value=5, step=5, default=15),
-                "frequence": st.column_config.SelectboxColumn("Fréquence", options=FREQUENCES, default="Quotidien"),
+                "activite": st.column_config.SelectboxColumn("Activité", options=CATEGORIES, required=True),
+                "frequence": st.column_config.TextColumn("Objectif (ex: Tous les jours, 2x...)", placeholder="Tous les jours"),
+                "duree_min": st.column_config.NumberColumn("Durée / session (min)", min_value=5, step=5, default=20),
+                "creneau_pref": st.column_config.SelectboxColumn("Moment idéal", options=["Matin", "Après-midi", "Soir", "Peu importe"], default="Matin")
             },
-            key="editor_dev_perso"
+            key="dev_perso_editor_v2"
         )
 
         st.divider()
-        if st.button("💾 Enregistrer mes habitudes", type="primary"):
-            dev_propres = []
-            for _, row in edited_dev.iterrows():
-                if pd.notna(row.get("libelle")) and str(row.get("libelle")).strip() != "":
-                    dev_propres.append({
-                        "type": str(row.get("type", "Autre")),
-                        "libelle": str(row["libelle"]).strip(),
-                        "duree_min": int(row.get("duree_min", 15)),
-                        "frequence": str(row.get("frequence", "Quotidien"))
-                    })
+        
+        col_save, col_info = st.columns([1, 2])
+        with col_save:
+            if st.button("💾 Enregistrer mes habitudes", type="primary", use_container_width=True):
+                dev_propre = []
+                for _, row in edited_dev.iterrows():
+                    if pd.notna(row.get("activite")):
+                        dev_propre.append({
+                            "activite": str(row["activite"]),
+                            "frequence": str(row.get("frequence", "Toutes les fois")).strip(),
+                            "duree_min": int(row.get("duree_min", 20)),
+                            "creneau_pref": str(row.get("creneau_pref", "Peu importe"))
+                        })
 
-            try:
-                with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
-                    saisie_to_update.dev_perso_config = dev_propres
-                st.success("✅ Tes habitudes de développement personnel sont enregistrées !")
-                st.toast("Habitudes sauvegardées", icon="✅")
-            except Exception as e:
-                st.error(f"Erreur lors de la sauvegarde : {e}")
+                try:
+                    with session_scope() as write_session:
+                        saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
+                        saisie_to_update.dev_perso_config = dev_propre
+                    st.success("✅ Habitudes enregistrées !")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur lors de la sauvegarde : {e}")
+        
+        with col_info:
+            st.info("💡 **Le savais-tu ?** La lecture et la méditation améliorent ta concentration pour tes blocs d'études suivants.")
