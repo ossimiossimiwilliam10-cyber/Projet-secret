@@ -60,12 +60,24 @@ def calculer_quota_etude_minutes(
 ) -> int:
     """Quota d'étude max autorisé sur une journée, en minutes.
 
-    Combine la durée max d'une session du profil (b) avec une modulation
-    par le check-in biomécanique (c). Si le profil ne renseigne rien, on
-    prend 50 min × 3 sessions = 150 min comme base raisonnable.
+    Source du quota de base (ordre de priorité) :
+      1. ``profil.heures_etude_cible_par_jour`` × 60, si renseigné > 0
+         → c'est le réglage explicite de l'étudiant (cours + révision
+         personnelle confondus).
+      2. Fallback historique : ``duree_max_session_min`` × ``SESSIONS_PAR_JOUR``
+         si l'étudiant n'a pas (encore) défini son quota.
+      3. Dernier recours : 50 min × 3 = 150 min.
+
+    Modulation par le check-in biomécanique du jour : si fatigue physique
+    ou charge mentale > ``SEUIL_FATIGUE`` (7/10), on applique
+    ``COEF_REDUCTION_QUOTA_FATIGUE`` (-30 % par défaut).
     """
-    duree_session = int(getattr(profil, "duree_max_session_min", None) or 50)
-    base = duree_session * SESSIONS_PAR_JOUR
+    heures_cible = float(getattr(profil, "heures_etude_cible_par_jour", None) or 0)
+    if heures_cible > 0:
+        base = int(round(heures_cible * 60))
+    else:
+        duree_session = int(getattr(profil, "duree_max_session_min", None) or 50)
+        base = duree_session * SESSIONS_PAR_JOUR
 
     if not checkin:
         return base

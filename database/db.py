@@ -134,6 +134,8 @@ _EXPECTED_COLUMNS = {
         "nb_chapitres_maitrise":    "INTEGER DEFAULT 0",
         "nb_seances_sport_total":   "INTEGER DEFAULT 0",
         "replanning_auto_actif":    "BOOLEAN DEFAULT 1",
+        # Quota d'étude cible (cours + révision perso) en heures par jour.
+        "heures_etude_cible_par_jour": "FLOAT DEFAULT 3.0",
     },
     # `ues`, `matieres`, `achievements`, `objectifs` et `jobs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).

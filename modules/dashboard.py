@@ -23,6 +23,7 @@ from services.gamification_service import (
     progression_niveau,
     NIVEAU_MAX,
 )
+from services.scheduler_engine import calculer_quota_etude_minutes
 
 
 # ===========================================================================
@@ -110,12 +111,22 @@ def render() -> None:
 
         st.divider()
 
-        # 2. Graphiques : Progression et Charge
+        # 1bis. Bandeau quota d'étude — connecté au réglage Profil.
+        _render_quota_etude_banner(session)
+
+        st.divider()
+
+        # 2. Graphiques : Progression matière + Charge hebdo
         col_graph1, col_graph2 = st.columns(2)
         with col_graph1:
             _render_progression_cours(session)
         with col_graph2:
             _render_charge_hebdo(session)
+
+        st.divider()
+
+        # 3. Répartition globale par type (cumul sur tout le semestre)
+        _render_repartition_globale(session)
 
 
 # ===========================================================================
@@ -834,7 +845,7 @@ def _render_charge_hebdo(session: Session) -> None:
     for s in semaines:
         minutes = session.query(func.sum(Tache.duree_min)).filter(
             Tache.semaine_id == s.id,
-            Tache.type == "etude"
+            Tache.type == "etude",
         ).scalar() or 0
         data.append({"Semaine": f"S{s.numero_semaine}", "Heures d'étude": minutes / 60})
 
@@ -846,9 +857,146 @@ def _render_charge_hebdo(session: Session) -> None:
     fig = px.line(df, x="Semaine", y="Heures d'étude", markers=True)
     fig.update_traces(line_color="#4cd137", marker=dict(size=8))
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=300, yaxis_title="Heures")
-    st.plotly_chart(fig, width='stretch')
+
+    # Ligne de référence : quota hebdo cible du profil (sans modulation
+    # check-in, on prend la valeur brute pour avoir une référence stable).
+    profil = session.query(Profil).first()
+    if profil is not None:
+        quota_jour_min = calculer_quota_etude_minutes(profil, None)
+        quota_semaine_h = quota_jour_min * 7 / 60
+        fig.add_hline(
+            y=quota_semaine_h,
+            line_dash="dash",
+            line_color="#9ca3af",
+            annotation_text=f"Quota hebdo cible : {quota_semaine_h:.1f} h",
+            annotation_position="top right",
+            annotation_font_size=10,
+            annotation_font_color="#6b7280",
+        )
+
+    st.plotly_chart(fig, width="stretch")
 
 
 # ===========================================================================
+# Section 1bis — Bandeau quota d'étude (connecté au réglage Profil)
+# ===========================================================================
+def _render_quota_etude_banner(session: Session) -> None:
+    """Compare les heures d'étude validées CETTE semaine au quota cible
+    du profil. C'est le miroir grand format de l'indicateur dans Suivi.
+    """
+    today = datetime.date.today()
+    iso_year, iso_week, _ = today.isocalendar()
+    semaine = (
+        session.query(Semaine)
+        .filter_by(annee=iso_year, numero_semaine=iso_week)
+        .first()
+    )
+    if semaine is None:
+        return
+
+    # Heures d'étude validées (fait à 100 %, partiel à 50 %).
+    etude_min_fait = session.query(func.sum(Tache.duree_min)).filter(
+        Tache.semaine_id == semaine.id,
+        Tache.type == "etude",
+        Tache.statut == "fait",
+    ).scalar() or 0
+    etude_min_partiel = session.query(func.sum(Tache.duree_min)).filter(
+        Tache.semaine_id == semaine.id,
+        Tache.type == "etude",
+        Tache.statut == "partiellement",
+    ).scalar() or 0
+    total_fait = int(etude_min_fait + etude_min_partiel * 0.5)
+
+    profil = session.query(Profil).first()
+    checkin_row = (
+        session.query(CheckInQuotidien)
+        .filter(CheckInQuotidien.date == today)
+        .first()
+    )
+    checkin = None
+    if checkin_row:
+        checkin = {
+            "fatigue_physique": int(checkin_row.fatigue_physique or 0),
+            "charge_mentale": int(checkin_row.charge_mentale or 0),
+        }
+    quota_jour_min = calculer_quota_etude_minutes(profil, checkin)
+    quota_semaine_min = quota_jour_min * 7
+    if quota_semaine_min <= 0:
+        return
+
+    pct = total_fait / quota_semaine_min * 100
+    pct_capped = min(pct, 100)
+
+    if pct >= 100:
+        color, label = "#10b981", "🎯 Quota d'étude atteint pour cette semaine !"
+    elif pct >= 70:
+        color, label = "#f59e0b", "📚 En bonne voie — continue sur ta lancée."
+    else:
+        color, label = "#6b7280", "📚 Marge à rattraper d'ici dimanche soir."
+
+    st.markdown(
+        f"<div style='padding:14px 18px;background:{color}15;"
+        f"border-left:4px solid {color};border-radius:8px;'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:baseline;'>"
+        f"<div style='color:{color};font-weight:700;font-size:1rem;'>{label}</div>"
+        f"<div style='color:#374151;font-size:0.95rem;'>"
+        f"<b>{total_fait / 60:.1f} h</b> / {quota_semaine_min / 60:.1f} h "
+        f"<span style='color:#6b7280;'>({pct:.0f}%)</span></div></div>"
+        f"<div style='background:#e5e7eb;height:10px;border-radius:5px;margin-top:8px;overflow:hidden;'>"
+        f"<div style='background:{color};width:{pct_capped:.1f}%;height:100%;'></div>"
+        f"</div>"
+        f"<div style='font-size:0.75rem;color:#6b7280;margin-top:6px;'>"
+        f"Quota basé sur ton réglage Profil ({(profil.heures_etude_cible_par_jour if profil else 3.0):.1f} h/jour) modulé par ton check-in du jour."
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ===========================================================================
+# Section 3 — Répartition globale par type (cumul semestre)
+# ===========================================================================
+def _render_repartition_globale(session: Session) -> None:
+    """Donut chart : sur tout le semestre, comment ton temps validé se
+    répartit-il entre étude / sport / projets / dev perso / etc."""
+    st.subheader("Répartition globale de ton temps validé")
+
+    rows = (
+        session.query(Tache.type, func.sum(Tache.duree_min).label("total"))
+        .filter(
+            Tache.statut.in_(["fait", "partiellement"]),
+            Tache.obligatoire.is_(False),
+        )
+        .group_by(Tache.type)
+        .all()
+    )
+    by_type = {(r[0] or "autre").lower(): int(r[1] or 0) for r in rows if (r[1] or 0) > 0}
+    if not by_type:
+        st.info("Aucune tâche validée pour l'instant. Valide tes tâches dans **Suivi quotidien**.")
+        return
+
+    data = []
+    colors = []
+    for ttype, minutes in sorted(by_type.items(), key=lambda kv: -kv[1]):
+        label = TYPE_LABELS.get(ttype, ttype.capitalize())
+        data.append({"Catégorie": label, "Heures": minutes / 60})
+        colors.append(TYPE_COLORS.get(ttype, TYPE_COLORS["autre"]))
+
+    df = pd.DataFrame(data)
+    fig = px.pie(
+        df,
+        values="Heures",
+        names="Catégorie",
+        hole=0.55,
+        color_discrete_sequence=colors,
+    )
+    fig.update_traces(textposition="outside", textinfo="label+percent")
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=320,
+        showlegend=True,
+        legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.05),
+    )
+    st.plotly_chart(fig, width="stretch")
+
 
 __all__ = ["render"]

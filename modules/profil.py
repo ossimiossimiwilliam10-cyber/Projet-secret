@@ -97,6 +97,7 @@ def load_profil() -> dict[str, Any]:
             "methode_travail": p.methode_travail or "mixte",
             "capacite_weekend": p.capacite_weekend or "partiel",
             "tolerance_fatigue": p.tolerance_fatigue or "moyenne",
+            "heures_etude_cible_par_jour": float(p.heures_etude_cible_par_jour or 3.0),
             "temps_transport_min": int(p.temps_transport_min or 0),
             "trajets_habituels": dict(p.trajets_habituels or {}),
             "nb_repas_par_jour": int(p.nb_repas_par_jour or 3),
@@ -265,6 +266,26 @@ def render() -> None:
             options=list(CAPACITE_WEEKEND.keys()),
             format_func=lambda k: CAPACITE_WEEKEND[k],
             index=list(CAPACITE_WEEKEND).index(data["capacite_weekend"]),
+        )
+
+        st.divider()
+        st.markdown("##### 🎯 Quota d'étude quotidien")
+        st.caption(
+            "Combien d'heures par jour souhaites-tu consacrer à tes études "
+            "(cours **et** révisions personnelles confondus) ? Cette valeur "
+            "sert de plafond à l'IA quand elle génère ton planning, et au "
+            "bandeau de charge dans l'onglet **Études**. Si tu déclares ton "
+            "check-in du jour fatigué (> 7/10), le quota est automatiquement "
+            "réduit de 30 % pour ce jour-là."
+        )
+        heures_etude_cible_par_jour = st.slider(
+            "Heures d'étude visées par jour",
+            min_value=0.5, max_value=10.0,
+            value=float(data["heures_etude_cible_par_jour"]),
+            step=0.5,
+            format="%.1f h",
+            help="Recommandation : 2-3 h en semaine si tu as cours + job, "
+                 "4-6 h en période d'examens. Tu peux ajuster à tout moment.",
         )
 
     # === Section 3 — Contraintes fixes récurrentes =========================
@@ -505,6 +526,7 @@ def render() -> None:
         "methode_travail": methode_travail,
         "capacite_weekend": capacite_weekend,
         "tolerance_fatigue": tolerance_fatigue,
+        "heures_etude_cible_par_jour": float(heures_etude_cible_par_jour),
         "temps_transport_min": int(temps_transport),
         "trajets_habituels": trajets_valides,
         "nb_repas_par_jour": int(nb_repas),
@@ -545,6 +567,7 @@ def _defaults() -> dict[str, Any]:
         "methode_travail": "mixte",
         "capacite_weekend": "partiel",
         "tolerance_fatigue": "moyenne",
+        "heures_etude_cible_par_jour": 3.0,
         "temps_transport_min": 0,
         "trajets_habituels": {},
         "nb_repas_par_jour": 3,
