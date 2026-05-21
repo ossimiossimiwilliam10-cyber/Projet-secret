@@ -398,12 +398,14 @@ def _render_mini_kpis(taches: list[Tache]) -> None:
 
     completion = (nb_fait / nb_total_planif * 100) if nb_total_planif else 0
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(5) # Streamlit gère le wrap auto ou on peut ajuster
     c1.metric("📚 Études",     f"{by_type.get('etude', 0) / 60:.1f} h")
     c2.metric("🏃 Sport",      f"{by_type.get('sport', 0) / 60:.1f} h")
-    c3.metric("🍹 Social",     f"{by_type.get('social', 0) / 60:.1f} h")
-    c4.metric("🎯 Projets",    f"{by_type.get('projet', 0) / 60:.1f} h")
-    c5.metric("✅ Complétion", f"{int(completion)} %")
+    c3.metric("🎯 Projets",    f"{by_type.get('projet', 0) / 60:.1f} h")
+    c4.metric("🍹 Social",     f"{by_type.get('social', 0) / 60:.1f} h")
+    c5.metric("🌱 Dev Perso",  f"{by_type.get('dev_perso', 0) / 60:.1f} h")
+    c6 = st.columns(1)[0]
+    st.metric("✅ Complétion hebdomadaire", f"{int(completion)} %")
 
 
 def _render_grid_html(taches: list[Tache]) -> None:

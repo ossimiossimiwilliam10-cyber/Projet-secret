@@ -24,6 +24,7 @@ import pandas as pd
 import streamlit as st
 
 from database import Profil, get_session, session_scope
+from services.gamification_service import progression_niveau, NIVEAU_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +165,25 @@ def test_gemini_connection(api_key: str, model: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 def render() -> None:
     """Point d'entrée appelé par ``st.Page``."""
+    
+    with get_session() as session:
+        profil_db = session.query(Profil).first()
+        
+    if profil_db:
+        xp_total = profil_db.xp or 0
+        prog = progression_niveau(xp_total)
+        
+        col_lvl, col_xp, col_sport = st.columns([1, 2, 1])
+        with col_lvl:
+            st.metric("🏆 Niveau", prog["niveau"])
+        with col_xp:
+            ratio = prog["ratio"]
+            st.write(f"✨ {prog['xp_dans_palier']:,} / {prog['xp_palier_taille']:,} XP")
+            st.progress(ratio)
+        with col_sport:
+            st.metric("🏋️ Séances Sport", profil_db.nb_seances_sport_total or 0)
+        st.divider()
+
     st.title("👤 Profil étudiant")
     st.caption(
         "Ces réglages alimentent l'IA à chaque génération de planning. "
