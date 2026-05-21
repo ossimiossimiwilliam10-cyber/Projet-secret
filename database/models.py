@@ -70,6 +70,7 @@ class Profil(Base):
 
     # --- Transport ---------------------------------------------------------
     temps_transport_min = Column(Integer, default=0)
+    trajets_habituels = Column(JSON, default=dict)
 
     # --- Repas & sieste ----------------------------------------------------
     nb_repas_par_jour = Column(Integer, default=3)
