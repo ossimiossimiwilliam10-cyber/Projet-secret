@@ -55,9 +55,9 @@ def render() -> None:
             
         with col2:
             duree_courses = st.number_input(
-                "Durée estimée par session (min)", 
-                min_value=15, step=15, 
-                value=config_db.get("duree_min", 60),
+                "Durée estimée par session (min)",
+                min_value=15, step=15,
+                value=max(15, int(config_db.get("duree_min", 60) or 60)),
                 disabled=(frequence == "Aucune (déjà fait)")
             )
         
@@ -78,9 +78,9 @@ def render() -> None:
             value=config_db.get("meal_prep", False)
         )
         duree_meal_prep = st.number_input(
-            "Durée de la session (min)", 
-            min_value=30, max_value=240, step=30, 
-            value=config_db.get("duree_meal_prep_min", 120), 
+            "Durée de la session (min)",
+            min_value=30, max_value=240, step=30,
+            value=max(30, int(config_db.get("duree_meal_prep_min", 120) or 120)),
             disabled=not meal_prep
         )
 
