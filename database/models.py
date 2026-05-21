@@ -190,6 +190,7 @@ class Matiere(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     nom = Column(String(200), nullable=False)
     code = Column(String(50), default="")  # ex: 'MATH301-A'
+    professeur = Column(String(200), default="")
     actif = Column(Boolean, default=True)
 
     # Rattachement optionnel à une UE
@@ -209,6 +210,13 @@ class Matiere(Base):
         "Cours",
         back_populates="matiere_obj",
         order_by="Cours.nom",
+    )
+    # Refonte bibliothèque — étape 1 : rattachement direct Matière → Chapitre.
+    # La couche intermédiaire « Cours » disparaîtra à l'étape 3.
+    chapitres = relationship(
+        "Chapitre",
+        back_populates="matiere_obj",
+        order_by="Chapitre.numero",
     )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -289,21 +297,46 @@ class Cours(Base):
 # Chapitre — avec révision espacée (Leitner) + caches IA
 # ---------------------------------------------------------------------------
 class Chapitre(Base):
-    """Chapitre d'un cours — granularité utilisée pour suivre la maîtrise
-    ET pour la révision espacée (algo Leitner).
+    """Chapitre d'une matière — granularité utilisée pour suivre la maîtrise,
+    pour la révision espacée (algo Leitner), et pour stocker les PDFs
+    pédagogiques.
+
+    Refonte bibliothèque — étape 1 :
+      - Ancien rattachement ``cours_id`` rendu nullable (sera supprimé à
+        l'étape 3).
+      - Nouveau rattachement direct ``matiere_id`` vers ``Matiere``.
+      - Nouveau champ ``pdfs`` (liste JSON) qui remplace l'unique
+        ``Cours.pdf_path`` : un chapitre peut désormais avoir plusieurs
+        documents (cours magistral, TD, polycopié…).
     """
 
     __tablename__ = "chapitres"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Ancien rattachement — devient optionnel le temps de la migration
+    # progressive. Sera supprimé à l'étape 3 de la refonte.
     cours_id = Column(
         Integer,
         ForeignKey("cours.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
+    # Nouveau rattachement direct à la matière.
+    matiere_id = Column(
+        Integer,
+        ForeignKey("matieres.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     numero = Column(Integer, nullable=False)
     titre = Column(String(300), nullable=False)
+
+    # --- Documents pédagogiques (liste de PDFs) --------------------------
+    # Chaque entrée : {"path": "data/pdfs/3-cm.pdf", "label": "Cours magistral",
+    # "uploaded_at": "2026-05-21T10:30:00"}. Vide par défaut.
+    pdfs = Column(JSON, default=list)
 
     # --- Estimation & suivi de maîtrise classique (% 0-100) ---------------
     maitrise_pct = Column(Float, default=0.0)
@@ -328,10 +361,15 @@ class Chapitre(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Relations
     cours = relationship("Cours", back_populates="chapitres")
+    matiere_obj = relationship("Matiere", back_populates="chapitres")
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<Chapitre id={self.id} cours_id={self.cours_id} titre={self.titre!r}>"
+        return (
+            f"<Chapitre id={self.id} matiere_id={self.matiere_id} "
+            f"titre={self.titre!r}>"
+        )
 
 
 # ---------------------------------------------------------------------------
