@@ -226,6 +226,9 @@ def build_planner_prompt(
     # -- 2 quater. Consignes manuelles à la volée (Chantier 2) --
     consignes_txt = (consignes_manuelles or "").strip() or "(Aucune consigne exceptionnelle cette semaine.)"
 
+    # -- 2 quinquies. Trajets habituels (Chantier 3) --
+    trajets_habituels = dict(getattr(profil, "trajets_habituels", None) or {})
+
     # -- 3. Compilation du prompt final --
     prompt = f"""Tu es un expert en planification et en sciences cognitives.
 Tu dois générer un planning hebdomadaire détaillé, réaliste et optimisé pour un étudiant.
@@ -263,6 +266,13 @@ prioritaires sur tes choix automatiques (mais ne doivent jamais contredire les r
 de sécurité comme le sommeil ou les contraintes fixes absolues).
 {consignes_txt}
 
+=== 🗺️ TRAJETS HABITUELS DE L'ÉTUDIANT (durées en minutes) ===
+Dictionnaire des trajets récurrents avec leur durée exacte. Identifie le trajet
+pertinent à partir du libellé de la contrainte (ex. « Strasbourg-Luxembourg » pour
+un cours/travail au Luxembourg, « Appartement-Fac » pour un cours à l'université).
+Si aucun trajet ne correspond, utilise le temps de transport par défaut ({profil.temps_transport_min} min).
+{_safe_json_str(trajets_habituels)}
+
 === SPORT & PHYSIQUE ===
 {_safe_json_str(saisie.sport_config)}
 
@@ -283,7 +293,7 @@ Ajustements (Énergie, Type semaine, Événements exceptionnels) : {_safe_json_s
 2. RÉCUPÉRATION SPORT : Si une séance de sport est 'Intense', ne pas placer de révision théorique dense dans les 2 heures qui suivent.
 3. CHRONOTYPE : Place les tâches d'étude les plus urgentes ou difficiles sur le pic de concentration ({profil.pic_concentration}).
 4. BUFFER : Laisse environ 20% de temps libre non planifié pour parer aux imprévus. Ne remplis pas les journées à 100%.
-5. TRANSPORT : Ajoute un bloc de transport ({profil.temps_transport_min} min) avant et après chaque contrainte fixe si elle semble être en présentiel.
+5. TRANSPORT : Ajoute un bloc de transport avant et après chaque contrainte fixe ou cours en présentiel. Réfère-toi au dictionnaire des trajets habituels pour déterminer la durée exacte. Si le lieu est inconnu, utilise le temps de transport par défaut.
 6. ÉQUILIBRE : Si le type de semaine est 'Light / Chill' ou l'énergie est 'Fatigué', réduis drastiquement les sessions d'étude non urgentes et augmente les loisirs.
 7. OBLIGATOIRE : Les repas, le sommeil, les contraintes fixes, le sport et le transport ont l'attribut "obligatoire": true. Le reste a "obligatoire": false.
 8. CHAPITRE_IDS OBLIGATOIRES : Pour chaque tâche de type 'etude', tu DOIS inclure "chapitre_ids": [id1, id2] dans le JSON. Utilise UNIQUEMENT les IDs réels listés dans "Cours à travailler" ou dans "Chapitres dus pour révision espacée" — n'invente JAMAIS d'ID.

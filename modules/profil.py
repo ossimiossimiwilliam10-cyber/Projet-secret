@@ -97,6 +97,7 @@ def load_profil() -> dict[str, Any]:
             "capacite_weekend": p.capacite_weekend or "partiel",
             "tolerance_fatigue": p.tolerance_fatigue or "moyenne",
             "temps_transport_min": int(p.temps_transport_min or 0),
+            "trajets_habituels": dict(p.trajets_habituels or {}),
             "nb_repas_par_jour": int(p.nb_repas_par_jour or 3),
             "duree_repas_min": int(p.duree_repas_min or 30),
             "duree_prep_repas_min": int(p.duree_prep_repas_min or 30),
@@ -285,15 +286,47 @@ def render() -> None:
     # === Section 4 — Transport ============================================
     with st.expander("🚌 Transport", expanded=is_new):
         temps_transport = st.number_input(
-            "Temps de trajet domicile ↔ université (aller simple, en minutes)",
-            min_value=0, max_value=180,
+            "Temps de trajet par défaut (aller simple, en minutes)",
+            min_value=0, max_value=300,
             value=data["temps_transport_min"], step=5,
+            help="Utilisé si aucun trajet spécifique ne correspond au lieu.",
         )
         if temps_transport > 0:
             st.caption(
-                f"⚙️ Des blocs de transport de **{temps_transport} min** seront "
-                "automatiquement insérés avant et après chaque cours en présentiel."
+                f"⚙️ Si aucun trajet spécifique n'est défini, des blocs de "
+                f"**{temps_transport} min** seront utilisés."
             )
+
+        st.markdown("##### 🗺️ Trajets habituels")
+        st.caption(
+            "Définis ici tes trajets récurrents et leur durée en minutes. "
+            "L'IA s'en servira pour planifier précisément. "
+            "Ex. : `Appartement-Fac` → 15, `Strasbourg-Luxembourg` → 150."
+        )
+
+        trajets_dict = data["trajets_habituels"] or {}
+        df_trajets = pd.DataFrame(
+            [{"nom": k, "duree_min": int(v)} for k, v in trajets_dict.items()]
+            or [{"nom": "", "duree_min": 0}]
+        )
+        edited_trajets = st.data_editor(
+            df_trajets,
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "nom": st.column_config.TextColumn(
+                    "Trajet", required=True,
+                    help="Ex. : « Appartement-Fac », « Strasbourg-Luxembourg »",
+                ),
+                "duree_min": st.column_config.NumberColumn(
+                    "Durée (minutes)", min_value=0, max_value=600, step=5,
+                    required=True,
+                ),
+            },
+            key="profil_trajets_editor",
+        )
+        trajets_brutes = edited_trajets.to_dict(orient="records")
 
     # === Section 5 — Santé & alimentation =================================
     with st.expander("🍽️ Santé & alimentation", expanded=is_new):
@@ -425,6 +458,21 @@ def render() -> None:
                 st.error(e)
         return
 
+    # --- Validation des trajets habituels ---
+    trajets_valides: dict[str, int] = {}
+    for t in trajets_brutes:
+        nom_trajet = (t.get("nom") or "").strip()
+        duree = t.get("duree_min")
+        if not nom_trajet or duree in (None, ""):
+            continue
+        try:
+            duree_int = int(duree)
+        except (TypeError, ValueError):
+            continue
+        if duree_int <= 0:
+            continue
+        trajets_valides[nom_trajet] = duree_int
+
     payload = {
         "nom": (nom or "").strip(),
         "heure_lever": heure_lever,
@@ -438,6 +486,7 @@ def render() -> None:
         "capacite_weekend": capacite_weekend,
         "tolerance_fatigue": tolerance_fatigue,
         "temps_transport_min": int(temps_transport),
+        "trajets_habituels": trajets_valides,
         "nb_repas_par_jour": int(nb_repas),
         "duree_repas_min": int(duree_repas),
         "duree_prep_repas_min": int(duree_prep_repas),
@@ -477,6 +526,7 @@ def _defaults() -> dict[str, Any]:
         "capacite_weekend": "partiel",
         "tolerance_fatigue": "moyenne",
         "temps_transport_min": 0,
+        "trajets_habituels": {},
         "nb_repas_par_jour": 3,
         "duree_repas_min": 30,
         "duree_prep_repas_min": 30,
