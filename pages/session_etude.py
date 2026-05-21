@@ -868,7 +868,6 @@ def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
     import tempfile
     import os
     from google import genai
-    from google.genai import types
     from database.models import Profil, Chapitre
 
     with st.spinner("🧠 Gemini écoute, transcrit et évalue ta démonstration... (ça peut prendre 30 sec)"):

@@ -18,7 +18,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session
 
-from database import Chapitre, Cours, Matiere, Profil, UE, get_session, session_scope
+from database import Cours, Matiere, Profil, UE, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_course
 from services.revision_service import (
@@ -899,7 +899,7 @@ def _render_batch_import() -> None:
                     for nom, err in erreurs:
                         st.error(f"**{nom}** : {err}")
             else:
-                st.error(f"❌ Aucun PDF n'a pu être importé.")
+                st.error("❌ Aucun PDF n'a pu être importé.")
                 with st.expander("Détails des erreurs", expanded=True):
                     for nom, err in erreurs:
                         st.error(f"**{nom}** : {err}")

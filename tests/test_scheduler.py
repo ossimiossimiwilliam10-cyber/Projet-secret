@@ -11,7 +11,7 @@ Sécurise les trois invariants critiques de la refonte :
 
 from __future__ import annotations
 
-from datetime import date, time, timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest

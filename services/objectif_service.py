@@ -28,32 +28,31 @@ from database.models import Chapitre, Cours, Objectif, Profil
 # ===========================================================================
 # 1. Snapshot de l'état actuel pour le prompt Gemini
 # ===========================================================================
-def _build_etat_chapitres(session: Session, cours_id: int | None) -> list[dict[str, Any]]:
+def _build_etat_chapitres(session: Session, matiere_id: int | None) -> list[dict[str, Any]]:
     """Construit la liste des chapitres pertinents pour l'objectif.
 
-    Si cours_id est défini → chapitres de ce cours uniquement.
-    Sinon → tous les chapitres actifs de tous les cours.
+    Si matiere_id est défini → chapitres de cette matière uniquement.
+    Sinon → tous les chapitres actifs de toutes les matières.
     """
-    query = session.query(Chapitre).join(Cours).filter(Cours.actif.is_(True))
-    if cours_id is not None:
-        query = query.filter(Cours.id == cours_id)
+    from database.models import Matiere
+    
+    query = session.query(Chapitre).join(Matiere, Chapitre.matiere_id == Matiere.id).filter(Matiere.actif.is_(True))
+    if matiere_id is not None:
+        query = query.filter(Matiere.id == matiere_id)
 
     chapitres: list[dict[str, Any]] = []
     for chap in query.all():
-        cours = chap.cours
+        matiere = chap.matiere_obj
         chapitres.append({
             "id": chap.id,
             "titre": chap.titre,
             "numero": chap.numero,
-            "cours": cours.nom if cours else "",
+            "matiere": matiere.nom if matiere else "",
             "niveau_actuel": chap.niveau_actuel or 0,
             "maitrise_pct": float(chap.maitrise_pct or 0.0),
-            "date_examen_cours": (
-                cours.date_examen.isoformat()
-                if cours and cours.date_examen else None
-            ),
-            "duree_examen_min": cours.duree_examen_min if cours else 120,
-            "coefficient_cours": float(cours.coefficient or 1.0) if cours else 1.0,
+            "date_examen_cours": None,  # La date d'examen est au niveau cours, on l'omet pour simplifier
+            "duree_examen_min": 120,
+            "coefficient_cours": 1.0,
         })
     return chapitres
 
@@ -64,14 +63,14 @@ def _build_etat_chapitres(session: Session, cours_id: int | None) -> list[dict[s
 def _build_strategie_prompt(
     nom: str,
     description: str,
-    cours_nom: str | None,
+    matiere_nom: str | None,
     note_cible: float | None,
     date_cible: datetime.date,
     nb_jours_restants: int,
     chapitres: list[dict[str, Any]],
 ) -> str:
     """Construit le prompt pour demander une stratégie à Gemini."""
-    cible_str = "Tous les cours (objectif global)" if not cours_nom else cours_nom
+    cible_str = "Toutes les matières (objectif global)" if not matiere_nom else matiere_nom
     note_str = f"{note_cible}/20" if note_cible is not None else "(qualitatif — pas de note précise)"
 
     chapitres_json = json.dumps(chapitres, ensure_ascii=False, indent=2)
@@ -159,7 +158,7 @@ def proposer_strategie(
     session: Session,
     nom: str,
     description: str,
-    cours_id: int | None,
+    matiere_id: int | None,
     note_cible: float | None,
     date_cible: datetime.date,
 ) -> dict[str, Any]:
@@ -177,17 +176,18 @@ def proposer_strategie(
         raise ValueError("Clé API Gemini introuvable dans le profil.")
 
     # Snapshot état actuel
-    chapitres = _build_etat_chapitres(session, cours_id)
+    chapitres = _build_etat_chapitres(session, matiere_id)
     if not chapitres:
         raise ValueError(
             "Aucun chapitre pertinent trouvé pour cet objectif. "
             "Ajoute des cours et leurs chapitres avant de créer un objectif."
         )
 
-    cours_nom = None
-    if cours_id is not None:
-        cours = session.get(Cours, cours_id)
-        cours_nom = cours.nom if cours else None
+    matiere_nom = None
+    if matiere_id is not None:
+        from database.models import Matiere
+        matiere = session.get(Matiere, matiere_id)
+        matiere_nom = matiere.nom if matiere else None
 
     today = datetime.date.today()
     nb_jours = max(1, (date_cible - today).days)
@@ -195,7 +195,7 @@ def proposer_strategie(
     prompt = _build_strategie_prompt(
         nom=nom,
         description=description,
-        cours_nom=cours_nom,
+        matiere_nom=matiere_nom,
         note_cible=note_cible,
         date_cible=date_cible,
         nb_jours_restants=nb_jours,
@@ -289,7 +289,7 @@ def creer_objectif(
     session: Session,
     nom: str,
     description: str,
-    cours_id: int | None,
+    matiere_id: int | None,
     note_cible: float | None,
     date_cible: datetime.date,
     strategie: dict,
@@ -301,7 +301,7 @@ def creer_objectif(
     obj = Objectif(
         nom=nom.strip(),
         description=(description or "").strip(),
-        cours_id=cours_id,
+        matiere_id=matiere_id,
         note_cible=note_cible,
         date_cible=date_cible,
         statut="actif",

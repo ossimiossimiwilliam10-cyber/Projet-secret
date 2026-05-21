@@ -15,7 +15,6 @@ from services.gamification_service import (
     NIVEAU_MAX,
     RARETE_COULEURS,
     progression_niveau,
-    xp_total_pour_niveau,
 )
 
 

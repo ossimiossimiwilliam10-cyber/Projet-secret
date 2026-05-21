@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.db import BASE_DIR
-from database.models import Chapitre, Cours, Profil
+from database.models import Chapitre, Profil
 
 
 # ===========================================================================

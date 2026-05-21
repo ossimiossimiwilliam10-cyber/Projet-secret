@@ -16,7 +16,6 @@ dans l'onglet **Bibliothèque**.
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 import streamlit as st
 from sqlalchemy.orm import Session

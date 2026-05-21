@@ -441,7 +441,7 @@ def main() -> int:
             print(f"   (Pour rollback : cp -r {backup_dir.relative_to(root)}/* .)")
     else:
         print(f"🔍 Dry-run : {n_files_changed} fichier(s) seraient modifié(s).")
-        print(f"   Relance avec --apply pour appliquer.")
+        print("   Relance avec --apply pour appliquer.")
     print("═" * 64)
     return 0
 

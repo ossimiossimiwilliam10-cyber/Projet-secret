@@ -259,10 +259,10 @@ def _render_form_creation() -> None:
 
     # Récup des cours pour le selectbox
     with get_session() as session:
-        cours_list = session.query(Cours).filter(Cours.actif.is_(True)).order_by(Cours.nom).all()
-        cours_options = {"🌐 Global (tous les cours)": None}
-        for c in cours_list:
-            cours_options[f"📚 {c.nom}"] = c.id
+        matiere_list = session.query(Matiere).filter(Matiere.actif.is_(True)).order_by(Matiere.nom).all()
+        matiere_options = {"🌐 Global (toutes les matières)": None}
+        for m in matiere_list:
+            matiere_options[f"📘 {m.nom}"] = m.id
 
     # Form
     with st.form("form_create_objectif", clear_on_submit=False):
@@ -278,8 +278,8 @@ def _render_form_creation() -> None:
         )
         c1, c2, c3 = st.columns(3)
         with c1:
-            cours_label = st.selectbox("Cours visé", list(cours_options.keys()))
-            cours_id = cours_options[cours_label]
+            matiere_label = st.selectbox("Matière visée", list(matiere_options.keys()))
+            matiere_id = matiere_options[matiere_label]
         with c2:
             note_cible = st.number_input(
                 "Note cible /20 (0 = qualitatif)",
@@ -311,7 +311,7 @@ def _render_form_creation() -> None:
                         session=session,
                         nom=nom,
                         description=description,
-                        cours_id=cours_id,
+                        matiere_id=matiere_id,
                         note_cible=note_value,
                         date_cible=date_cible,
                     )
@@ -321,7 +321,7 @@ def _render_form_creation() -> None:
 
         # On stocke en session_state pour pouvoir afficher la preview + bouton adopter
         st.session_state["objectif_preview"] = {
-            "nom": nom, "description": description, "cours_id": cours_id,
+            "nom": nom, "description": description, "matiere_id": matiere_id,
             "note_cible": note_value, "date_cible": date_cible.isoformat(),
             "strategie": strategie,
         }
@@ -344,7 +344,7 @@ def _render_form_creation() -> None:
                             session=session,
                             nom=preview["nom"],
                             description=preview["description"],
-                            cours_id=preview["cours_id"],
+                            matiere_id=preview["matiere_id"],
                             note_cible=preview["note_cible"],
                             date_cible=datetime.date.fromisoformat(preview["date_cible"]),
                             strategie=preview["strategie"],

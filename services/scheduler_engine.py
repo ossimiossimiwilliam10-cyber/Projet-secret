@@ -27,7 +27,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from database.models import Chapitre, Cours, Semaine
+from database.models import Chapitre, Semaine
 
 # ---------------------------------------------------------------------------
 # Constantes

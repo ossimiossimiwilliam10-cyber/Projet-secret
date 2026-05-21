@@ -554,8 +554,8 @@ class Objectif(Base):
     # --- Définition ---
     nom = Column(String(200), nullable=False)              # ex: "15 au partiel d'algèbre"
     description = Column(Text, default="")                 # contraintes, motivations, libre
-    cours_id = Column(                                     # cours visé (NULL = global, tous les cours)
-        Integer, ForeignKey("cours.id", ondelete="SET NULL"), nullable=True, index=True
+    matiere_id = Column(                                   # matière visée (NULL = global, toutes les matières)
+        Integer, ForeignKey("matieres.id", ondelete="SET NULL"), nullable=True, index=True
     )
     note_cible = Column(Float, nullable=True)              # /20 — optionnel (peut être un objectif "qualitatif")
     date_cible = Column(Date, nullable=False)              # deadline
@@ -586,8 +586,8 @@ class Objectif(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relation vers le cours (optionnelle)
-    cours = relationship("Cours", foreign_keys=[cours_id])
+    # Relation vers la matière (optionnelle)
+    matiere = relationship("Matiere", foreign_keys=[matiere_id])
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Objectif id={self.id} nom={self.nom!r} statut={self.statut}>"

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import re
 from PIL import Image
 import streamlit as st
-from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
 from database.models import Profil
