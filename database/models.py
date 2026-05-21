@@ -9,15 +9,18 @@ Conventions :
 - Les horodatages ``created_at`` / ``updated_at`` utilisent UTC pour rester
   comparables d'un fuseau à l'autre.
 
-Hiérarchie pédagogique : ``UE → Cours → Chapitre``.
-- ``UE`` (Unité d'Enseignement) : conteneur logique, ex. "Mathématiques", "Physique".
-  Contient plusieurs cours.
-- ``Cours`` : une matière concrète, ex. "Analyse", "Algèbre linéaire". A son
-  propre coefficient et sa date d'examen.
-- ``Chapitre`` : subdivision d'un cours, granularité de la révision espacée.
+Hiérarchie pédagogique (refonte bibliothèque) : ``UE → Matière → Chapitre``.
+- ``UE`` (Unité d'Enseignement) : conteneur logique, ex. "Mathématiques",
+  "Physique". Porte les crédits ECTS et le code semestre.
+- ``Matiere`` : sous-discipline d'une UE, ex. "Algèbre", "Analyse". Porte
+  le professeur.
+- ``Chapitre`` : subdivision d'une matière, granularité de la révision
+  espacée et porteuse des PDFs pédagogiques (liste).
 
-Le rattachement à une UE est OPTIONNEL — un cours peut exister sans UE
-(``ue_id = NULL``), pour les utilisateurs qui n'ont pas cette hiérarchie.
+Le rattachement à une UE est OPTIONNEL pour Matière. La classe ``Cours``
+existait dans une version antérieure comme couche intermédiaire entre
+Matière et Chapitre ; elle a été supprimée — Chapitre est maintenant
+rattaché directement à Matière via ``matiere_id``.
 """
 
 from __future__ import annotations
