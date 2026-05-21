@@ -1,0 +1,64 @@
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+pip-wheel-metadata/
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec.bak
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# --- Tests & coverage -------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# --- Streamlit / app data ---------------------------------------------------
+.streamlit/secrets.toml
+*.db
+*.sqlite
+*.sqlite3
+data/planning.db
+data/pdfs/*
+!data/pdfs/.gitkeep
+
+# --- Editors / OS -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Logs / misc ------------------------------------------------------------
+*.log
+*.pid
+.env
+.env.*
+!.env.example
