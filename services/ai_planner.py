@@ -229,6 +229,24 @@ def build_planner_prompt(
     # -- 2 quinquies. Trajets habituels (Chantier 3) --
     trajets_habituels = dict(getattr(profil, "trajets_habituels", None) or {})
 
+    # -- 2 sexies. Check-in biomécanique du jour (Chantier 4) --
+    from database.models import CheckInQuotidien
+
+    checkin_row = (
+        session.query(CheckInQuotidien)
+        .filter(CheckInQuotidien.date == date.today())
+        .first()
+    )
+    if checkin_row is not None:
+        checkin_data = {
+            "date": checkin_row.date.isoformat(),
+            "fatigue_physique": checkin_row.fatigue_physique,
+            "charge_mentale": checkin_row.charge_mentale,
+            "qualite_sommeil": checkin_row.qualite_sommeil,
+        }
+    else:
+        checkin_data = None
+
     # -- 3. Compilation du prompt final --
     prompt = f"""Tu es un expert en planification et en sciences cognitives.
 Tu dois générer un planning hebdomadaire détaillé, réaliste et optimisé pour un étudiant.
@@ -273,6 +291,12 @@ un cours/travail au Luxembourg, « Appartement-Fac » pour un cours à l'univers
 Si aucun trajet ne correspond, utilise le temps de transport par défaut ({profil.temps_transport_min} min).
 {_safe_json_str(trajets_habituels)}
 
+=== 📊 CHECK-IN BIOMÉCANIQUE DU JOUR ===
+Auto-évaluation de l'étudiant sur 1-10 (1 = forme olympique, 10 = épuisé)
+pour la journée du {date.today().isoformat()}. Si la valeur est null, aucun
+check-in n'a été saisi aujourd'hui — applique alors les règles standard.
+{_safe_json_str(checkin_data) if checkin_data else "Aucun check-in pour aujourd'hui."}
+
 === SPORT & PHYSIQUE ===
 {_safe_json_str(saisie.sport_config)}
 
@@ -300,6 +324,7 @@ Ajustements (Énergie, Type semaine, Événements exceptionnels) : {_safe_json_s
 9. PRIORITÉ AUX RÉVISIONS DUES : Si la section "Chapitres dus pour révision espacée" contient des chapitres, ils ont PRIORITÉ ABSOLUE sur les autres sessions d'étude facultatives. Garantis-leur à chacun au moins un slot d'étude dans la semaine. Si la semaine est très chargée, écarte plutôt les tâches non-urgentes (et mentionne-les dans "taches_ecartees").
 10. OBJECTIFS PERSONNELS : La section "Objectifs personnels" liste des chapitres avec un coefficient (1.0 = normal, 2.0 = double priorité, 3.0 = priorité max). Pour les chapitres avec un coefficient ≥ 1.5, alloue PROPORTIONNELLEMENT plus de temps d'étude (par ex. un chapitre à 2.5× doit avoir 2-3 sessions là où un chapitre à 1.0× en aurait une). Les chapitres avec coefficient ≤ 0.9 peuvent recevoir moins de temps (l'étudiant les maîtrise déjà).
 11. RÈGLE ABSOLUE DE DÉPLACEMENT : Le temps de trajet DOIT être SOUSTRAIT de l'heure de début de l'événement. Si un examen, un cours ou le travail au Luxembourg commence à 16h00 et que le trajet dure 30 minutes, le départ du transport est OBLIGATOIREMENT à 15h30. Ne planifie jamais un trajet qui empiète sur l'événement.
+12. RÈGLE DE LOAD BALANCING : Prends en compte le Check-in Biomécanique du jour de l'étudiant. Si la fatigue physique ou la charge mentale dépasse 7/10, tu DOIS alléger la journée. Remplace les sessions de théorie dense par des tâches à faible friction cognitive (lecture légère, révision passive, flashcards) et garantis des blocs de récupération.
 
 === FORMAT DE SORTIE ATTENDU ===
 Tu dois retourner UNIQUEMENT un objet JSON valide, sans aucun texte avant ou après, structuré EXACTEMENT comme ceci :

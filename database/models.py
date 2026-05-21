@@ -555,6 +555,29 @@ class Objectif(Base):
         return f"<Objectif id={self.id} nom={self.nom!r} statut={self.statut}>"
 
 
+class CheckInQuotidien(Base):
+    """Auto-évaluation biomécanique quotidienne de l'étudiant.
+
+    Une seule ligne par date — l'UI fait un upsert sur ``date``.
+    Les trois métriques sont sur une échelle 1-10.
+    """
+
+    __tablename__ = "checkin_quotidien"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, unique=True, index=True, nullable=False)
+    fatigue_physique = Column(Integer, nullable=False, default=5)
+    charge_mentale = Column(Integer, nullable=False, default=5)
+    qualite_sommeil = Column(Integer, nullable=False, default=5)
+
+    def __repr__(self) -> str:
+        return (
+            f"<CheckInQuotidien date={self.date} "
+            f"fatigue={self.fatigue_physique} mental={self.charge_mentale} "
+            f"sommeil={self.qualite_sommeil}>"
+        )
+
+
 __all__ = [
     "Profil",
     "Achievement",
@@ -567,4 +590,5 @@ __all__ = [
     "SaisieHebdo",
     "Job",
     "Objectif",
+    "CheckInQuotidien",
 ]
