@@ -446,6 +446,14 @@ class Tache(Base):
         nullable=True,
         index=True,
     )
+    # Refonte bibliothèque : rattachement direct vers Matière. Sera la seule
+    # référence quand Cours sera supprimé (étape 5/5).
+    matiere_id = Column(
+        Integer,
+        ForeignKey("matieres.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     chapitre_ids = Column(JSON, nullable=True)
     reportee_depuis_semaine_id = Column(
         Integer,
@@ -469,6 +477,7 @@ class Tache(Base):
         foreign_keys=[reportee_depuis_semaine_id],
     )
     cours = relationship("Cours", back_populates="taches")
+    matiere_obj = relationship("Matiere", foreign_keys=[matiere_id])
 
     def __repr__(self) -> str:  # pragma: no cover
         return (

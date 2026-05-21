@@ -97,7 +97,7 @@ def repartir_nouveaux_chapitres(
     Returns:
         ``{"lundi": [<chapitre_dict>, ...], "mardi": [...], ...}``
         où ``<chapitre_dict>`` contient
-        ``{chapitre_id, cours_id, matiere, titre, numero, temps_estime_min}``.
+        ``{chapitre_id, matiere_id, matiere, titre, numero, temps_estime_min}``.
     """
     repartition: dict[str, list[dict[str, Any]]] = {j: [] for j in JOURS}
 
@@ -120,17 +120,10 @@ def repartir_nouveaux_chapitres(
         for ch in chapitres_db:
             if (ch.niveau_actuel or 0) != 0:
                 continue  # déjà vu — c'est une révision, pas un nouveau chap.
-            
-            if ch.matiere_obj:
-                matiere_nom = ch.matiere_obj.nom
-            elif ch.cours:
-                matiere_nom = ch.cours.matiere or ch.cours.nom or "Sans matière"
-            else:
-                matiere_nom = "Sans matière"
 
+            matiere_nom = ch.matiere_obj.nom if ch.matiere_obj else "Sans matière"
             par_matiere.setdefault(matiere_nom, []).append({
                 "chapitre_id": ch.id,
-                "cours_id": ch.cours_id,
                 "matiere_id": ch.matiere_id,
                 "matiere": matiere_nom,
                 "titre": ch.titre,

@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from database.models import Chapitre, Cours, Objectif, Profil
+from database.models import Chapitre, Objectif, Profil
 
 
 # ===========================================================================
@@ -80,7 +80,7 @@ def _build_strategie_prompt(
 OBJECTIF DE L'ÉTUDIANT :
 - Titre : "{nom}"
 - Description / motivations : "{description or '(non précisé)'}"
-- Cours visé : {cible_str}
+- Matière visée : {cible_str}
 - Note cible : {note_str}
 - Date cible : {date_cible.isoformat()} (dans {nb_jours_restants} jours)
 

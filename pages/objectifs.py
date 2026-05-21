@@ -15,7 +15,7 @@ import datetime
 
 import streamlit as st
 
-from database import Cours, Objectif, get_session, session_scope
+from database import Matiere, Objectif, get_session, session_scope
 from services import objectif_service as objs
 
 
@@ -86,13 +86,13 @@ def _render_liste_objectifs() -> None:
 
 def _snapshot_objectif(session, obj: Objectif) -> dict:
     """Snapshot dict d'un objectif pour rendu hors session."""
-    cours_nom = obj.cours.nom if obj.cours else None
+    matiere_nom = obj.matiere.nom if obj.matiere else None
     prog = objs.progression_objectif(session, obj) if obj.statut == "actif" else None
     return {
         "id": obj.id,
         "nom": obj.nom,
         "description": obj.description,
-        "cours_nom": cours_nom,
+        "matiere_nom": matiere_nom,
         "note_cible": obj.note_cible,
         "date_cible": obj.date_cible,
         "date_atteinte": obj.date_atteinte,
@@ -112,7 +112,7 @@ def _render_card_objectif(snap: dict, statut: str) -> None:
     couleur = couleurs_statut.get(statut, "#6b7280")
 
     cible_str = f"{snap['note_cible']}/20" if snap["note_cible"] is not None else "Qualitatif"
-    cours_str = snap["cours_nom"] or "🌐 Global (tous les cours)"
+    matiere_str = snap["matiere_nom"] or "🌐 Global (toutes les matières)"
     deadline_str = snap["date_cible"].strftime("%d/%m/%Y") if snap["date_cible"] else "—"
 
     # Card header
@@ -124,7 +124,7 @@ def _render_card_objectif(snap: dict, statut: str) -> None:
             f"<div style='flex:1;'>"
             f"<div style='font-weight:700;font-size:1.1rem;color:{couleur};'>{snap['nom']}</div>"
             f"<div style='color:#4b5563;font-size:0.9rem;margin-top:4px;'>"
-            f"🎓 {cours_str} · 🎯 Cible : <b>{cible_str}</b> · 📅 Deadline : <b>{deadline_str}</b>"
+            f"📘 {matiere_str} · 🎯 Cible : <b>{cible_str}</b> · 📅 Deadline : <b>{deadline_str}</b>"
             f"</div></div></div>",
             unsafe_allow_html=True,
         )

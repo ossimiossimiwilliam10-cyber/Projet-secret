@@ -301,47 +301,28 @@ def get_or_extract_chapter_text(session: Session, chapitre_id: int) -> str:
     if chap.texte_cache:
         return chap.texte_cache
 
-    cours = chap.cours
-    if not cours or not cours.pdf_path:
-        raise ValueError("Aucun PDF associé à ce chapitre (cours sans pdf_path).")
+    # Refonte : un chapitre peut avoir 1 à N PDFs dans chap.pdfs.
+    # On prend le premier pour l'extraction de texte (cas dominant).
+    pdfs_list = list(chap.pdfs or [])
+    if not pdfs_list:
+        raise ValueError(
+            f"Aucun PDF associé au chapitre #{chap.id} ({chap.titre!r})."
+        )
 
-    # Résolution du chemin : peut être absolu OU relatif au projet
-    pdf_path = Path(cours.pdf_path)
+    pdf_path = Path(pdfs_list[0].get("path", ""))
     if not pdf_path.is_absolute():
         pdf_path = BASE_DIR / pdf_path
     if not pdf_path.exists():
-        # Fallback : data/pdfs/{cours_id}.pdf (convention de la bibliothèque)
-        from database.db import PDF_DIR
-        fallback = PDF_DIR / f"{cours.id}.pdf"
-        if fallback.exists():
-            pdf_path = fallback
-        else:
-            raise FileNotFoundError(
-                f"PDF introuvable : ni {cours.pdf_path}, ni {fallback}"
-            )
+        raise FileNotFoundError(f"PDF introuvable sur disque : {pdf_path}")
 
     try:
         import pdfplumber  # type: ignore
     except ImportError as exc:
         raise RuntimeError("`pdfplumber` non installé.") from exc
 
-    # Détermine la plage de pages depuis l'analyse IA, si disponible
-    pages_str = ""
-    if cours.pdf_analyse:
-        analyses_chap = cours.pdf_analyse.get("chapitres") or []
-        # Match par numéro (méthode robuste)
-        match_obj = next(
-            (a for a in analyses_chap if a.get("numero") == chap.numero), None,
-        )
-        # Sinon match par titre approximatif
-        if match_obj is None and chap.titre:
-            match_obj = next(
-                (a for a in analyses_chap
-                 if a.get("titre", "").strip().lower() == chap.titre.strip().lower()),
-                None,
-            )
-        if match_obj:
-            pages_str = str(match_obj.get("pages") or "")
+    # Plage de pages optionnellement stockée dans pdfs[0]["pages"] (ex. "12-25").
+    # Si absente, on extrait tout le PDF (le cache_truncate plafonne la taille).
+    pages_str = str(pdfs_list[0].get("pages") or "")
 
     # Extraction
     with pdfplumber.open(str(pdf_path)) as pdf:
@@ -448,8 +429,7 @@ def generer_fiche_ia(
         return chap.fiche_ia
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -536,8 +516,7 @@ def generer_qcm(
         return list(chap.qcm_cache)
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -623,8 +602,7 @@ def generer_quiz_ouvert(
         return list(chap.quiz_cache)
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore
@@ -702,8 +680,7 @@ def evaluer_quiz_ouvert(
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
     texte = get_or_extract_chapter_text(session, chapitre_id)
-    cours = chap.cours
-    matiere = cours.matiere or cours.nom
+    matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
     from google.genai import types  # type: ignore

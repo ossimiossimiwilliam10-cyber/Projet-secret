@@ -60,7 +60,7 @@ def compute_reported_items(
             "reportee_depuis_semaine_id": previous_week_id,
             "statut_precedent": t.statut,
             "commentaire_etudiant": t.commentaire_etudiant or "",
-            "cours_id": t.cours_id,
+            "matiere_id": t.matiere_id,
             "chapitre_ids": t.chapitre_ids,
         })
     return reported

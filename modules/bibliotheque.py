@@ -27,7 +27,6 @@ from services.pdf_analyzer import (
 )
 from services.revision_service import (
     initialiser_chapitre_pour_revision,
-    initialiser_chapitres_pour_revision,
     label_couleur_status,
     MAX_NIVEAU,
 )

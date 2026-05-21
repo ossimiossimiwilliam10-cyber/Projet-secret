@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, CheckInQuotidien, Cours, Semaine, Tache, Profil
+from database.models import Chapitre, CheckInQuotidien, Matiere, Semaine, Tache, Profil
 from services.gamification_service import (
     progression_niveau,
     NIVEAU_MAX,
@@ -116,11 +116,6 @@ def render() -> None:
             _render_progression_cours(session)
         with col_graph2:
             _render_charge_hebdo(session)
-
-        st.divider()
-
-        # 3. Calendrier des examens
-        _render_calendrier_examens(session)
 
 
 # ===========================================================================
@@ -776,19 +771,19 @@ def _render_kpis(session: Session) -> None:
         else:
             break
 
-    top_cours_id = session.query(
-        Tache.cours_id,
-        func.sum(Tache.duree_min).label('total')
-    ).filter(
-        Tache.cours_id.isnot(None),
-        Tache.statut == 'fait'
-    ).group_by(Tache.cours_id).order_by(func.sum(Tache.duree_min).desc()).first()
-
+    # Focus = matière avec le plus de minutes d'étude faites cumulées.
+    top_matiere_row = (
+        session.query(Tache.matiere_id, func.sum(Tache.duree_min).label("total"))
+        .filter(Tache.matiere_id.isnot(None), Tache.statut == "fait")
+        .group_by(Tache.matiere_id)
+        .order_by(func.sum(Tache.duree_min).desc())
+        .first()
+    )
     top_matiere_nom = "Aucune"
-    if top_cours_id:
-        cours = session.get(Cours, top_cours_id[0])
-        if cours:
-            top_matiere_nom = cours.matiere if cours.matiere else cours.nom
+    if top_matiere_row:
+        m = session.get(Matiere, top_matiere_row[0])
+        if m:
+            top_matiere_nom = m.nom
 
     cols = st.columns(4)
     cols[0].metric("🔥 Streak (>80%)", f"{streak} sem.",
@@ -805,22 +800,24 @@ def _render_kpis(session: Session) -> None:
 # Section 2 — Graphiques Plotly
 # ===========================================================================
 def _render_progression_cours(session: Session) -> None:
-    st.subheader("Maîtrise par cours")
-    cours_actifs = session.query(Cours).filter_by(actif=True).all()
+    st.subheader("Maîtrise par matière")
+    matieres_actives = session.query(Matiere).filter_by(actif=True).all()
 
     data = []
-    for c in cours_actifs:
-        nb_chapitres = len(c.chapitres)
-        maitrise = sum(ch.maitrise_pct for ch in c.chapitres) / nb_chapitres if nb_chapitres > 0 else 0
-        data.append({"Cours": c.nom, "Maîtrise (%)": maitrise})
+    for m in matieres_actives:
+        nb_chapitres = len(m.chapitres)
+        if nb_chapitres == 0:
+            continue
+        maitrise = sum(ch.maitrise_pct for ch in m.chapitres) / nb_chapitres
+        data.append({"Matière": m.nom, "Maîtrise (%)": maitrise})
 
     if not data:
-        st.info("Ajoute des cours dans la bibliothèque pour voir ta progression.")
+        st.info("Ajoute des matières et des chapitres dans la bibliothèque pour voir ta progression.")
         return
 
     df = pd.DataFrame(data).sort_values(by="Maîtrise (%)", ascending=True)
     fig = px.bar(
-        df, x="Maîtrise (%)", y="Cours",
+        df, x="Maîtrise (%)", y="Matière",
         orientation='h', range_x=[0, 100],
         color="Maîtrise (%)", color_continuous_scale="Teal",
     )
@@ -852,62 +849,5 @@ def _render_charge_hebdo(session: Session) -> None:
 
 
 # ===========================================================================
-# Section 3 — Calendrier des examens
-# ===========================================================================
-def _render_calendrier_examens(session: Session) -> None:
-    st.subheader("📅 Calendrier des examens")
-
-    cours_examens = session.query(Cours).filter(
-        Cours.date_examen.isnot(None),
-        Cours.actif == True
-    ).order_by(Cours.date_examen).all()
-
-    if not cours_examens:
-        st.info("Aucun examen de prévu pour le moment. Ajoute une date dans l'onglet Bibliothèque.")
-        return
-
-    today = datetime.date.today()
-    examens_a_venir = 0
-
-    for c in cours_examens:
-        jours_restants = (c.date_examen - today).days
-        if jours_restants < 0:
-            continue
-        examens_a_venir += 1
-        nb_chapitres = len(c.chapitres)
-        maitrise = sum(ch.maitrise_pct for ch in c.chapitres) / nb_chapitres if nb_chapitres > 0 else 0
-
-        if maitrise >= 80:
-            color = "green"
-            alerte = "✅ Prêt"
-        elif maitrise >= 50:
-            color = "orange"
-            alerte = "⏳ En cours"
-        else:
-            color = "red"
-            alerte = "⚠️ Danger"
-
-        if jours_restants <= 14 and maitrise < 50:
-            alerte = "🚨 URGENCE"
-
-        with st.container(border=True):
-            col1, col2, col3 = st.columns([2, 2, 1])
-            with col1:
-                st.markdown(f"**{c.nom}**")
-                st.caption(f"Le {c.date_examen.strftime('%d/%m/%Y')} ({c.duree_examen_min} min)")
-            with col2:
-                st.progress(maitrise / 100.0, text=f"Maîtrise : {int(maitrise)}%")
-            with col3:
-                st.markdown(
-                    f"<div style='text-align: right; color: {color};'>"
-                    f"<b>{alerte}</b><br/>"
-                    f"<span style='font-size: 0.9em;'>J - {jours_restants}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-
-    if examens_a_venir == 0:
-        st.info("Tous les examens de ton calendrier sont passés !")
-
 
 __all__ = ["render"]
