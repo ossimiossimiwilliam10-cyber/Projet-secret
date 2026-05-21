@@ -1,21 +1,39 @@
 """Onglet **Études** de la saisie hebdomadaire.
 
-Permet de sélectionner les cours et chapitres à travailler cette semaine,
-ainsi que d'ajouter des travaux ponctuels (devoirs, projets notés).
+L'étudiant sélectionne ses matières à travailler cette semaine et leurs
+chapitres. L'app l'aide activement avec :
 
-**Nouveauté :** la création de la semaine + le transfert des tâches reportées
-de la semaine précédente sont délégués à ``utils.helpers.get_or_create_current_week``.
+- **Indicateurs cognitifs** par matière (révisions Leitner dues,
+  nouveaux chapitres, % maîtrise).
+- **Pré-sélection automatique** des matières où Leitner a quelque
+  chose à faire cette semaine, lors d'une saisie neuve.
+- **Estimation live du volume horaire** comparée au quota du
+  scheduler (anti-surcharge).
+- **Pré-remplissage intelligent** du type de travail selon le niveau
+  Leitner des chapitres choisis.
+- **Lien direct vers la salle d'étude** pour chaque chapitre coché.
+
+La création de la semaine + le transfert des tâches reportées de la
+semaine précédente sont délégués à ``utils.helpers.get_or_create_current_week``.
 """
 
 from __future__ import annotations
 
+import datetime as _dt
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, Matiere, SaisieHebdo
+from database.models import Chapitre, Matiere, Profil, SaisieHebdo
+from services.matiere_stats import (
+    estimer_charge_minutes,
+    format_label_matiere,
+    matieres_avec_revisions_dues,
+    stats_matiere,
+)
+from services.scheduler_engine import calculer_quota_etude_minutes
 from utils.helpers import get_or_create_current_week
 
 # ---------------------------------------------------------------------------
@@ -33,16 +51,42 @@ TYPES_TRAVAIL = [
 
 
 # ---------------------------------------------------------------------------
+# Helpers locaux
+# ---------------------------------------------------------------------------
+def _type_travail_suggere(chapitres_choisis_db: list[Chapitre]) -> str:
+    """Devine le type de travail pertinent selon le niveau Leitner des
+    chapitres choisis.
+
+    Règle simple : si la majorité des chapitres sont au niveau 0
+    (jamais commencés) → « Première lecture ». Sinon → « Révision /
+    Compréhension ». L'utilisateur peut toujours override.
+    """
+    if not chapitres_choisis_db:
+        return TYPES_TRAVAIL[0]
+    nb_nouveaux = sum(1 for c in chapitres_choisis_db if (c.niveau_actuel or 0) == 0)
+    if nb_nouveaux >= len(chapitres_choisis_db) / 2:
+        return "Première lecture"
+    return "Révision / Compréhension"
+
+
+def _open_chapitre_in_session_etude(chap_id: int) -> None:
+    """Ouvre la salle d'étude pour un chapitre donné."""
+    st.session_state.target_chapitre_id = chap_id
+    try:
+        st.switch_page("pages/session_etude.py")
+    except Exception:  # noqa: BLE001
+        # Fallback si switch_page indisponible : on lève un drapeau.
+        st.session_state.navigate_to_session = True
+
+
+# ---------------------------------------------------------------------------
 # Rendu UI
 # ---------------------------------------------------------------------------
 def render() -> None:
     st.title("📚 Études de la semaine")
-    st.caption("Sélectionne tes cours, et définis tes objectifs de la semaine.")
+    st.caption("Sélectionne tes matières et tes chapitres. L'IA s'occupera ensuite de la répartition.")
 
     with get_session() as session:
-        # Helper partagé : crée la semaine + déclenche le transfert des tâches
-        # reportées depuis la semaine précédente si on est sur une nouvelle
-        # SaisieHebdo. Retourne aussi le nombre de tâches reportées.
         semaine, saisie, nb_reportees = get_or_create_current_week(session)
 
         st.info(
@@ -56,11 +100,9 @@ def render() -> None:
                 "Va sur l'onglet **Projets & Tâches** pour les voir et les ajuster."
             )
 
-        # Récupération des données existantes
         matieres_selectionnees_db: list[dict[str, Any]] = saisie.matieres_selectionnees or []
         travaux_ponctuels_db: list[dict[str, Any]] = saisie.travaux_ponctuels or []
 
-        # Récupération de toutes les matières actives
         toutes_matieres = (
             session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
         )
@@ -71,27 +113,52 @@ def render() -> None:
             )
             return
 
-        # 1. SÉLECTION MULTIPLE DES MATIÈRES
-        matiere_ids_deja_selectionnees = [
-            m["matiere_id"] for m in matieres_selectionnees_db
-        ]
+        # --- Stats par matière (1 query par matière, OK pour <50 matières) ---
+        stats_par_id: dict[int, dict[str, Any]] = {
+            m.id: stats_matiere(session, m) for m in toutes_matieres
+        }
+
+        # --- Pré-sélection automatique (idée C) ---
+        # Si la saisie est encore vide cette semaine, on pré-coche les
+        # matières qui ont une révision Leitner due aujourd'hui ou en
+        # retard. L'étudiant n'a plus à se demander quoi cocher le lundi.
+        auto_preselection = False
+        if not matieres_selectionnees_db:
+            ids_dus = set(matieres_avec_revisions_dues(session))
+            if ids_dus:
+                auto_preselection = True
+                matiere_ids_deja_selectionnees = list(ids_dus)
+            else:
+                matiere_ids_deja_selectionnees = []
+        else:
+            matiere_ids_deja_selectionnees = [
+                m["matiere_id"] for m in matieres_selectionnees_db
+            ]
+
         matieres_pre_selectionnees = [
             m for m in toutes_matieres if m.id in matiere_ids_deja_selectionnees
         ]
 
+        if auto_preselection:
+            st.success(
+                f"🤖 J'ai pré-sélectionné **{len(matieres_pre_selectionnees)} matière(s)** "
+                "où Leitner a des révisions dues cette semaine. Décoche celles que "
+                "tu ne veux pas, ajoute les autres."
+            )
+
+        # --- 1. Sélection des matières avec libellés enrichis (idée A) ---
         st.subheader("1. Matières à travailler")
         matieres_choisies = st.multiselect(
             "Quelles matières souhaites-tu aborder cette semaine ?",
             options=toutes_matieres,
             default=matieres_pre_selectionnees,
-            format_func=lambda m: f"{m.nom} ({m.ue.nom})" if m.ue else m.nom,
-            help="Choisis les matières. L'IA répartira ensuite les chapitres "
-                 "selon la règle « max 1 nouveau chapitre par matière par jour ».",
+            format_func=lambda m: format_label_matiere(m, stats_par_id[m.id]),
+            help="Légende : 🔥 révisions dues — ⚠️ retard — 📑 nouveaux chapitres — 📊 maîtrise.",
         )
 
-        nouvelles_matieres_selectionnees = []
+        nouvelles_matieres_selectionnees: list[dict[str, Any]] = []
 
-        # 2. DÉTAILS POUR CHAQUE MATIÈRE CHOISIE
+        # --- 2. Détail par matière choisie ---
         if matieres_choisies:
             for matiere in matieres_choisies:
                 config_existante = next(
@@ -100,7 +167,7 @@ def render() -> None:
                     {},
                 )
 
-                with st.expander(f"⚙️ Configurer : {matiere.nom}", expanded=True):
+                with st.expander(f"⚙️ {matiere.nom}", expanded=True):
                     chapitres_matiere = (
                         session.query(Chapitre)
                         .filter_by(matiere_id=matiere.id)
@@ -111,10 +178,11 @@ def render() -> None:
                     if not chapitres_matiere:
                         st.caption(
                             "⚠️ Cette matière n'a pas encore de chapitre. "
-                            "Importe un PDF depuis la Bibliothèque."
+                            "Importe un PDF depuis la **Bibliothèque**."
                         )
                         continue
 
+                    chap_by_id = {ch.id: ch for ch in chapitres_matiere}
                     chapitres_options = {
                         ch.id: f"Chap. {ch.numero} - {ch.titre}"
                         for ch in chapitres_matiere
@@ -133,16 +201,36 @@ def render() -> None:
                         key=f"ch_{matiere.id}",
                     )
 
+                    # Lien direct vers la salle d'étude pour chaque chapitre coché.
+                    if chapitres_choisis:
+                        st.caption("🧠 Ouvrir un chapitre dans la salle d'étude :")
+                        cols = st.columns(min(len(chapitres_choisis), 4) or 1)
+                        for idx, ch_id in enumerate(chapitres_choisis):
+                            with cols[idx % len(cols)]:
+                                ch = chap_by_id[ch_id]
+                                if st.button(
+                                    f"🧠 Ch. {ch.numero}",
+                                    key=f"goto_chap_{ch.id}",
+                                    help=ch.titre,
+                                ):
+                                    _open_chapitre_in_session_etude(ch.id)
+
+                    # Suggestion intelligente du type de travail.
+                    chapitres_choisis_db = [chap_by_id[i] for i in chapitres_choisis]
+                    type_suggere = _type_travail_suggere(chapitres_choisis_db)
+                    idx_type = TYPES_TRAVAIL.index(
+                        config_existante.get("type_travail") or type_suggere
+                    )
+
                     col1, col2 = st.columns(2)
                     with col1:
-                        idx_type = 0
-                        if config_existante.get("type_travail") in TYPES_TRAVAIL:
-                            idx_type = TYPES_TRAVAIL.index(config_existante["type_travail"])
                         type_travail = st.selectbox(
-                            "Type de travail", options=TYPES_TRAVAIL,
-                            index=idx_type, key=f"type_{matiere.id}",
+                            "Type de travail",
+                            options=TYPES_TRAVAIL,
+                            index=idx_type,
+                            key=f"type_{matiere.id}",
+                            help=f"Suggéré selon le niveau Leitner des chapitres choisis : « {type_suggere} ».",
                         )
-
                     with col2:
                         idx_urg = 0
                         if config_existante.get("urgence") in URGENCES:
@@ -159,49 +247,69 @@ def render() -> None:
                         "urgence": urgence,
                     })
 
-        # 3. TRAVAUX PONCTUELS (Devoirs, exposés)
+        # --- Indicateur live de charge horaire (idée B) ---
+        charge_min = estimer_charge_minutes(session, nouvelles_matieres_selectionnees)
+        if charge_min > 0:
+            profil = session.query(Profil).first()
+            checkin = _get_checkin_today_dict(session)
+            quota_jour_min = calculer_quota_etude_minutes(profil, checkin)
+            quota_semaine_min = quota_jour_min * 7  # référence pour comparaison
+            pct = charge_min / quota_semaine_min * 100 if quota_semaine_min else 0
+
+            heures_str = f"{charge_min / 60:.1f} h"
+            quota_str = f"{quota_semaine_min / 60:.1f} h"
+
+            if charge_min <= quota_semaine_min:
+                st.success(
+                    f"📊 **Volume estimé : {heures_str} d'étude** "
+                    f"(quota hebdo réaliste : {quota_str}, {pct:.0f}% utilisé). "
+                    "Tu as encore de la marge."
+                )
+            elif charge_min <= quota_semaine_min * 1.2:
+                st.warning(
+                    f"📊 **Volume estimé : {heures_str} d'étude** "
+                    f"(quota hebdo réaliste : {quota_str}, {pct:.0f}% utilisé). "
+                    "Tu approches la limite — l'IA pourra ajuster mais sois vigilant."
+                )
+            else:
+                st.error(
+                    f"⚠️ **Surcharge : {heures_str} d'étude prévues** alors que ton "
+                    f"quota hebdo réaliste est {quota_str} ({pct:.0f}% du quota). "
+                    "Gemini déclassera certains chapitres dans `taches_ecartees`. "
+                    "Allège ta sélection."
+                )
+
+        # --- 3. Travaux ponctuels (devoirs, exposés) ---
         st.divider()
         st.subheader("2. Travaux ponctuels")
-        st.caption("Devoir à rendre, compte-rendu de TP, projet noté...")
+        st.caption("Devoir à rendre, compte-rendu de TP, projet noté…")
 
-        df_travaux = pd.DataFrame(travaux_ponctuels_db)
-        if df_travaux.empty:
-            df_travaux = pd.DataFrame(columns=["libelle", "deadline", "duree_min", "priorite"])
-        # Conversion deadline string → datetime (compat avec DatetimeColumn)
-        if "deadline" in df_travaux.columns:
-            df_travaux["deadline"] = pd.to_datetime(df_travaux["deadline"], errors="coerce")
+        df_travaux = _build_travaux_df(travaux_ponctuels_db)
         edited_travaux = st.data_editor(
             df_travaux,
             num_rows="dynamic",
-            width='stretch',
+            width="stretch",
             column_config={
                 "libelle": st.column_config.TextColumn("Libellé du devoir", required=True),
-                "deadline": st.column_config.DatetimeColumn("Deadline (Date & Heure)", format="DD/MM/YYYY HH:mm"),
-                "duree_min": st.column_config.NumberColumn("Durée estimée (min)", min_value=15, step=15, default=60),
-                "priorite": st.column_config.SelectboxColumn("Priorité", options=PRIORITES, default="Normale"),
+                "deadline": st.column_config.DatetimeColumn(
+                    "Deadline (Date & Heure)", format="DD/MM/YYYY HH:mm",
+                ),
+                "duree_min": st.column_config.NumberColumn(
+                    "Durée estimée (min)", min_value=15, step=15, default=60,
+                ),
+                "priorite": st.column_config.SelectboxColumn(
+                    "Priorité", options=PRIORITES, default="Normale",
+                ),
             },
             key="editor_travaux_ponctuels",
         )
 
-        # 4. SAUVEGARDE
+        _render_alertes_deadlines(edited_travaux)
+
+        # --- 4. Sauvegarde ---
         st.divider()
         if st.button("💾 Enregistrer mes objectifs d'études", type="primary"):
-            travaux_propres = []
-            for _, row in edited_travaux.iterrows():
-                if pd.notna(row.get("libelle")) and str(row.get("libelle")).strip() != "":
-                    deadline_str = ""
-                    if pd.notna(row.get("deadline")):
-                        try:
-                            deadline_str = row["deadline"].strftime("%Y-%m-%d %H:%M")
-                        except Exception:  # noqa: BLE001
-                            pass
-
-                    travaux_propres.append({
-                        "libelle": str(row["libelle"]).strip(),
-                        "deadline": deadline_str,
-                        "duree_min": int(row.get("duree_min", 60)),
-                        "priorite": str(row.get("priorite", "Normale")),
-                    })
+            travaux_propres = _clean_travaux(edited_travaux)
 
             try:
                 with session_scope() as write_session:
@@ -212,3 +320,86 @@ def render() -> None:
                 st.toast("Objectifs sauvegardés", icon="✅")
             except Exception as e:  # noqa: BLE001
                 st.error(f"Erreur lors de la sauvegarde : {e}")
+
+
+# ---------------------------------------------------------------------------
+# Helpers privés — check-in du jour + travaux ponctuels
+# ---------------------------------------------------------------------------
+def _get_checkin_today_dict(session) -> dict[str, Any] | None:
+    """Retourne le check-in biomécanique du jour au format dict, ou None
+    s'il n'y en a pas eu."""
+    from database.models import CheckInQuotidien
+
+    row = (
+        session.query(CheckInQuotidien)
+        .filter(CheckInQuotidien.date == _dt.date.today())
+        .first()
+    )
+    if row is None:
+        return None
+    return {
+        "fatigue_physique": int(row.fatigue_physique or 0),
+        "charge_mentale": int(row.charge_mentale or 0),
+        "qualite_sommeil": int(row.qualite_sommeil or 0),
+    }
+
+
+def _build_travaux_df(travaux_ponctuels_db: list[dict[str, Any]]) -> pd.DataFrame:
+    """Construit le DataFrame des travaux ponctuels, trié par deadline."""
+    df = pd.DataFrame(travaux_ponctuels_db) if travaux_ponctuels_db else pd.DataFrame(
+        columns=["libelle", "deadline", "duree_min", "priorite"]
+    )
+    if "deadline" in df.columns:
+        df["deadline"] = pd.to_datetime(df["deadline"], errors="coerce")
+        # Tri par deadline ASC (les plus urgents en haut), NaT à la fin.
+        df = df.sort_values(by="deadline", ascending=True, na_position="last")
+    return df.reset_index(drop=True)
+
+
+def _render_alertes_deadlines(edited_travaux: pd.DataFrame) -> None:
+    """Affiche un badge 🚨 pour chaque travail dont la deadline est < 3 jours
+    (et un 📅 « passée » pour les retards)."""
+    if edited_travaux.empty or "deadline" not in edited_travaux.columns:
+        return
+
+    now = _dt.datetime.now()
+    seuil = now + _dt.timedelta(days=3)
+
+    alertes: list[str] = []
+    for _, row in edited_travaux.iterrows():
+        deadline = row.get("deadline")
+        libelle = (row.get("libelle") or "").strip()
+        if not libelle or pd.isna(deadline):
+            continue
+        if deadline < now:
+            alertes.append(f"📅 **{libelle}** : deadline **passée** ({deadline.strftime('%d/%m %H:%M')})")
+        elif deadline <= seuil:
+            jours = (deadline - now).days
+            alertes.append(
+                f"🚨 **{libelle}** : deadline dans {jours} jour(s) "
+                f"({deadline.strftime('%d/%m %H:%M')})"
+            )
+
+    if alertes:
+        st.warning("**Deadlines proches ou dépassées :**\n\n" + "\n\n".join(alertes))
+
+
+def _clean_travaux(edited_travaux: pd.DataFrame) -> list[dict[str, Any]]:
+    """Normalise les travaux saisis pour stockage JSON."""
+    travaux_propres: list[dict[str, Any]] = []
+    for _, row in edited_travaux.iterrows():
+        if pd.isna(row.get("libelle")) or str(row.get("libelle")).strip() == "":
+            continue
+        deadline_str = ""
+        if pd.notna(row.get("deadline")):
+            try:
+                deadline_str = row["deadline"].strftime("%Y-%m-%d %H:%M")
+            except Exception:  # noqa: BLE001
+                pass
+        travaux_propres.append({
+            "libelle": str(row["libelle"]).strip(),
+            "deadline": deadline_str,
+            "duree_min": int(row.get("duree_min", 60)),
+            "priorite": str(row.get("priorite", "Normale")),
+        })
+    return travaux_propres
