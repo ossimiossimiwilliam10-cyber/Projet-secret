@@ -66,10 +66,15 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
 
         # 1. Gain d'XP
         if statut == "fait":
+            # Défensif : justification_ia est nullable en DB, plusieurs `X in None`
+            # crasheraient sinon. On lit une seule fois en safe-string locale.
+            justification = t.justification_ia or ""
+            titre_t = t.titre or ""
+
             if t.type == "sport":
                 # Pour le sport, on essaie de retrouver l'intensité dans le titre ou la justification
                 intensite = "Modérée"
-                if "Intense" in t.justification_ia or "🔴" in t.justification_ia:
+                if "Intense" in justification or "🔴" in justification:
                     intensite = "Intense"
                 gain = gamification_service.attribuer_xp_sport(s, profil, intensite=intensite, titre=t.titre)
             elif t.type in ("courses", "meal_prep"):
@@ -78,10 +83,10 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
                 # On tente de récupérer les extra_data si présents dans la justification ou le titre
                 extra = {}
                 if t.type == "projet":
-                    if "🔥" in t.titre or "Haute" in t.justification_ia:
+                    if "🔥" in titre_t or "Haute" in justification:
                         extra["priorite"] = "Haute"
                 elif t.type == "social":
-                    if "Repos" in t.justification_ia or "Ressourcement" in t.justification_ia:
+                    if "Repos" in justification or "Ressourcement" in justification:
                         extra["type_social"] = "Repos / Ressourcement"
                 
                 gain = gamification_service.attribuer_xp_categorie(
