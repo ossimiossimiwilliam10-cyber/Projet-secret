@@ -129,6 +129,7 @@ def build_planner_prompt(
     semaine: Semaine,
     saisie: SaisieHebdo,
     profil: Profil,
+    consignes_manuelles: str = "",
 ) -> str:
     """Compile toutes les données en un prompt structuré pour Gemini."""
     # Activités professionnelles actives pour cette semaine
@@ -222,6 +223,9 @@ def build_planner_prompt(
     # -- 2 ter. Pondérations des objectifs personnels (F3b) --
     ponderations = _get_ponderations_objectifs(session)
 
+    # -- 2 quater. Consignes manuelles à la volée (Chantier 2) --
+    consignes_txt = (consignes_manuelles or "").strip() or "(Aucune consigne exceptionnelle cette semaine.)"
+
     # -- 3. Compilation du prompt final --
     prompt = f"""Tu es un expert en planification et en sciences cognitives.
 Tu dois générer un planning hebdomadaire détaillé, réaliste et optimisé pour un étudiant.
@@ -253,6 +257,12 @@ leur "chapitre_id" dans les tâches d'étude que tu crées. NE LES OUBLIE PAS.
 === 🎯 OBJECTIFS PERSONNELS DE L'ÉTUDIANT (PONDÉRATIONS À RESPECTER) ===
 {_format_ponderations_pour_prompt(ponderations)}
 
+=== 💬 CONSIGNES EXCEPTIONNELLES DE L'ÉTUDIANT POUR CETTE SEMAINE ===
+Ces consignes ont été saisies juste avant le lancement de la génération. Elles sont
+prioritaires sur tes choix automatiques (mais ne doivent jamais contredire les règles
+de sécurité comme le sommeil ou les contraintes fixes absolues).
+{consignes_txt}
+
 === SPORT & PHYSIQUE ===
 {_safe_json_str(saisie.sport_config)}
 
@@ -279,6 +289,7 @@ Ajustements (Énergie, Type semaine, Événements exceptionnels) : {_safe_json_s
 8. CHAPITRE_IDS OBLIGATOIRES : Pour chaque tâche de type 'etude', tu DOIS inclure "chapitre_ids": [id1, id2] dans le JSON. Utilise UNIQUEMENT les IDs réels listés dans "Cours à travailler" ou dans "Chapitres dus pour révision espacée" — n'invente JAMAIS d'ID.
 9. PRIORITÉ AUX RÉVISIONS DUES : Si la section "Chapitres dus pour révision espacée" contient des chapitres, ils ont PRIORITÉ ABSOLUE sur les autres sessions d'étude facultatives. Garantis-leur à chacun au moins un slot d'étude dans la semaine. Si la semaine est très chargée, écarte plutôt les tâches non-urgentes (et mentionne-les dans "taches_ecartees").
 10. OBJECTIFS PERSONNELS : La section "Objectifs personnels" liste des chapitres avec un coefficient (1.0 = normal, 2.0 = double priorité, 3.0 = priorité max). Pour les chapitres avec un coefficient ≥ 1.5, alloue PROPORTIONNELLEMENT plus de temps d'étude (par ex. un chapitre à 2.5× doit avoir 2-3 sessions là où un chapitre à 1.0× en aurait une). Les chapitres avec coefficient ≤ 0.9 peuvent recevoir moins de temps (l'étudiant les maîtrise déjà).
+11. RÈGLE ABSOLUE DE DÉPLACEMENT : Le temps de trajet DOIT être SOUSTRAIT de l'heure de début de l'événement. Si un examen, un cours ou le travail au Luxembourg commence à 16h00 et que le trajet dure 30 minutes, le départ du transport est OBLIGATOIREMENT à 15h30. Ne planifie jamais un trajet qui empiète sur l'événement.
 
 === FORMAT DE SORTIE ATTENDU ===
 Tu dois retourner UNIQUEMENT un objet JSON valide, sans aucun texte avant ou après, structuré EXACTEMENT comme ceci :
@@ -315,7 +326,11 @@ Tu dois retourner UNIQUEMENT un objet JSON valide, sans aucun texte avant ou apr
 # ---------------------------------------------------------------------------
 # 2. Appel API & Parsing
 # ---------------------------------------------------------------------------
-def generate_schedule_from_ai(session: Session, semaine_id: int) -> dict[str, Any]:
+def generate_schedule_from_ai(
+    session: Session,
+    semaine_id: int,
+    consignes_manuelles: str = "",
+) -> dict[str, Any]:
     """Orchestre la création du prompt, l'appel à Gemini et le renvoi du JSON."""
     # 1. Récupération des données
     semaine = session.get(Semaine, semaine_id)
@@ -331,7 +346,7 @@ def generate_schedule_from_ai(session: Session, semaine_id: int) -> dict[str, An
         raise ValueError("Clé API Gemini introuvable dans le profil.")
 
     # 2. Construction du prompt
-    prompt = build_planner_prompt(session, semaine, saisie, profil)
+    prompt = build_planner_prompt(session, semaine, saisie, profil, consignes_manuelles=consignes_manuelles)
 
     # 3. Appel à Gemini via le SDK google-genai
     try:

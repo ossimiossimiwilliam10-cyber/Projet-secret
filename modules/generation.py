@@ -102,10 +102,18 @@ def render() -> None:
 
         # --- BOUTON DE GÉNÉRATION ---
         st.subheader("1. Lancer la planification")
+
+        consignes_manuelles = st.text_area(
+            "💬 Consignes exceptionnelles pour cette semaine",
+            value="",
+            placeholder="Ex : Jeudi je dois absolument finir avant 18h. Ne mets pas de sport mardi car j'ai mal au genou. Priorise les maths cette semaine.",
+            help="Ajoute ici toute consigne libre que l'IA devra impérativement respecter en plus des règles habituelles.",
+        )
+
         if st.button("🚀 Générer le planning avec Gemini", type="primary", width='stretch'):
             with st.spinner("🧠 Gemini réfléchit à ton planning... (ça prend environ 15 à 30 secondes)"):
                 try:
-                    resultat_json = generate_schedule_from_ai(session, semaine.id)
+                    resultat_json = generate_schedule_from_ai(session, semaine.id, consignes_manuelles=consignes_manuelles)
                     _save_planning_to_db(semaine.id, resultat_json)
                     st.success("✅ Planning généré avec succès !")
                     st.toast("Planning prêt !", icon="🎉")
