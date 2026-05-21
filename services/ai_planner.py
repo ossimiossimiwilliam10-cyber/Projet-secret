@@ -17,7 +17,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from database.models import Chapitre, Cours, Profil, SaisieHebdo, Semaine
+from database.models import Profil, SaisieHebdo, Semaine
+from services.scheduler_engine import (
+    JOURS,
+    calculer_quota_etude_minutes,
+    lisser_revisions_leitner,
+    repartir_nouveaux_chapitres,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -175,49 +181,7 @@ def build_planner_prompt(
         "temps_transport_min_aller": profil.temps_transport_min,
     }
 
-    # -- 2. Cours sélectionnés --
-    cours_a_planifier = []
-    if saisie.cours_selectionnes:
-        for c_sel in saisie.cours_selectionnes:
-            cours_id = c_sel.get("cours_id")
-            cours_db = session.get(Cours, cours_id)
-            if not cours_db:
-                continue
-
-            ch_ids = c_sel.get("chapitre_ids", [])
-            if ch_ids:
-                chapitres_db = (
-                    session.query(Chapitre)
-                    .filter(Chapitre.id.in_(ch_ids))
-                    .all()
-                )
-                chapitres_details = [
-                    {
-                        "chapitre_id": ch.id,
-                        "numero": ch.numero,
-                        "titre": ch.titre,
-                        "temps_estime_h": ch.temps_estime_h,
-                        "niveau_leitner": ch.niveau_actuel or 0,
-                    }
-                    for ch in chapitres_db
-                ]
-            else:
-                chapitres_details = "Révision globale du cours"
-
-            cours_a_planifier.append({
-                "cours_id": cours_db.id,
-                "nom_cours": cours_db.nom,
-                "matiere": cours_db.matiere,
-                "type_travail": c_sel.get("type_travail"),
-                "urgence": c_sel.get("urgence"),
-                "chapitres_cibles": chapitres_details,
-                "conseil_methode_ia": (
-                    cours_db.pdf_analyse.get("conseils_methode", "")
-                    if cours_db.pdf_analyse else ""
-                ),
-            })
-
-    # -- 2 bis. Chapitres dus pour révision espacée (NOUVEAU Phase D) --
+    # -- 2. Chapitres dus pour révision espacée (Leitner) ----------------
     chapitres_dus = _get_chapitres_dus_pour_semaine(session, semaine)
 
     # -- 2 ter. Pondérations des objectifs personnels (F3b) --
@@ -247,92 +211,121 @@ def build_planner_prompt(
     else:
         checkin_data = None
 
-    # -- 3. Compilation du prompt final --
-    prompt = f"""Tu es un expert en planification et en sciences cognitives.
-Tu dois générer un planning hebdomadaire détaillé, réaliste et optimisé pour un étudiant.
+    # -- 3. Pré-calculs déterministes (refonte) ---------------------------
+    # On délègue à scheduler_engine tout ce qui est arithmétique : répartition
+    # des nouveaux chapitres, lissage des révisions ±1 jour, quota d'étude.
+    # Le LLM ne reçoit que des « ingrédients prêts à placer ».
+    quota_etude_min = calculer_quota_etude_minutes(profil, checkin_data)
+
+    repartition_nouveaux = repartir_nouveaux_chapitres(
+        session, saisie.cours_selectionnes, semaine,
+    )
+    charges_initiales = {
+        j: sum(ch["temps_estime_min"] for ch in repartition_nouveaux[j])
+        for j in JOURS
+    }
+    repartition_revisions, charges_finales = lisser_revisions_leitner(
+        chapitres_dus, semaine, quota_etude_min, charges_initiales,
+    )
+
+    # -- 4. Compilation du prompt XML structuré ---------------------------
+    prompt = f"""<MISSION>
+Tu es un planificateur cognitif. Ci-dessous, une liste d'INGRÉDIENTS déjà
+pré-répartis par jour par notre moteur Python. Ton SEUL rôle : placer chaque
+ingrédient au bon créneau horaire de la journée indiquée, en respectant les
+contraintes vitales et la pédagogie. INTERDIT de déplacer un ingrédient d'un
+jour à un autre — Python l'a déjà équilibré pour toi.
 
 DATES : Semaine du {semaine.date_debut} au {semaine.date_fin}.
+</MISSION>
 
-=== PROFIL ÉTUDIANT & RYTHME BIOLOGIQUE ===
-Heure de lever habituelle : {_format_time(profil.heure_lever)}
-Heure de coucher habituelle : {_format_time(profil.heure_coucher)}
-Métriques de travail : {_safe_json_str(profil_data)}
-Repas : {profil.nb_repas_par_jour} repas/jour (durée: {profil.duree_repas_min}min, prep: {profil.duree_prep_repas_min}min)
-Sieste requise : {"Oui (" + str(profil.duree_sieste_min) + " min)" if profil.besoin_sieste else "Non"}
+<CONTRAINTES_VITALES>
+Règles non-négociables. Ne JAMAIS les violer.
 
-=== CONTRAINTES FIXES ABSOLUES (À placer obligatoirement aux heures indiquées) ===
+- SOMMEIL : lever {_format_time(profil.heure_lever)}, coucher {_format_time(profil.heure_coucher)}. Cible {profil.heures_sommeil_cible} h/nuit.
+- REPAS : {profil.nb_repas_par_jour} repas/jour ({profil.duree_repas_min} min chacun, prep {profil.duree_prep_repas_min} min).
+- SIESTE : {"Oui (" + str(profil.duree_sieste_min) + " min)" if profil.besoin_sieste else "Non"}.
+- OBLIGATOIRE : repas, sommeil, contraintes fixes, sport, transport, jobs ont {{"obligatoire": true}}. Le reste a {{"obligatoire": false}}.
+
+Contraintes fixes absolues (placer aux heures exactes indiquées) :
 {_safe_json_str(contraintes_totales)}
+</CONTRAINTES_VITALES>
 
-=== ÉTUDES & TRAVAUX ACADÉMIQUES ===
-Cours à travailler (chaque cours/chapitre a un ID — réutilise-les dans "chapitre_ids") :
-{_safe_json_str(cours_a_planifier)}
+<LOGISTIQUE_TRAJETS>
+Le temps de trajet DOIT être SOUSTRAIT de l'heure de début de l'événement.
+Si un événement commence à 16:00 et que le trajet fait 30 min, le départ
+du transport est OBLIGATOIREMENT à 15:30. Jamais d'empiètement.
 
-Travaux ponctuels (Devoirs) : {_safe_json_str(saisie.travaux_ponctuels)}
-
-=== 🧠 CHAPITRES DUS POUR RÉVISION ESPACÉE (PRIORITÉ HAUTE) ===
-Ces chapitres ont une date de révision (algo Leitner) qui tombe d'ici la fin de la semaine.
-Tu DOIS leur dédier au moins une session d'étude chacun cette semaine, en utilisant
-leur "chapitre_id" dans les tâches d'étude que tu crées. NE LES OUBLIE PAS.
-{_safe_json_str(chapitres_dus)}
-
-=== 🎯 OBJECTIFS PERSONNELS DE L'ÉTUDIANT (PONDÉRATIONS À RESPECTER) ===
-{_format_ponderations_pour_prompt(ponderations)}
-
-=== 💬 CONSIGNES EXCEPTIONNELLES DE L'ÉTUDIANT POUR CETTE SEMAINE ===
-Ces consignes ont été saisies juste avant le lancement de la génération. Elles sont
-prioritaires sur tes choix automatiques (mais ne doivent jamais contredire les règles
-de sécurité comme le sommeil ou les contraintes fixes absolues).
-{consignes_txt}
-
-=== 🗺️ TRAJETS HABITUELS DE L'ÉTUDIANT (durées en minutes) ===
-Dictionnaire des trajets récurrents avec leur durée exacte. Identifie le trajet
-pertinent à partir du libellé de la contrainte (ex. « Strasbourg-Luxembourg » pour
-un cours/travail au Luxembourg, « Appartement-Fac » pour un cours à l'université).
-Si aucun trajet ne correspond, utilise le temps de transport par défaut ({profil.temps_transport_min} min).
+Dictionnaire des trajets habituels (durées en minutes) — identifie le
+trajet via le libellé de la contrainte (ex. « Strasbourg-Luxembourg »
+pour un job au Luxembourg) :
 {_safe_json_str(trajets_habituels)}
 
-=== 📊 CHECK-IN BIOMÉCANIQUE DU JOUR ===
-Auto-évaluation de l'étudiant sur 1-10 (1 = forme olympique, 10 = épuisé)
-pour la journée du {date.today().isoformat()}. Si la valeur est null, aucun
-check-in n'a été saisi aujourd'hui — applique alors les règles standard.
+Trajet par défaut si aucun ne correspond : {profil.temps_transport_min} min.
+</LOGISTIQUE_TRAJETS>
+
+<PEDAGOGIE_ET_RYTHME>
+- CHRONOTYPE : pic de concentration sur {profil.pic_concentration}. Place
+  les études les plus difficiles à ce moment.
+- DURÉE DE SESSION : maximum {profil.duree_max_session_min} min consécutives,
+  puis pause {profil.pause_entre_sessions_min} min.
+- RÉCUPÉRATION POST-SPORT : pas de théorie dense dans les 2 h qui suivent
+  une séance « Intense ».
+- BUFFER : laisse ~20 % de temps libre par jour pour les imprévus.
+- LOAD BALANCING : si le check-in indique fatigue > 7 ou mental > 7,
+  remplace les sessions denses par des tâches à faible friction (lecture
+  légère, flashcards) et garantis des blocs de récupération.
+
+Check-in biomécanique du jour ({date.today().isoformat()}) — échelle 1-10
+(1 = forme olympique, 10 = épuisé) :
 {_safe_json_str(checkin_data) if checkin_data else "Aucun check-in pour aujourd'hui."}
 
-=== SPORT & PHYSIQUE ===
-{_safe_json_str(saisie.sport_config)}
+Objectifs personnels actifs (pondérations à respecter) :
+{_format_ponderations_pour_prompt(ponderations)}
+</PEDAGOGIE_ET_RYTHME>
 
-=== COURSES & REPAS (Meal Prep) ===
-{_safe_json_str(saisie.courses_config)}
+<INGREDIENTS_PRE_CALCULES>
+Ces listes ont DÉJÀ été équilibrées par notre moteur. Tu places chaque
+ingrédient dans le JOUR indiqué — INTERDIT de le déplacer.
 
-=== PROJETS & DÉVELOPPEMENT PERSONNEL ===
-Projets Perso : {_safe_json_str(saisie.projets_config)}
-Habitudes (Dev Perso) : {_safe_json_str(saisie.dev_perso_config)}
+Quota d'étude max par jour (modulé par le check-in) : {quota_etude_min} min
 
-=== SOCIAL, INTENDANCE & AJUSTEMENTS ===
-Social/Loisirs : {_safe_json_str(saisie.social_config)}
-Intendance/Admin : {_safe_json_str(saisie.intendance_config)}
-Ajustements (Énergie, Type semaine, Événements exceptionnels) : {_safe_json_str(saisie.ajustements)}
+[NOUVEAUX CHAPITRES — max 1 par matière par jour, déjà respecté]
+{_safe_json_str(repartition_nouveaux)}
 
-=== RÈGLES OBLIGATOIRES À RESPECTER ===
-1. SOMMEIL & REPAS : Ne JAMAIS empiéter sur le sommeil. Placer tous les repas.
-2. RÉCUPÉRATION SPORT : Si une séance de sport est 'Intense', ne pas placer de révision théorique dense dans les 2 heures qui suivent.
-3. CHRONOTYPE : Place les tâches d'étude les plus urgentes ou difficiles sur le pic de concentration ({profil.pic_concentration}).
-4. BUFFER : Laisse environ 20% de temps libre non planifié pour parer aux imprévus. Ne remplis pas les journées à 100%.
-5. TRANSPORT : Ajoute un bloc de transport avant et après chaque contrainte fixe ou cours en présentiel. Réfère-toi au dictionnaire des trajets habituels pour déterminer la durée exacte. Si le lieu est inconnu, utilise le temps de transport par défaut.
-6. ÉQUILIBRE : Si le type de semaine est 'Light / Chill' ou l'énergie est 'Fatigué', réduis drastiquement les sessions d'étude non urgentes et augmente les loisirs.
-7. OBLIGATOIRE : Les repas, le sommeil, les contraintes fixes, le sport et le transport ont l'attribut "obligatoire": true. Le reste a "obligatoire": false.
-8. CHAPITRE_IDS OBLIGATOIRES : Pour chaque tâche de type 'etude', tu DOIS inclure "chapitre_ids": [id1, id2] dans le JSON. Utilise UNIQUEMENT les IDs réels listés dans "Cours à travailler" ou dans "Chapitres dus pour révision espacée" — n'invente JAMAIS d'ID.
-9. PRIORITÉ AUX RÉVISIONS DUES : Si la section "Chapitres dus pour révision espacée" contient des chapitres, ils ont PRIORITÉ ABSOLUE sur les autres sessions d'étude facultatives. Garantis-leur à chacun au moins un slot d'étude dans la semaine. Si la semaine est très chargée, écarte plutôt les tâches non-urgentes (et mentionne-les dans "taches_ecartees").
-10. OBJECTIFS PERSONNELS : La section "Objectifs personnels" liste des chapitres avec un coefficient (1.0 = normal, 2.0 = double priorité, 3.0 = priorité max). Pour les chapitres avec un coefficient ≥ 1.5, alloue PROPORTIONNELLEMENT plus de temps d'étude (par ex. un chapitre à 2.5× doit avoir 2-3 sessions là où un chapitre à 1.0× en aurait une). Les chapitres avec coefficient ≤ 0.9 peuvent recevoir moins de temps (l'étudiant les maîtrise déjà).
-11. RÈGLE ABSOLUE DE DÉPLACEMENT : Le temps de trajet DOIT être SOUSTRAIT de l'heure de début de l'événement. Si un examen, un cours ou le travail au Luxembourg commence à 16h00 et que le trajet dure 30 minutes, le départ du transport est OBLIGATOIREMENT à 15h30. Ne planifie jamais un trajet qui empiète sur l'événement.
-12. RÈGLE DE LOAD BALANCING : Prends en compte le Check-in Biomécanique du jour de l'étudiant. Si la fatigue physique ou la charge mentale dépasse 7/10, tu DOIS alléger la journée. Remplace les sessions de théorie dense par des tâches à faible friction cognitive (lecture légère, révision passive, flashcards) et garantis des blocs de récupération.
+[RÉVISIONS LEITNER — déjà lissées avec tolérance ±1 jour, surcharge marquée]
+{_safe_json_str(repartition_revisions)}
 
-=== FORMAT DE SORTIE ATTENDU ===
-Tu dois retourner UNIQUEMENT un objet JSON valide, sans aucun texte avant ou après, structuré EXACTEMENT comme ceci :
+[CHARGE D'ÉTUDE PRÉVUE par jour après pré-calcul, minutes]
+{_safe_json_str(charges_finales)}
+
+[TRAVAUX PONCTUELS — devoirs à rendre, à placer où tu peux dans la semaine]
+{_safe_json_str(saisie.travaux_ponctuels)}
+
+[SPORT, COURSES/REPAS, PROJETS, DEV PERSO, SOCIAL, INTENDANCE — à placer librement]
+Sport       : {_safe_json_str(saisie.sport_config)}
+Courses     : {_safe_json_str(saisie.courses_config)}
+Projets     : {_safe_json_str(saisie.projets_config)}
+Dev perso   : {_safe_json_str(saisie.dev_perso_config)}
+Social      : {_safe_json_str(saisie.social_config)}
+Intendance  : {_safe_json_str(saisie.intendance_config)}
+Ajustements : {_safe_json_str(saisie.ajustements)}
+</INGREDIENTS_PRE_CALCULES>
+
+<CONSIGNES_ETUDIANT>
+Consignes saisies juste avant la génération. Prioritaires sur tes choix
+automatiques mais jamais sur les CONTRAINTES_VITALES.
+{consignes_txt}
+</CONSIGNES_ETUDIANT>
+
+<FORMAT_SORTIE>
+Retourne UNIQUEMENT un objet JSON valide, sans aucun texte ni markdown
+autour, EXACTEMENT structuré comme ceci :
 {{
   "score_realisme": 85,
-  "alertes": ["liste de conflits ou objectifs impossibles à tenir ce qui a forcé des reports"],
-  "justification_globale": "Explication en 3 phrases de ta stratégie pour cette semaine.",
-  "taches_ecartees": ["Tâches qui n'ont pas pu être placées par manque de temps"],
+  "alertes": ["liste de conflits ou objectifs impossibles à tenir"],
+  "justification_globale": "Explication en 3 phrases de ta stratégie.",
+  "taches_ecartees": ["Tâches non placées par manque de temps"],
   "suggestions": ["1 ou 2 conseils pour bien vivre cette semaine"],
   "planning": {{
     "lundi": [
@@ -343,7 +336,7 @@ Tu dois retourner UNIQUEMENT un objet JSON valide, sans aucun texte avant ou apr
         "type": "etude",
         "chapitre_ids": [10],
         "obligatoire": false,
-        "justification": "Révision Leitner due le 22/05"
+        "justification": "Nouveau chapitre pré-réparti par Python"
       }}
     ],
     "mardi": [],
@@ -354,6 +347,14 @@ Tu dois retourner UNIQUEMENT un objet JSON valide, sans aucun texte avant ou apr
     "dimanche": []
   }}
 }}
+
+RÈGLES JSON :
+- "chapitre_ids" obligatoire pour chaque tâche de type 'etude'. Utilise
+  UNIQUEMENT les IDs présents dans <INGREDIENTS_PRE_CALCULES>. N'invente
+  jamais d'ID.
+- "obligatoire": true uniquement pour repas/sommeil/contraintes fixes/
+  sport/transport/jobs.
+</FORMAT_SORTIE>
 """
     return prompt
 
