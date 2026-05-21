@@ -70,7 +70,7 @@ def render() -> None:
             num_rows="dynamic",
             use_container_width=True,
             column_config={
-                "activite": st.column_config.TextColumn("Événement / Détail", placeholder="Ex: Soirée chez Tom"),
+                "activite": st.column_config.TextColumn("Événement / Détail"),
                 "type": st.column_config.SelectboxColumn("Type d'activité", options=TYPES_SOCIAL, default=TYPES_SOCIAL[1]),
                 "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=120),
                 "jour_pref": st.column_config.SelectboxColumn("Jour", options=["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Peu importe"], default="Vendredi"),

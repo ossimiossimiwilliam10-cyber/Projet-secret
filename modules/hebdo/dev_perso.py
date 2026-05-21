@@ -71,7 +71,7 @@ def render() -> None:
             use_container_width=True,
             column_config={
                 "activite": st.column_config.SelectboxColumn("Activité", options=CATEGORIES, required=True),
-                "frequence": st.column_config.TextColumn("Objectif (ex: Tous les jours, 2x...)", placeholder="Tous les jours"),
+                "frequence": st.column_config.TextColumn("Objectif (ex: Tous les jours, 2x...)"),
                 "duree_min": st.column_config.NumberColumn("Durée / session (min)", min_value=5, step=5, default=20),
                 "creneau_pref": st.column_config.SelectboxColumn("Moment idéal", options=["Matin", "Après-midi", "Soir", "Peu importe"], default="Matin")
             },

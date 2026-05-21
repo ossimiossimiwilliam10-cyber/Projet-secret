@@ -73,7 +73,7 @@ def render() -> None:
             num_rows="dynamic",
             use_container_width=True,
             column_config={
-                "titre": st.column_config.TextColumn("Nom de la tâche / Projet", required=True, placeholder="Ex: Rendre rapport de stage"),
+                "titre": st.column_config.TextColumn("Nom de la tâche / Projet", required=True),
                 "type": st.column_config.SelectboxColumn("Catégorie", options=TYPES_PROJET, default=TYPES_PROJET[0]),
                 "duree_min": st.column_config.NumberColumn("Durée totale (min)", min_value=15, step=15, default=60),
                 "priorite": st.column_config.SelectboxColumn("Priorité", options=PRIORITES, default="Moyenne"),
