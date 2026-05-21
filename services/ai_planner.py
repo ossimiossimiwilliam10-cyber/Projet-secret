@@ -233,7 +233,7 @@ def build_planner_prompt(
     quota_etude_min = calculer_quota_etude_minutes(profil, checkin_data)
 
     repartition_nouveaux = repartir_nouveaux_chapitres(
-        session, saisie.cours_selectionnes, semaine,
+        session, saisie.matieres_selectionnees, semaine,
     )
     charges_initiales = {
         j: sum(ch["temps_estime_min"] for ch in repartition_nouveaux[j])

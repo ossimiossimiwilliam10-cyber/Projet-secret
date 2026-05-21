@@ -492,7 +492,9 @@ class SaisieHebdo(Base):
         index=True,
     )
 
-    cours_selectionnes = Column(JSON, default=list)
+    # Liste de dicts {matiere_id, chapitre_ids, type_travail, urgence}
+    # (anciennement "cours_selectionnes" — renommé refonte bibliothèque).
+    matieres_selectionnees = Column(JSON, default=list)
     travaux_ponctuels = Column(JSON, default=list)
     sport_config = Column(JSON, default=list)
     courses_config = Column(JSON, default=dict)

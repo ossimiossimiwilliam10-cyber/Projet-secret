@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, Cours, SaisieHebdo
+from database.models import Chapitre, Matiere, SaisieHebdo
 from utils.helpers import get_or_create_current_week
 
 # ---------------------------------------------------------------------------
@@ -57,45 +57,68 @@ def render() -> None:
             )
 
         # Récupération des données existantes
-        cours_selectionnes_db: list[dict[str, Any]] = saisie.cours_selectionnes or []
+        matieres_selectionnees_db: list[dict[str, Any]] = saisie.matieres_selectionnees or []
         travaux_ponctuels_db: list[dict[str, Any]] = saisie.travaux_ponctuels or []
 
-        # Récupération de tous les cours actifs
-        tous_les_cours = session.query(Cours).filter_by(actif=True).all()
-        if not tous_les_cours:
-            st.warning("Ta bibliothèque est vide. Ajoute des cours avant de planifier ta semaine.")
+        # Récupération de toutes les matières actives
+        toutes_matieres = (
+            session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
+        )
+        if not toutes_matieres:
+            st.warning(
+                "Ta bibliothèque est vide. Crée des matières et importe des PDFs "
+                "avant de planifier ta semaine."
+            )
             return
 
-        # 1. SÉLECTION MULTIPLE DES COURS
-        cours_ids_deja_selectionnes = [c["cours_id"] for c in cours_selectionnes_db]
-        cours_pre_selectionnes = [c for c in tous_les_cours if c.id in cours_ids_deja_selectionnes]
+        # 1. SÉLECTION MULTIPLE DES MATIÈRES
+        matiere_ids_deja_selectionnees = [
+            m["matiere_id"] for m in matieres_selectionnees_db
+        ]
+        matieres_pre_selectionnees = [
+            m for m in toutes_matieres if m.id in matiere_ids_deja_selectionnees
+        ]
 
-        st.subheader("1. Cours à travailler")
-        cours_choisis = st.multiselect(
-            "Quels cours souhaites-tu aborder cette semaine ?",
-            options=tous_les_cours,
-            default=cours_pre_selectionnes,
-            format_func=lambda c: f"{c.nom} ({c.matiere})" if c.matiere else c.nom,
-            help="Choisis les matières. L'IA se chargera de répartir le volume horaire."
+        st.subheader("1. Matières à travailler")
+        matieres_choisies = st.multiselect(
+            "Quelles matières souhaites-tu aborder cette semaine ?",
+            options=toutes_matieres,
+            default=matieres_pre_selectionnees,
+            format_func=lambda m: f"{m.nom} ({m.ue.nom})" if m.ue else m.nom,
+            help="Choisis les matières. L'IA répartira ensuite les chapitres "
+                 "selon la règle « max 1 nouveau chapitre par matière par jour ».",
         )
 
-        nouveaux_cours_selectionnes = []
+        nouvelles_matieres_selectionnees = []
 
-        # 2. DÉTAILS POUR CHAQUE COURS CHOISI
-        if cours_choisis:
-            for cours in cours_choisis:
+        # 2. DÉTAILS POUR CHAQUE MATIÈRE CHOISIE
+        if matieres_choisies:
+            for matiere in matieres_choisies:
                 config_existante = next(
-                    (c for c in cours_selectionnes_db if c["cours_id"] == cours.id), {}
+                    (m for m in matieres_selectionnees_db
+                     if m.get("matiere_id") == matiere.id),
+                    {},
                 )
 
-                with st.expander(f"⚙️ Configurer : {cours.nom}", expanded=True):
-                    chapitres_cours = (
+                with st.expander(f"⚙️ Configurer : {matiere.nom}", expanded=True):
+                    chapitres_matiere = (
                         session.query(Chapitre)
-                        .filter_by(cours_id=cours.id)
+                        .filter_by(matiere_id=matiere.id)
                         .order_by(Chapitre.numero)
                         .all()
                     )
-                    chapitres_options = {ch.id: f"Chap. {ch.numero} - {ch.titre}" for ch in chapitres_cours}
+
+                    if not chapitres_matiere:
+                        st.caption(
+                            "⚠️ Cette matière n'a pas encore de chapitre. "
+                            "Importe un PDF depuis la Bibliothèque."
+                        )
+                        continue
+
+                    chapitres_options = {
+                        ch.id: f"Chap. {ch.numero} - {ch.titre}"
+                        for ch in chapitres_matiere
+                    }
 
                     ch_ids_def = [
                         ch_id for ch_id in config_existante.get("chapitre_ids", [])
@@ -107,7 +130,7 @@ def render() -> None:
                         options=list(chapitres_options.keys()),
                         default=ch_ids_def,
                         format_func=lambda x: chapitres_options[x],
-                        key=f"ch_{cours.id}",
+                        key=f"ch_{matiere.id}",
                     )
 
                     col1, col2 = st.columns(2)
@@ -117,7 +140,7 @@ def render() -> None:
                             idx_type = TYPES_TRAVAIL.index(config_existante["type_travail"])
                         type_travail = st.selectbox(
                             "Type de travail", options=TYPES_TRAVAIL,
-                            index=idx_type, key=f"type_{cours.id}",
+                            index=idx_type, key=f"type_{matiere.id}",
                         )
 
                     with col2:
@@ -126,11 +149,11 @@ def render() -> None:
                             idx_urg = URGENCES.index(config_existante["urgence"])
                         urgence = st.select_slider(
                             "Urgence", options=URGENCES, value=URGENCES[idx_urg],
-                            key=f"urg_{cours.id}",
+                            key=f"urg_{matiere.id}",
                         )
 
-                    nouveaux_cours_selectionnes.append({
-                        "cours_id": cours.id,
+                    nouvelles_matieres_selectionnees.append({
+                        "matiere_id": matiere.id,
                         "chapitre_ids": chapitres_choisis,
                         "type_travail": type_travail,
                         "urgence": urgence,
@@ -183,7 +206,7 @@ def render() -> None:
             try:
                 with session_scope() as write_session:
                     saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
-                    saisie_to_update.cours_selectionnes = nouveaux_cours_selectionnes
+                    saisie_to_update.matieres_selectionnees = nouvelles_matieres_selectionnees
                     saisie_to_update.travaux_ponctuels = travaux_propres
                 st.success("✅ Tes objectifs d'études pour la semaine sont enregistrés !")
                 st.toast("Objectifs sauvegardés", icon="✅")

@@ -82,7 +82,7 @@ def calculer_quota_etude_minutes(
 # ---------------------------------------------------------------------------
 def repartir_nouveaux_chapitres(
     session: Session,
-    cours_selectionnes: list[dict[str, Any]] | None,
+    matieres_selectionnees: list[dict[str, Any]] | None,
     semaine: Semaine,
 ) -> dict[str, list[dict[str, Any]]]:
     """Répartit les chapitres « nouveaux » (niveau Leitner = 0) sur la
@@ -101,12 +101,12 @@ def repartir_nouveaux_chapitres(
     """
     repartition: dict[str, list[dict[str, Any]]] = {j: [] for j in JOURS}
 
-    if not cours_selectionnes:
+    if not matieres_selectionnees:
         return repartition
 
     # Regrouper les chapitres nouveaux par matière (clé d'agrégation).
     par_matiere: dict[str, list[dict[str, Any]]] = {}
-    for c_sel in cours_selectionnes:
+    for c_sel in matieres_selectionnees:
         ch_ids = c_sel.get("chapitre_ids") or []
         if not ch_ids:
             continue
