@@ -83,81 +83,81 @@ def render() -> None:
 
         # Récupération de la configuration existante
         sport_config_db: list[dict[str, Any]] = saisie.sport_config or []
-        
-        # 1. Résumé de la charge
-        st.subheader("Résumé de la semaine")
-        _afficher_resume_charge(sport_config_db)
-        
-        st.divider()
-        
-        # 2. Éditeur de séances
-        st.subheader("Séances prévues")
-        
-        # Préparation du dataframe pour le data_editor
-        df_sport = pd.DataFrame(sport_config_db)
-        
-        # Migration à la volée des anciennes données sans 'type'
-        if not df_sport.empty and "type" not in df_sport.columns:
+        saisie_id = saisie.id
+
+    # UI
+    st.subheader("Résumé de la semaine")
+    _afficher_resume_charge(sport_config_db)
+    st.divider()
+
+    st.subheader("Séances prévues")
+    
+    # Préparation robuste du dataframe
+    df_sport = pd.DataFrame(sport_config_db)
+    
+    if df_sport.empty:
+        df_sport = pd.DataFrame([{
+            "type": "🏃‍♂️ Course / Cardio",
+            "nom": "", 
+            "duree_min": 60, 
+            "intensite": INTENSITES[1], 
+            "creneau_pref": "Soir"
+        }])
+    else:
+        # Migration : ajout des colonnes manquantes
+        if "type" not in df_sport.columns:
             df_sport["type"] = "🎯 Autre"
-            
-        if df_sport.empty:
-            df_sport = pd.DataFrame([{
-                "type": "🏃‍♂️ Course / Cardio",
-                "nom": "", 
-                "duree_min": 60, 
-                "intensite": INTENSITES[1], 
-                "creneau_pref": "Soir"
-            }])
-            
-        # S'assurer que les colonnes sont dans le bon ordre pour l'affichage
-        cols_order = ["type", "nom", "duree_min", "intensite", "creneau_pref"]
-        # Filtrer seulement les colonnes qui existent (au cas où)
-        existing_cols = [c for c in cols_order if c in df_sport.columns]
-        df_sport = df_sport[existing_cols]
+        if "nom" not in df_sport.columns:
+            df_sport["nom"] = ""
+        if "duree_min" not in df_sport.columns:
+            df_sport["duree_min"] = 60
+        if "intensite" not in df_sport.columns:
+            df_sport["intensite"] = INTENSITES[1]
+        if "creneau_pref" not in df_sport.columns:
+            df_sport["creneau_pref"] = "Peu importe"
 
-        edited_sport = st.data_editor(
-            df_sport,
-            num_rows="dynamic",
-            width='stretch',
-            column_config={
-                "type": st.column_config.SelectboxColumn("Discipline", options=list(TYPES_SPORT.keys()), required=True),
-                "nom": st.column_config.TextColumn("Détails (ex: Séance Jambes, Sparring)", required=False),
-                "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=60),
-                "intensite": st.column_config.SelectboxColumn("Intensité", options=INTENSITES, default=INTENSITES[1]),
-                "creneau_pref": st.column_config.SelectboxColumn("Créneau préféré", options=CRENEAUX, default="Peu importe")
-            },
-            key="editor_sport_v3" # On change encore la clé pour forcer le reset Streamlit
-        )
+    # Ordre des colonnes
+    cols = ["type", "nom", "duree_min", "intensite", "creneau_pref"]
+    df_sport = df_sport[cols]
 
-        st.divider()
-        
-        # 3. Sauvegarde
-        col_save, col_info = st.columns([1, 2])
-        with col_save:
-            if st.button("💾 Enregistrer mes séances", type="primary", use_container_width=True):
-                # Nettoyage des données
-                sport_propre = []
-                for _, row in edited_sport.iterrows():
-                    # On accepte la ligne si elle a un type
-                    if pd.notna(row.get("type")):
-                        sport_propre.append({
-                            "type": str(row["type"]),
-                            "nom": str(row.get("nom", "")).strip(),
-                            "duree_min": int(row.get("duree_min", 60)),
-                            "intensite": str(row.get("intensite", INTENSITES[1])),
-                            "creneau_pref": str(row.get("creneau_pref", "Peu importe"))
-                        })
+    edited_sport = st.data_editor(
+        df_sport,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "type": st.column_config.SelectboxColumn("Discipline", options=list(TYPES_SPORT.keys()), required=True),
+            "nom": st.column_config.TextColumn("Détails (ex: Séance Jambes)", required=False),
+            "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=60),
+            "intensite": st.column_config.SelectboxColumn("Intensité", options=INTENSITES, default=INTENSITES[1]),
+            "creneau_pref": st.column_config.SelectboxColumn("Créneau préféré", options=CRENEAUX, default="Peu importe")
+        },
+        key="sport_editor_v4"
+    )
 
-                # Sauvegarde
-                try:
-                    with session_scope() as write_session:
-                        saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
-                        saisie_to_update.sport_config = sport_propre
-                    st.success("✅ Tes séances de sport sont enregistrées !")
-                    st.toast("Sport sauvegardé", icon="✅")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur lors de la sauvegarde : {e}")
-        
-        with col_info:
-            st.caption("💡 L'intensité influence la récupération : une séance 🔴 bloque les révisions théoriques intenses pendant 2h après le sport.")
+    st.divider()
+    
+    col_save, col_info = st.columns([1, 2])
+    with col_save:
+        if st.button("💾 Enregistrer mes séances", type="primary", use_container_width=True):
+            sport_propre = []
+            for _, row in edited_sport.iterrows():
+                if pd.notna(row.get("type")):
+                    sport_propre.append({
+                        "type": str(row["type"]),
+                        "nom": str(row.get("nom", "")).strip(),
+                        "duree_min": int(row.get("duree_min", 60)),
+                        "intensite": str(row.get("intensite", INTENSITES[1])),
+                        "creneau_pref": str(row.get("creneau_pref", "Peu importe"))
+                    })
+
+            try:
+                with session_scope() as write_session:
+                    saisie_to_update = write_session.get(SaisieHebdo, saisie_id)
+                    saisie_to_update.sport_config = sport_propre
+                st.success("✅ Tes séances de sport sont enregistrées !")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur lors de la sauvegarde : {e}")
+    
+    with col_info:
+        st.caption("💡 L'intensité influence la récupération : une séance 🔴 bloque les révisions théoriques intenses pendant 2h après le sport.")
