@@ -163,15 +163,36 @@ def build_planner_prompt(
         .all()
     )
 
-    # Fusion des contraintes fixes globales et des horaires de travail
-    contraintes_totales = list(profil.contraintes_fixes or [])
+    # Fusion des contraintes fixes globales et des horaires de travail.
+    # On expose aussi le LIEU du job (s'il est renseigné) pour que l'IA
+    # puisse croiser avec ``Profil.trajets_habituels`` et calculer le
+    # bon temps de transport (ex. Strasbourg → Luxembourg = 150 min vs
+    # trajet par défaut 20 min).
+    #
+    # Pré-filtrage : l'utilisateur peut avoir déclaré dans Ajustements de
+    # la semaine des contraintes à IGNORER cette semaine (ex. examens de
+    # substitution scannés depuis l'ENT alors qu'il n'est pas concerné).
+    # On retire ces libellés AVANT de construire le prompt — l'IA ne les
+    # verra même pas, donc impossible qu'elle les force.
+    ajustements_db = saisie.ajustements or {}
+    contraintes_ignorees: list[str] = [
+        str(x) for x in (ajustements_db.get("contraintes_ignorees") or [])
+    ]
+    contraintes_totales = [
+        c for c in (profil.contraintes_fixes or [])
+        if c.get("libelle") not in contraintes_ignorees
+    ]
     for j in jobs_db:
+        libelle_base = f"💼 TRAVAIL : {j.titre}"
+        if j.lieu:
+            libelle_base += f" 📍 {j.lieu}"
         contraintes_totales.append(
             {
                 "jour": j.jour,
                 "heure_debut": j.heure_debut.strftime("%H:%M"),
                 "heure_fin": j.heure_fin.strftime("%H:%M"),
-                "libelle": f"💼 TRAVAIL : {j.titre}",
+                "libelle": libelle_base,
+                "lieu": j.lieu or "",
             }
         )
 
@@ -265,12 +286,23 @@ Le temps de trajet DOIT être SOUSTRAIT de l'heure de début de l'événement.
 Si un événement commence à 16:00 et que le trajet fait 30 min, le départ
 du transport est OBLIGATOIREMENT à 15:30. Jamais d'empiètement.
 
-Dictionnaire des trajets habituels (durées en minutes) — identifie le
-trajet via le libellé de la contrainte (ex. « Strasbourg-Luxembourg »
-pour un job au Luxembourg) :
+Dictionnaire des trajets habituels (durées en minutes) :
 {_safe_json_str(trajets_habituels)}
 
-Trajet par défaut si aucun ne correspond : {profil.temps_transport_min} min.
+**Comment choisir la bonne durée de trajet pour un événement :**
+1. Si l'événement est un JOB (TRAVAIL) avec un champ ``lieu`` renseigné
+   (visible dans la contrainte), cherche dans le dict ci-dessus une clé
+   dont le nom CONTIENT le lieu (ex. job lieu = "Luxembourg" → trajet
+   "Strasbourg-Luxembourg"). Utilise cette durée.
+2. Sinon, déduis depuis le LIBELLÉ de la contrainte (ex. libellé contenant
+   « Luxembourg » → trajet vers le Luxembourg ; libellé « Fac » ou
+   « Université » → trajet "Appartement-Fac" si défini).
+3. En dernier recours : trajet par défaut = {profil.temps_transport_min} min.
+
+Exemple concret : un job le samedi 09:00 → 17:00 avec lieu
+"Luxembourg" et un trajet habituel "Strasbourg-Luxembourg : 150 min"
+→ tu places un trajet aller de 06:30 → 09:00 et un trajet retour
+17:00 → 19:30. Tu NE traverses PAS les frontières du job lui-même.
 </LOGISTIQUE_TRAJETS>
 
 <PEDAGOGIE_ET_RYTHME>
@@ -322,7 +354,7 @@ Projets     : {_safe_json_str(saisie.projets_config)}
 Dev perso   : {_safe_json_str(saisie.dev_perso_config)}
 Social      : {_safe_json_str(saisie.social_config)}
 Intendance  : {_safe_json_str(saisie.intendance_config)}
-Ajustements : {_safe_json_str(saisie.ajustements)}
+Ajustements : {_safe_json_str({k: v for k, v in (saisie.ajustements or {}).items() if k != "contraintes_ignorees"})}
 </INGREDIENTS_PRE_CALCULES>
 
 <CONSIGNES_ETUDIANT>

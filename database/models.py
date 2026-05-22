@@ -439,6 +439,12 @@ class Job(Base):
     heure_debut = Column(Time, nullable=False)
     heure_fin = Column(Time, nullable=False)
 
+    # Lieu du job — sert à croiser avec ``Profil.trajets_habituels`` pour
+    # que l'IA calcule automatiquement le bon temps de trajet.
+    # Ex. : "Luxembourg" → matche le trajet "Strasbourg-Luxembourg".
+    # Optionnel ; si vide, l'IA utilise ``Profil.temps_transport_min``.
+    lieu = Column(String(200), default="")
+
     date_debut = Column(Date, nullable=True)
     date_fin = Column(Date, nullable=True)
 
@@ -447,7 +453,7 @@ class Job(Base):
     )
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<Job id={self.id} titre={self.titre!r} jour={self.jour!r}>"
+        return f"<Job id={self.id} titre={self.titre!r} jour={self.jour!r} lieu={self.lieu!r}>"
 
 
 # ---------------------------------------------------------------------------

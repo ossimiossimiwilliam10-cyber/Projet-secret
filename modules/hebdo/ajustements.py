@@ -10,7 +10,7 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import SaisieHebdo, Semaine
+from database.models import Profil, SaisieHebdo, Semaine
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -80,9 +80,40 @@ def render() -> None:
             key="editor_ajustements"
         )
 
+        # --- Contraintes fixes à IGNORER cette semaine ---
+        # Permet de neutraliser certaines contraintes du profil pour
+        # une semaine donnée (ex. : tu n'es pas concerné par les exams
+        # de substitution alors qu'ils sont scannés dans contraintes_fixes).
+        st.divider()
+        st.subheader("3. Contraintes à ignorer cette semaine")
+        profil = session.query(Profil).first()
+        contraintes_fixes_dispo = list(profil.contraintes_fixes or []) if profil else []
+        contraintes_ignorees_db = config_db.get("contraintes_ignorees", [])
+
+        if not contraintes_fixes_dispo:
+            st.caption(
+                "_Aucune contrainte fixe dans ton profil. "
+                "Va sur **Profil → Contraintes fixes récurrentes** pour en définir._"
+            )
+            contraintes_ignorees = []
+        else:
+            # Index par libellé pour cohabiter avec d'éventuels doublons.
+            labels_dispo = [c.get("libelle", "(sans libellé)") for c in contraintes_fixes_dispo]
+            defaults = [lbl for lbl in contraintes_ignorees_db if lbl in labels_dispo]
+            contraintes_ignorees = st.multiselect(
+                "Contraintes fixes à IGNORER pour cette semaine",
+                options=labels_dispo,
+                default=defaults,
+                help="Coche ce qui ne te concerne pas cette semaine. L'IA fera "
+                     "comme si ces contraintes n'existaient pas (mais tes autres "
+                     "contraintes fixes restent intactes pour les semaines à venir). "
+                     "Cas typique : examens de substitution scannés depuis ton ENT "
+                     "alors que tu n'es pas concerné.",
+            )
+
         # --- Commentaire Libre ---
         st.divider()
-        st.subheader("3. Consigne libre pour l'IA")
+        st.subheader("4. Consigne libre pour l'IA")
         commentaire_libre = st.text_area(
             "Un message pour Gemini ?",
             value=config_db.get("commentaire_libre", ""),
@@ -104,6 +135,7 @@ def render() -> None:
                         "niveau_energie": niveau_energie,
                         "type_semaine": type_semaine,
                         "evenements_exceptionnels": evenements_propres,
+                        "contraintes_ignorees": contraintes_ignorees,
                         "commentaire_libre": commentaire_libre.strip()
                     }
                 st.success("✅ Tes ajustements sont enregistrés !")

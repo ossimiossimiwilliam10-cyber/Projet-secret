@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import streamlit as st
 from database.db import get_session, session_scope
-from database.models import Job
+from database.models import Job, Profil
 from utils.helpers import get_or_create_current_week
 
 JOURS = [
@@ -29,6 +29,10 @@ def render() -> None:
     with get_session() as session:
         semaine, _, _ = get_or_create_current_week(session, transfer_reported=False)
 
+        # Liste des trajets habituels pour offrir un selecteur de lieu cohérent.
+        profil = session.query(Profil).first()
+        trajets_habituels = dict(profil.trajets_habituels or {}) if profil else {}
+
         # 1. Formulaire d'ajout
         with st.expander("➕ Enregistrer une activité professionnelle", expanded=True):
             with st.form("form_add_job", clear_on_submit=True):
@@ -50,6 +54,26 @@ def render() -> None:
                     heure_fin = st.time_input(
                         "Heure de fin*", value=datetime.time(16, 0)
                     )
+
+                # 📍 Lieu du job — pour croiser avec les trajets habituels
+                # du Profil. Si un trajet correspond, l'IA utilise sa durée
+                # exacte au lieu du temps par défaut.
+                lieu_options = ["(aucun)"] + list(trajets_habituels.keys()) + ["✏️ Saisir un autre lieu…"]
+                lieu_choisi = st.selectbox(
+                    "📍 Lieu du job (matche un trajet habituel)",
+                    options=lieu_options,
+                    index=0,
+                    help="Choisis un trajet déclaré dans ton Profil pour que "
+                         "l'IA calcule exactement le bon temps de déplacement. "
+                         "Ex. : « Strasbourg-Luxembourg » → 150 min de trajet.",
+                )
+                if lieu_choisi == "✏️ Saisir un autre lieu…":
+                    lieu_libre = st.text_input(
+                        "Lieu (saisie libre)",
+                        placeholder="Ex. : Luxembourg-ville, Mulhouse, Télétravail…",
+                    )
+                else:
+                    lieu_libre = ""
 
                 st.divider()
                 st.markdown("**Disponibilité et récurrence de l'horaire :**")
@@ -90,12 +114,21 @@ def render() -> None:
                     st.error("L'heure de fin doit être postérieure à l'heure de début.")
                     return
 
+                # Résolution du lieu : choix dans la liste OU saisie libre.
+                if lieu_choisi == "(aucun)":
+                    lieu_final = ""
+                elif lieu_choisi == "✏️ Saisir un autre lieu…":
+                    lieu_final = (lieu_libre or "").strip()
+                else:
+                    lieu_final = lieu_choisi
+
                 with session_scope() as write_session:
                     nouveau_job = Job(
                         titre=titre.strip(),
                         jour=jour,
                         heure_debut=heure_debut,
                         heure_fin=heure_fin,
+                        lieu=lieu_final,
                         date_debut=d_debut if type_duree == "long_terme" else None,
                         date_fin=d_fin if type_duree == "long_terme" else None,
                         semaine_id=semaine.id if type_duree == "semaine_unique" else None,
@@ -129,6 +162,8 @@ def render() -> None:
                 with c1:
                     st.markdown(f"**💼 {j.titre}**")
                     st.caption(f"Validité : {validite}")
+                    if j.lieu:
+                        st.caption(f"📍 Lieu : **{j.lieu}**")
                 with c2:
                     st.markdown(
                         f"⏰ {j.jour.capitalize()} de **{j.heure_debut.strftime('%H:%M')}** à **{j.heure_fin.strftime('%H:%M')}**"
