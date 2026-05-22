@@ -21,14 +21,30 @@ import plotly.express as px
 import streamlit as st
 
 from database import Matiere, get_session
-from services.revision_service import (
-    INTERVALLES_J,
-    MAX_NIVEAU,
-    chapitres_jamais_initialises,
-    chapitres_par_jour_futur,
-    dette_revision,
-    repartition_par_niveau,
-)
+
+# Import défensif : si Streamlit Cloud a un cache d'une ancienne version
+# de revision_service sans les helpers de supervision, on affiche un
+# message explicite au lieu d'un ImportError opaque masqué par
+# l'écran « original error message is redacted ».
+try:
+    from services.revision_service import (
+        INTERVALLES_J,
+        MAX_NIVEAU,
+        chapitres_jamais_initialises,
+        chapitres_par_jour_futur,
+        dette_revision,
+        repartition_par_niveau,
+    )
+except ImportError as _exc:
+    import streamlit as _st_err
+    _st_err.error(
+        "🔄 L'app a besoin d'être redéployée — certains helpers de supervision "
+        "ne sont pas encore disponibles sur ce serveur.\n\n"
+        "**Solution** : dans Streamlit Cloud, clique sur **Manage app** "
+        "(en bas à droite) → **Reboot app**.\n\n"
+        f"Détail technique : `{_exc}`"
+    )
+    _st_err.stop()
 
 # ---------------------------------------------------------------------------
 # Constantes UI
