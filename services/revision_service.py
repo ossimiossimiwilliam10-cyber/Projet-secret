@@ -26,6 +26,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.db import BASE_DIR
@@ -236,6 +237,106 @@ def initialiser_chapitre_pour_revision(
     chap.niveau_actuel = int(chap.niveau_actuel or 0)
     chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
     return True
+
+
+# ===========================================================================
+# 4 bis. Vue de supervision globale (méthode des J)
+# ===========================================================================
+def repartition_par_niveau(session: Session) -> dict[int, int]:
+    """Compte le nombre de chapitres dans chaque niveau Leitner.
+
+    Inclut tous les chapitres actifs (avec ou sans ``date_prochaine``).
+    Le niveau 0 contient les « jamais commencés » qui ont été initialisés
+    mais n'ont pas encore eu de quiz réussi.
+
+    Returns:
+        Dict ``{niveau: nb_chapitres}`` couvrant les niveaux présents.
+    """
+    rows = (
+        session.query(Chapitre.niveau_actuel, func.count(Chapitre.id))
+        .group_by(Chapitre.niveau_actuel)
+        .all()
+    )
+    return {int(niveau or 0): int(nb) for niveau, nb in rows}
+
+
+def chapitres_par_jour_futur(
+    session: Session,
+    days_ahead: int = 28,
+    today: date | None = None,
+    matiere_ids: list[int] | None = None,
+) -> dict[date, list[Chapitre]]:
+    """Pour chaque jour des ``days_ahead`` prochains jours (à partir
+    d'aujourd'hui inclus), liste les chapitres dont ``date_prochaine``
+    tombe ce jour-là.
+
+    Les chapitres en retard (``date_prochaine < today``) sont rapatriés
+    sur la clé ``today`` pour qu'ils apparaissent à traiter en priorité.
+
+    Args:
+        days_ahead: nombre de jours à projeter (28 = 4 semaines).
+        today: date de référence (par défaut ``date.today()``).
+        matiere_ids: filtrer par matière. Si None, toutes.
+
+    Returns:
+        Dict ``{date: [chapitres]}`` ordonné par date croissante.
+    """
+    today = today or date.today()
+    date_max = today + timedelta(days=days_ahead - 1)
+
+    query = session.query(Chapitre).filter(Chapitre.date_prochaine.isnot(None))
+    if matiere_ids is not None:
+        if not matiere_ids:
+            return {}
+        query = query.filter(Chapitre.matiere_id.in_(matiere_ids))
+
+    # Le filtre supérieur inclut tous les retards (date < today).
+    query = query.filter(Chapitre.date_prochaine <= date_max)
+    chapitres = query.all()
+
+    result: dict[date, list[Chapitre]] = {}
+    for chap in chapitres:
+        d = chap.date_prochaine
+        # Les retards atterrissent sur today (à traiter en priorité).
+        if d < today:
+            d = today
+        result.setdefault(d, []).append(chap)
+    # Tri par date croissante (Python 3.7+ : dict préserve l'ordre).
+    return dict(sorted(result.items()))
+
+
+def dette_revision(
+    session: Session,
+    today: date | None = None,
+    matiere_ids: list[int] | None = None,
+) -> list[Chapitre]:
+    """Chapitres dont la date de révision est STRICTEMENT passée (vrai
+    retard). Triés par ancienneté du retard (plus en retard d'abord).
+    """
+    today = today or date.today()
+    query = session.query(Chapitre).filter(
+        Chapitre.date_prochaine.isnot(None),
+        Chapitre.date_prochaine < today,
+    )
+    if matiere_ids is not None:
+        if not matiere_ids:
+            return []
+        query = query.filter(Chapitre.matiere_id.in_(matiere_ids))
+    return query.order_by(Chapitre.date_prochaine.asc()).all()
+
+
+def chapitres_jamais_initialises(
+    session: Session,
+    matiere_ids: list[int] | None = None,
+) -> list[Chapitre]:
+    """Chapitres existants en base mais sans date_prochaine — la file de
+    révision n'a pas démarré pour eux."""
+    query = session.query(Chapitre).filter(Chapitre.date_prochaine.is_(None))
+    if matiere_ids is not None:
+        if not matiere_ids:
+            return []
+        query = query.filter(Chapitre.matiere_id.in_(matiere_ids))
+    return query.order_by(Chapitre.matiere_id, Chapitre.numero).all()
 
 
 # ===========================================================================
@@ -766,6 +867,10 @@ __all__ = [
     "appliquer_resultat_quiz",
     "label_couleur_status",
     "chapitres_a_reviser",
+    "repartition_par_niveau",
+    "chapitres_par_jour_futur",
+    "dette_revision",
+    "chapitres_jamais_initialises",
     "initialiser_chapitre_pour_revision",
     "get_or_extract_chapter_text",
     "generer_fiche_ia",
