@@ -603,6 +603,50 @@ def render() -> None:
         with col_score:
             _render_score_card(int(semaine.score_realisme or 0))
 
+        # === Export iCal (pour Google Calendar / Apple Calendar / etc.) ===
+        try:
+            from services.ical_exporter import build_ics_for_semaine, make_ics_filename
+            col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 2])
+            with col_dl1:
+                ics_full = build_ics_for_semaine(
+                    session, semaine.id, inclure_obligatoires=True,
+                )
+                st.download_button(
+                    "📅 Export iCal (complet)",
+                    data=ics_full,
+                    file_name=make_ics_filename(semaine),
+                    mime="text/calendar",
+                    width="stretch",
+                    help="Importe dans Google Calendar / Apple Calendar / "
+                         "Outlook. Inclut TOUTES les tâches (sommeil, repas, "
+                         "études, sport…) avec rappels 10 min avant les sessions "
+                         "d'étude.",
+                )
+            with col_dl2:
+                ics_light = build_ics_for_semaine(
+                    session, semaine.id, inclure_obligatoires=False,
+                )
+                st.download_button(
+                    "📅 Export iCal (sans sommeil/repas)",
+                    data=ics_light,
+                    file_name=f"light_{make_ics_filename(semaine)}",
+                    mime="text/calendar",
+                    width="stretch",
+                    help="Version allégée — uniquement tes tâches libres "
+                         "(études, projets, social, etc.). Idéal si ton "
+                         "calendrier est déjà chargé.",
+                )
+            with col_dl3:
+                st.caption(
+                    "💡 **Astuce mobile** : importe le .ics dans ton calendrier "
+                    "natif, tu recevras des notifications de rappel 10 min "
+                    "avant chaque session d'étude. Tu peux ré-importer après "
+                    "chaque régénération — les events se mettent à jour "
+                    "(UID stable), pas de doublon."
+                )
+        except Exception as exc:  # noqa: BLE001
+            st.caption(f"_(Export iCal indisponible : {exc})_")
+
         # Statistiques globales
         taches = (
             session.query(Tache)

@@ -70,6 +70,7 @@ def main() -> None:
             st.Page(import_externe.render, title="Import Photo (IA)", icon="📸", url_path="import-externe"),
         ],
         "Action": [
+            st.Page("pages/aujourdhui.py", title="Aujourd'hui", icon="📍", url_path="aujourdhui", default=True),
             st.Page(generation.render, title="Génération IA", icon="✨", url_path="generation"),
             st.Page(suivi.render, title="Suivi quotidien", icon="📊", url_path="suivi"),
             # Salle d'étude : accessible via clic sur une tâche dans generation.py
