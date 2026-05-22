@@ -33,7 +33,10 @@ from services.matiere_stats import (
     matieres_avec_revisions_dues,
     stats_matiere,
 )
-from services.scheduler_engine import calculer_quota_etude_minutes
+from services.scheduler_engine import (
+    calculer_cible_hebdo_minutes,
+    calculer_quota_etude_minutes,
+)
 from utils.helpers import get_or_create_current_week
 
 # ---------------------------------------------------------------------------
@@ -262,36 +265,44 @@ def render() -> None:
                         "urgence": urgence,
                     })
 
-        # --- Indicateur live de charge horaire (idée B) ---
+        # --- Indicateur live de charge horaire ---
+        # Compare la somme estimée à l'OBJECTIF HEBDOMADAIRE du profil
+        # (pas au plafond × 7 — c'est l'objectif réel que l'étudiant vise).
         charge_min = estimer_charge_minutes(session, nouvelles_matieres_selectionnees)
         if charge_min > 0:
             profil = session.query(Profil).first()
-            checkin = _get_checkin_today_dict(session)
-            quota_jour_min = calculer_quota_etude_minutes(profil, checkin)
-            quota_semaine_min = quota_jour_min * 7  # référence pour comparaison
-            pct = charge_min / quota_semaine_min * 100 if quota_semaine_min else 0
+            cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+            pct = charge_min / cible_hebdo_min * 100 if cible_hebdo_min else 0
 
             heures_str = f"{charge_min / 60:.1f} h"
-            quota_str = f"{quota_semaine_min / 60:.1f} h"
+            cible_str = f"{cible_hebdo_min / 60:.1f} h"
+            plafond_h = float(getattr(profil, "heures_etude_plafond_par_jour", 0) or 0)
+            plafond_str = f"{plafond_h:.1f} h/jour" if plafond_h > 0 else "non défini"
 
-            if charge_min <= quota_semaine_min:
-                st.success(
-                    f"📊 **Volume estimé : {heures_str} d'étude** "
-                    f"(quota hebdo réaliste : {quota_str}, {pct:.0f}% utilisé). "
-                    "Tu as encore de la marge."
+            if charge_min < cible_hebdo_min * 0.6:
+                st.info(
+                    f"📊 **Volume estimé : {heures_str}** sur ton objectif de "
+                    f"{cible_str} ({pct:.0f} %). Tu peux cocher davantage de "
+                    f"chapitres pour atteindre ta cible hebdo."
                 )
-            elif charge_min <= quota_semaine_min * 1.2:
+            elif charge_min <= cible_hebdo_min * 1.05:
+                st.success(
+                    f"🎯 **Volume estimé : {heures_str}** — bien aligné sur ton "
+                    f"objectif hebdo de {cible_str} ({pct:.0f} %). "
+                    f"Plafond journalier : {plafond_str}."
+                )
+            elif charge_min <= cible_hebdo_min * 1.2:
                 st.warning(
-                    f"📊 **Volume estimé : {heures_str} d'étude** "
-                    f"(quota hebdo réaliste : {quota_str}, {pct:.0f}% utilisé). "
-                    "Tu approches la limite — l'IA pourra ajuster mais sois vigilant."
+                    f"⚠️ **Volume estimé : {heures_str}** — légèrement au-dessus "
+                    f"de ton objectif hebdo de {cible_str} ({pct:.0f} %). "
+                    f"L'IA répartira en respectant ton plafond ({plafond_str})."
                 )
             else:
                 st.error(
-                    f"⚠️ **Surcharge : {heures_str} d'étude prévues** alors que ton "
-                    f"quota hebdo réaliste est {quota_str} ({pct:.0f}% du quota). "
-                    "Gemini déclassera certains chapitres dans `taches_ecartees`. "
-                    "Allège ta sélection."
+                    f"🚨 **Surcharge : {heures_str}** pour un objectif de "
+                    f"{cible_str} ({pct:.0f} %). L'IA déclassera des chapitres "
+                    f"dans `taches_ecartees`. Allège ta sélection ou augmente "
+                    f"ton objectif dans le **Profil**."
                 )
 
         # --- 3. Travaux ponctuels (devoirs, exposés) ---

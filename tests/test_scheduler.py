@@ -120,6 +120,81 @@ def test_quota_etude_inchange_si_checkin_normal():
     assert q == base
 
 
+def test_plafond_journalier_utilise_si_renseigne():
+    """``heures_etude_plafond_par_jour`` prime sur le calcul historique
+    ``duree_max_session × SESSIONS_PAR_JOUR``."""
+    profil = SimpleNamespace(
+        duree_max_session_min=50,
+        heures_etude_plafond_par_jour=8.0,
+    )
+    q = calculer_quota_etude_minutes(profil, None)
+    # 8 h = 480 min — pas le fallback 50 × 3 = 150 min.
+    assert q == 480
+
+
+def test_plafond_journalier_reste_module_par_le_checkin():
+    """Le plafond journalier est lui aussi sujet à la modulation -30 %
+    quand fatigue ou charge mentale > 7/10."""
+    profil = SimpleNamespace(
+        duree_max_session_min=50,
+        heures_etude_plafond_par_jour=8.0,
+    )
+    q = calculer_quota_etude_minutes(
+        profil, {"fatigue_physique": 9, "charge_mentale": 4}
+    )
+    # 480 × 0.70 = 336
+    assert q == 336
+
+
+def test_plafond_fallback_si_non_renseigne():
+    """Si ``heures_etude_plafond_par_jour`` vaut 0 (non renseigné), on
+    retombe sur ``duree_max_session × SESSIONS_PAR_JOUR``."""
+    profil = SimpleNamespace(
+        duree_max_session_min=60,
+        heures_etude_plafond_par_jour=0.0,
+    )
+    q = calculer_quota_etude_minutes(profil, None)
+    assert q == 60 * SESSIONS_PAR_JOUR
+
+
+def test_cible_hebdo_utilise_le_champ_dedie():
+    """``calculer_cible_hebdo_minutes`` lit
+    ``heures_etude_cible_par_semaine`` quand il est renseigné."""
+    from services.scheduler_engine import calculer_cible_hebdo_minutes
+
+    profil = SimpleNamespace(
+        heures_etude_cible_par_semaine=40.0,
+        heures_etude_plafond_par_jour=8.0,
+    )
+    assert calculer_cible_hebdo_minutes(profil) == 40 * 60  # 2400 min
+
+
+def test_cible_hebdo_fallback_sur_plafond_x7():
+    """Sans cible hebdo, on déduit cible = plafond × 7 comme défaut."""
+    from services.scheduler_engine import calculer_cible_hebdo_minutes
+
+    profil = SimpleNamespace(
+        heures_etude_cible_par_semaine=0.0,
+        heures_etude_plafond_par_jour=6.0,
+        duree_max_session_min=50,
+    )
+    # plafond_min = 360 ; cible = 360 × 7 = 2520
+    assert calculer_cible_hebdo_minutes(profil) == 2520
+
+
+def test_cible_hebdo_independante_du_checkin():
+    """La cible hebdo est une référence STABLE, pas modulée par le
+    check-in. C'est seulement le plafond journalier qui est modulé."""
+    from services.scheduler_engine import calculer_cible_hebdo_minutes
+
+    profil = SimpleNamespace(
+        heures_etude_cible_par_semaine=30.0,
+        heures_etude_plafond_par_jour=6.0,
+    )
+    # Le check-in n'est pas un argument de cette fonction par design.
+    assert calculer_cible_hebdo_minutes(profil) == 30 * 60
+
+
 # ---------------------------------------------------------------------------
 # 2. Répartition des nouveaux chapitres
 # ---------------------------------------------------------------------------

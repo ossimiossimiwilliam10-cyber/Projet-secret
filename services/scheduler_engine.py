@@ -52,20 +52,34 @@ SEUIL_FATIGUE: int = 7
 
 
 # ---------------------------------------------------------------------------
-# Quota d'étude par jour
+# Quota d'étude
 # ---------------------------------------------------------------------------
 def calculer_quota_etude_minutes(
     profil: Any,
     checkin: dict[str, Any] | None,
 ) -> int:
-    """Quota d'étude max autorisé sur une journée, en minutes.
+    """**Plafond** d'étude max autorisé sur UNE journée, en minutes.
 
-    Combine la durée max d'une session du profil (b) avec une modulation
-    par le check-in biomécanique (c). Si le profil ne renseigne rien, on
-    prend 50 min × 3 sessions = 150 min comme base raisonnable.
+    C'est la limite que l'IA ne doit pas dépasser un jour donné (pour
+    respecter le rythme et éviter la sur-charge), peu importe l'objectif
+    hebdomadaire.
+
+    Source (ordre de priorité) :
+      1. ``profil.heures_etude_plafond_par_jour`` × 60, si renseigné > 0.
+      2. Fallback historique : ``duree_max_session_min`` × ``SESSIONS_PAR_JOUR``
+         si l'étudiant n'a pas (encore) défini son plafond.
+      3. Dernier recours : 50 min × 3 = 150 min.
+
+    Modulation par le check-in biomécanique du jour : si fatigue physique
+    ou charge mentale > ``SEUIL_FATIGUE`` (7/10), on applique
+    ``COEF_REDUCTION_QUOTA_FATIGUE`` (-30 % par défaut).
     """
-    duree_session = int(getattr(profil, "duree_max_session_min", None) or 50)
-    base = duree_session * SESSIONS_PAR_JOUR
+    plafond = float(getattr(profil, "heures_etude_plafond_par_jour", None) or 0)
+    if plafond > 0:
+        base = int(round(plafond * 60))
+    else:
+        duree_session = int(getattr(profil, "duree_max_session_min", None) or 50)
+        base = duree_session * SESSIONS_PAR_JOUR
 
     if not checkin:
         return base
@@ -75,6 +89,29 @@ def calculer_quota_etude_minutes(
     if fatigue > SEUIL_FATIGUE or mental > SEUIL_FATIGUE:
         return int(base * COEF_REDUCTION_QUOTA_FATIGUE)
     return base
+
+
+def calculer_cible_hebdo_minutes(profil: Any) -> int:
+    """Total d'heures d'étude visé sur la **semaine** (en minutes).
+
+    C'est l'objectif que l'IA cherche à atteindre en répartissant les
+    chapitres sur les 7 jours, sans dépasser le plafond journalier.
+
+    Source (ordre de priorité) :
+      1. ``profil.heures_etude_cible_par_semaine`` × 60 si renseigné > 0.
+      2. Fallback : 7 × plafond journalier (cible = plafond plein × 7).
+      3. Dernier recours : 21 h (≈ 3 h/jour) en minutes.
+
+    Aucune modulation check-in ici : c'est un objectif de référence
+    stable, pas un plafond instantané.
+    """
+    cible = float(getattr(profil, "heures_etude_cible_par_semaine", None) or 0)
+    if cible > 0:
+        return int(round(cible * 60))
+    plafond_min = calculer_quota_etude_minutes(profil, checkin=None)
+    if plafond_min > 0:
+        return plafond_min * 7
+    return 21 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +278,7 @@ __all__ = [
     "DUREE_REVISION_MIN",
     "SESSIONS_PAR_JOUR",
     "calculer_quota_etude_minutes",
+    "calculer_cible_hebdo_minutes",
     "repartir_nouveaux_chapitres",
     "lisser_revisions_leitner",
 ]

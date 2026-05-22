@@ -67,6 +67,13 @@ class Profil(Base):
     methode_travail = Column(String(20), default="mixte")
     capacite_weekend = Column(String(20), default="partiel")
     tolerance_fatigue = Column(String(20), default="moyenne")
+    # Quota d'étude personnel — cours + révisions confondus, tout ce qui est
+    # « activité intellectuelle scolaire ».
+    # - Objectif hebdomadaire : total visé sur la semaine (l'IA répartit).
+    # - Plafond journalier : pas plus que ça en une journée, quel que soit
+    #   l'objectif hebdo.
+    heures_etude_cible_par_semaine = Column(Float, default=21.0)
+    heures_etude_plafond_par_jour = Column(Float, default=6.0)
 
     # --- Transport ---------------------------------------------------------
     temps_transport_min = Column(Integer, default=0)
@@ -404,7 +411,10 @@ class SaisieHebdo(Base):
     courses_config = Column(JSON, default=dict)
     projets_config = Column(JSON, default=list)
     dev_perso_config = Column(JSON, default=list)
-    social_config = Column(JSON, default=dict)
+    # Liste de dicts {activite, type, duree_min, jour_pref, creneau_pref} —
+    # le code modules/hebdo/social.py traite cette colonne comme une liste
+    # (data_editor), pas comme un dict. Cohérent avec sport_config/projets_config.
+    social_config = Column(JSON, default=list)
     intendance_config = Column(JSON, default=list)
     ajustements = Column(JSON, default=dict)
 

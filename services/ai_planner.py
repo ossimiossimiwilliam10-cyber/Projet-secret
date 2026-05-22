@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from database.models import Profil, SaisieHebdo, Semaine
 from services.scheduler_engine import (
     JOURS,
+    calculer_cible_hebdo_minutes,
     calculer_quota_etude_minutes,
     lisser_revisions_leitner,
     repartir_nouveaux_chapitres,
@@ -221,6 +222,7 @@ def build_planner_prompt(
     # des nouveaux chapitres, lissage des révisions ±1 jour, quota d'étude.
     # Le LLM ne reçoit que des « ingrédients prêts à placer ».
     quota_etude_min = calculer_quota_etude_minutes(profil, checkin_data)
+    cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
 
     repartition_nouveaux = repartir_nouveaux_chapitres(
         session, saisie.matieres_selectionnees, semaine,
@@ -250,8 +252,8 @@ Règles non-négociables. Ne JAMAIS les violer.
 - SOMMEIL : lever {_format_time(profil.heure_lever)}, coucher {_format_time(profil.heure_coucher)}. Cible {profil.heures_sommeil_cible} h/nuit.
 - REPAS : {profil.nb_repas_par_jour} repas/jour ({profil.duree_repas_min} min chacun, prep {profil.duree_prep_repas_min if not (saisie.courses_config or {}).get("meal_prep") else 10} min).
 - SIESTE : {"Oui (" + str(profil.duree_sieste_min) + " min)" if profil.besoin_sieste else "Non"}.
-- OBLIGATOIRE : repas, sommeil, contraintes fixes, sport, transport, jobs ont {"obligatoire": true}. Le reste a {"obligatoire": false}.
-- MEAL PREP : Si {"meal_prep": true} dans Courses, la préparation quotidienne des repas est réduite à 10 min.
+- OBLIGATOIRE : repas, sommeil, contraintes fixes, sport, transport, jobs ont {{"obligatoire": true}}. Le reste a {{"obligatoire": false}}.
+- MEAL PREP : Si {{"meal_prep": true}} dans Courses, la préparation quotidienne des repas est réduite à 10 min.
 - MENU : Si un "menu_hebdo" est présent, mentionne-le brièvement dans les suggestions.
 
 Contraintes fixes absolues (placer aux heures exactes indiquées) :
@@ -295,7 +297,11 @@ Objectifs personnels actifs (pondérations à respecter) :
 Ces listes ont DÉJÀ été équilibrées par notre moteur. Tu places chaque
 ingrédient dans le JOUR indiqué — INTERDIT de le déplacer.
 
-Quota d'étude max par jour (modulé par le check-in) : {quota_etude_min} min
+QUOTAS D'ÉTUDE — à respecter STRICTEMENT.
+- Objectif HEBDOMADAIRE d'étude (cours + révisions perso, hors travaux ponctuels) : {cible_hebdo_min} min ({cible_hebdo_min / 60:.1f} h sur la semaine).
+- Plafond JOURNALIER (modulé par le check-in) : {quota_etude_min} min ({quota_etude_min / 60:.1f} h max par jour).
+Tu places les chapitres pré-calculés ci-dessous en visant l'objectif
+hebdomadaire SANS dépasser le plafond journalier sur aucun jour.
 
 [NOUVEAUX CHAPITRES — max 1 par matière par jour, déjà respecté]
 {_safe_json_str(repartition_nouveaux)}

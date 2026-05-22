@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from database.db import get_session, session_scope
 from database.models import Chapitre, Profil, Semaine, Tache
 from services.ai_planner import replan_remaining_week
+from services.scheduler_engine import calculer_cible_hebdo_minutes
 from services import gamification_service
 
 
@@ -66,10 +67,15 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
 
         # 1. Gain d'XP
         if statut == "fait":
+            # Défensif : justification_ia est nullable en DB, plusieurs `X in None`
+            # crasheraient sinon. On lit une seule fois en safe-string locale.
+            justification = t.justification_ia or ""
+            titre_t = t.titre or ""
+
             if t.type == "sport":
                 # Pour le sport, on essaie de retrouver l'intensité dans le titre ou la justification
                 intensite = "Modérée"
-                if "Intense" in t.justification_ia or "🔴" in t.justification_ia:
+                if "Intense" in justification or "🔴" in justification:
                     intensite = "Intense"
                 gain = gamification_service.attribuer_xp_sport(s, profil, intensite=intensite, titre=t.titre)
             elif t.type in ("courses", "meal_prep"):
@@ -78,10 +84,10 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
                 # On tente de récupérer les extra_data si présents dans la justification ou le titre
                 extra = {}
                 if t.type == "projet":
-                    if "🔥" in t.titre or "Haute" in t.justification_ia:
+                    if "🔥" in titre_t or "Haute" in justification:
                         extra["priorite"] = "Haute"
                 elif t.type == "social":
-                    if "Repos" in t.justification_ia or "Ressourcement" in t.justification_ia:
+                    if "Repos" in justification or "Ressourcement" in justification:
                         extra["type_social"] = "Repos / Ressourcement"
                 
                 gain = gamification_service.attribuer_xp_categorie(
@@ -378,8 +384,6 @@ def _render_weekly_stats(session: Session, semaine: Semaine) -> None:
         return
 
     score = _compute_completion_score(non_oblig)
-
-    # Persistance en BD pour le dashboard plus tard
     _persist_weekly_score(semaine.id, score)
 
     st.subheader("📈 Bilan de la semaine")
@@ -389,7 +393,10 @@ def _render_weekly_stats(session: Session, semaine: Semaine) -> None:
     nb_a_faire = sum(1 for t in non_oblig if t.statut == "a_faire")
 
     cols = st.columns(4)
-    cols[0].metric("Taux de complétion", f"{score:.0f} %", help="Hors tâches obligatoires (sommeil, repas, transport).")
+    cols[0].metric(
+        "Taux de complétion", f"{score:.0f} %",
+        help="Hors tâches obligatoires (sommeil, repas, transport).",
+    )
     cols[1].metric("✅ Faites", nb_fait)
     cols[2].metric("⚠️ Partielles", nb_partiel)
     cols[3].metric("⏳ + ❌ Restantes", nb_a_faire + nb_non_fait)
@@ -402,6 +409,111 @@ def _render_weekly_stats(session: Session, semaine: Semaine) -> None:
         st.info("👌 Semaine correcte. Reste-t-il des tâches que tu peux rattraper ?")
     else:
         st.warning("💪 Semaine difficile. C'est OK — utilise le recalcul si nécessaire.")
+
+    # --- Heures d'étude réalisées vs quota cible -------------------------
+    _render_etudes_vs_quota(session, all_tasks)
+
+    # --- Répartition « réellement vécue » par type ----------------------
+    _render_repartition_realisee(non_oblig)
+
+
+def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
+    """Compare les heures d'études effectivement faites (statut = fait)
+    à l'**objectif hebdomadaire** du profil."""
+    etude_min_fait = sum(
+        _compute_duree_min(t)
+        for t in all_tasks
+        if (t.type or "").lower() == "etude" and t.statut == "fait"
+    )
+    etude_min_partiel = sum(
+        _compute_duree_min(t) * 0.5
+        for t in all_tasks
+        if (t.type or "").lower() == "etude" and t.statut == "partiellement"
+    )
+    total_fait = int(etude_min_fait + etude_min_partiel)
+
+    profil = session.query(Profil).first()
+    cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+    if cible_hebdo_min <= 0:
+        return
+
+    pct = total_fait / cible_hebdo_min * 100
+    pct_capped = min(pct, 100)
+
+    if pct >= 100:
+        color, msg = "#10b981", "🎯 Objectif hebdomadaire atteint !"
+    elif pct >= 70:
+        color, msg = "#f59e0b", f"📚 En bonne voie ({total_fait / 60:.1f} h / {cible_hebdo_min / 60:.1f} h)"
+    else:
+        color, msg = "#6b7280", f"📚 {total_fait / 60:.1f} h sur {cible_hebdo_min / 60:.1f} h visées"
+
+    st.markdown(
+        f"<div style='margin-top:10px;padding:10px 14px;background:{color}15;"
+        f"border-left:4px solid {color};border-radius:6px;'>"
+        f"<div style='font-size:0.85rem;color:{color};font-weight:600;'>{msg}</div>"
+        f"<div style='background:#e5e7eb;height:8px;border-radius:4px;margin-top:8px;overflow:hidden;'>"
+        f"<div style='background:{color};width:{pct_capped:.1f}%;height:100%;'></div>"
+        f"</div>"
+        f"<div style='font-size:0.75rem;color:#6b7280;margin-top:4px;'>"
+        f"Objectif hebdo défini dans ton Profil (cours + révisions perso confondus)."
+        f"</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# Couleurs alignées sur dashboard.py / generation.py pour la cohérence visuelle.
+_TYPE_COLORS: dict[str, str] = {
+    "etude": "#4cd137", "sport": "#e84118", "courses": "#00a8ff",
+    "projet": "#9c88ff", "dev_perso": "#00bc8c", "social": "#e1b12c",
+    "intendance": "#718093", "meal_prep": "#fbc531", "travail": "#d63031",
+}
+_TYPE_LABELS: dict[str, str] = {
+    "etude": "📚 Études", "sport": "🏃 Sport", "courses": "🛒 Courses",
+    "projet": "🎯 Projets", "dev_perso": "🌱 Dev perso", "social": "🍹 Social",
+    "intendance": "🧹 Intendance", "meal_prep": "🍱 Meal prep", "travail": "💼 Travail",
+}
+
+
+def _render_repartition_realisee(non_oblig: list[Tache]) -> None:
+    """Répartition par type de tâche effectivement validée (fait + partiel/2)."""
+    by_type: dict[str, float] = {}
+    for t in non_oblig:
+        if t.statut not in ("fait", "partiellement"):
+            continue
+        weight = 1.0 if t.statut == "fait" else 0.5
+        ttype = (t.type or "autre").lower()
+        by_type[ttype] = by_type.get(ttype, 0) + _compute_duree_min(t) * weight
+
+    if not by_type:
+        return
+
+    total = sum(by_type.values()) or 1
+    items = sorted(by_type.items(), key=lambda kv: -kv[1])
+
+    st.markdown(
+        "<div style='margin-top:14px;font-size:0.85rem;color:#6b7280;'>"
+        "<b>Répartition de ce que tu as validé cette semaine</b>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(min(len(items), 4) or 1)
+    for idx, (ttype, minutes) in enumerate(items[:8]):
+        with cols[idx % len(cols)]:
+            label = _TYPE_LABELS.get(ttype, ttype.capitalize())
+            color = _TYPE_COLORS.get(ttype, "#6b7280")
+            pct = minutes / total * 100
+            st.markdown(
+                f"<div style='background:{color}15;border-left:3px solid {color};"
+                f"padding:8px 12px;border-radius:6px;margin-bottom:8px;'>"
+                f"<div style='font-size:0.85rem;color:#374151;'>{label}</div>"
+                f"<div style='font-size:1.2rem;font-weight:700;color:{color};line-height:1;'>"
+                f"{minutes / 60:.1f} h</div>"
+                f"<div style='font-size:0.7rem;color:#6b7280;'>{pct:.0f}% du temps validé</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
 
 __all__ = ["render"]
