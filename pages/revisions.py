@@ -403,12 +403,92 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
         if not c["charge_ok"] or c["matieres_doublons_nouveaux"]
     ]
     if jours_problematiques:
+        # === Bouton d'auto-lissage (tolérance ±3 jours) ===
+        st.warning(
+            f"⚠️ **{len(jours_problematiques)} jour(s) en conflit** détectés dans "
+            "la projection. Tu peux laisser l'IA répartir automatiquement avec "
+            "une tolérance de ±3 jours."
+        )
+
+        col_btn, col_desc = st.columns([1, 2])
+        with col_btn:
+            lisser_clic = st.button(
+                "🪄 Lisser automatiquement",
+                type="primary", width="stretch",
+                help="Décale les dates_prochaine en conflit dans une fenêtre "
+                     "de [J, J+3] pour respecter (1) max 1 nouveau chapitre "
+                     "par matière par jour et (2) ton plafond horaire.",
+            )
+        with col_desc:
+            st.caption(
+                "Préserve l'esprit de la méthode des J (un décalage maximum "
+                "de 3 jours reste pédagogiquement valide). Les chapitres déjà "
+                "à jour ne sont pas touchés."
+            )
+
+        if lisser_clic:
+            from services.revision_service import lisser_automatiquement_dates_leitner
+            from database.db import session_scope
+
+            try:
+                with session_scope() as write_session:
+                    resultat = lisser_automatiquement_dates_leitner(
+                        write_session,
+                        tolerance_jours=3,
+                        plafond_minutes_par_jour=plafond_min if plafond_min > 0 else None,
+                        today=today,
+                        matiere_ids=matiere_ids,
+                    )
+
+                nb_d = resultat["nb_decalages"]
+                nb_nd = resultat["nb_non_decalables"]
+                if nb_d == 0 and nb_nd == 0:
+                    st.info("ℹ️ Aucun chapitre n'a eu besoin d'être décalé.")
+                elif nb_d > 0 and nb_nd == 0:
+                    st.success(
+                        f"✅ **{nb_d} chapitre(s) décalé(s)** dans la "
+                        f"tolérance ±3 jours. Le calendrier ci-dessus va "
+                        f"se rafraîchir."
+                    )
+                else:
+                    st.warning(
+                        f"⚠️ **{nb_d} décalage(s) effectué(s)**, mais "
+                        f"**{nb_nd} chapitre(s)** n'ont pas pu être lissés "
+                        f"dans la fenêtre de tolérance."
+                    )
+
+                # Détail des décalages effectués pour transparence.
+                if resultat["decalages"]:
+                    with st.expander(f"📋 Détail des {nb_d} décalages", expanded=False):
+                        for d in resultat["decalages"]:
+                            st.markdown(
+                                f"- **{d['titre']}** ({d['matiere']}) : "
+                                f"`{d['date_origine']}` → `{d['nouvelle_date']}`  \n"
+                                f"&nbsp;&nbsp;_{d['raison']}_"
+                            )
+                if resultat["non_decalables"]:
+                    with st.expander(
+                        f"🚧 Détail des {nb_nd} chapitres non lissables", expanded=False,
+                    ):
+                        for d in resultat["non_decalables"]:
+                            st.markdown(
+                                f"- **{d['titre']}** ({d['matiere']}) — "
+                                f"date d'origine `{d['date_origine']}`  \n"
+                                f"&nbsp;&nbsp;_{d['raison']}_"
+                            )
+
+                st.toast(f"Lissage : {nb_d} décalage(s)", icon="🪄")
+                if nb_d > 0:
+                    st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"❌ Erreur lors du lissage : {exc}")
+
         with st.expander(
             f"🔎 Détail des {len(jours_problematiques)} jour(s) à anticiper",
             expanded=False,
         ):
             st.caption(
-                "Si ces jours te paraissent trop chargés, deux solutions : "
+                "Autres solutions si tu préfères : "
                 "(a) initialise tes chapitres à des dates différentes ; "
                 "(b) lance une **Génération IA** la semaine concernée — le "
                 "scheduler répartira en respectant tes limites."

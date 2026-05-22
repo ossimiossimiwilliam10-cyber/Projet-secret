@@ -133,66 +133,9 @@ def render() -> None:
 # Chantier 4 — Check-in biomécanique quotidien
 # ===========================================================================
 def _render_checkin_quotidien(session: Session) -> None:
-    """Affiche le check-in du jour avec 3 sliders et un bouton d'enregistrement."""
-    aujourdhui = date.today()
-    existing = (
-        session.query(CheckInQuotidien)
-        .filter(CheckInQuotidien.date == aujourdhui)
-        .first()
-    )
-    val_fatigue = int(existing.fatigue_physique) if existing else 5
-    val_mental = int(existing.charge_mentale) if existing else 5
-    val_sommeil = int(existing.qualite_sommeil) if existing else 5
-
-    with st.expander("📊 Check-in Biomécanique du jour", expanded=(existing is None)):
-        st.caption(
-            "Évalue ton état actuel sur une échelle de 1 à 10. "
-            "L'IA s'en servira pour adapter la difficulté des sessions d'étude. "
-            "(1 = forme olympique, 10 = épuisé)"
-        )
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            fatigue_physique = st.slider(
-                "💪 Fatigue physique", 1, 10, val_fatigue,
-                help="Après boxe, entrepôt, longue marche…",
-            )
-        with col2:
-            charge_mentale = st.slider(
-                "🧠 Charge mentale", 1, 10, val_mental,
-                help="Stress, examens à venir, semaine intense…",
-            )
-        with col3:
-            qualite_sommeil = st.slider(
-                "😴 Qualité du sommeil", 1, 10, val_sommeil,
-                help="1 = très mauvais, 10 = parfaitement reposé",
-            )
-
-        col_btn, col_msg = st.columns([1, 3])
-        with col_btn:
-            if st.button("💾 Enregistrer mon état", type="primary", width="stretch"):
-                with session_scope() as write_session:
-                    row = (
-                        write_session.query(CheckInQuotidien)
-                        .filter(CheckInQuotidien.date == aujourdhui)
-                        .first()
-                    )
-                    if row is None:
-                        row = CheckInQuotidien(date=aujourdhui)
-                        write_session.add(row)
-                    row.fatigue_physique = int(fatigue_physique)
-                    row.charge_mentale = int(charge_mentale)
-                    row.qualite_sommeil = int(qualite_sommeil)
-                with col_msg:
-                    st.success("✅ Check-in enregistré.")
-                st.toast("Check-in enregistré", icon="✅")
-
-        if existing is not None:
-            with col_msg:
-                st.caption(
-                    f"Dernier check-in : fatigue {existing.fatigue_physique}/10, "
-                    f"mental {existing.charge_mentale}/10, "
-                    f"sommeil {existing.qualite_sommeil}/10"
-                )
+    """Affiche le check-in du jour — délégué au widget partagé."""
+    from modules._widgets_checkin import render_checkin_quotidien_widget
+    render_checkin_quotidien_widget(session, key_prefix="dashboard_checkin")
 
 
 # ===========================================================================

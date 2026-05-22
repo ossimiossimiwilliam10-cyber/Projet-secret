@@ -499,6 +499,159 @@ def detecter_conflits_jour(
     }
 
 
+def lisser_automatiquement_dates_leitner(
+    session: Session,
+    tolerance_jours: int = 3,
+    plafond_minutes_par_jour: int | None = None,
+    today: date | None = None,
+    matiere_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Décale automatiquement les ``date_prochaine`` des chapitres pour
+    résoudre deux types de conflits, avec une tolérance bornée.
+
+    Règle 1 — **Max 1 nouveau chapitre par matière par jour** :
+        Pour les chapitres de niveau Leitner 0 (premier passage), on
+        garde le premier de chaque matière à sa date d'origine et on
+        décale les suivants vers les jours libres dans
+        ``[date, date + tolerance_jours]``.
+
+    Règle 2 — **Plafond horaire journalier** (si fourni) :
+        Si la charge cumulée d'un jour dépasse ``plafond_minutes_par_jour``,
+        on déplace les chapitres « les moins urgents » (niveau Leitner
+        le plus élevé) vers les jours suivants disponibles dans la
+        tolérance.
+
+    Si aucun jour libre n'est trouvé dans la fenêtre de tolérance pour
+    un chapitre, on **laisse sa date d'origine intacte** et on le
+    mentionne dans ``non_decalables`` du compte-rendu.
+
+    Args:
+        tolerance_jours: nb max de jours qu'on s'autorise à reporter
+            une révision (par défaut 3 — l'algo Leitner reste valide).
+        plafond_minutes_par_jour: si None, seule la règle 1 s'applique.
+        today: date de référence (par défaut ``date.today()``).
+        matiere_ids: filtre matière.
+
+    Returns:
+        ``{"nb_decalages": int, "decalages": [...], "nb_non_decalables": int,
+        "non_decalables": [...]}`` — décrit ce qui a été modifié.
+    """
+    today = today or date.today()
+    horizon = today + timedelta(days=tolerance_jours * 4 + 30)
+
+    query = session.query(Chapitre).filter(
+        Chapitre.date_prochaine.isnot(None),
+        Chapitre.date_prochaine >= today,
+        Chapitre.date_prochaine <= horizon,
+    )
+    if matiere_ids is not None:
+        if not matiere_ids:
+            return {"nb_decalages": 0, "decalages": [],
+                    "nb_non_decalables": 0, "non_decalables": []}
+        query = query.filter(Chapitre.matiere_id.in_(matiere_ids))
+    chapitres = query.all()
+
+    decalages: list[dict[str, Any]] = []
+    non_decalables: list[dict[str, Any]] = []
+
+    # --- Règle 1 : 1 nouveau par matière par jour ---------------------
+    # Index « occupé » par (matiere_id, date) → True si déjà un nouveau ce jour-là.
+    occupes_nouveaux: set[tuple[int, date]] = set()
+    chapitres_tries = sorted(chapitres, key=lambda c: (c.date_prochaine, c.id))
+
+    for ch in chapitres_tries:
+        if (ch.niveau_actuel or 0) != 0 or ch.matiere_id is None:
+            continue
+        date_origine = ch.date_prochaine
+        key = (ch.matiere_id, date_origine)
+
+        if key not in occupes_nouveaux:
+            occupes_nouveaux.add(key)
+            continue
+
+        # Conflit : chercher un jour libre dans la tolérance.
+        place = False
+        for offset in range(1, tolerance_jours + 1):
+            nouveau_jour = date_origine + timedelta(days=offset)
+            nk = (ch.matiere_id, nouveau_jour)
+            if nk not in occupes_nouveaux:
+                ch.date_prochaine = nouveau_jour
+                occupes_nouveaux.add(nk)
+                decalages.append({
+                    "chapitre_id": ch.id,
+                    "titre": ch.titre,
+                    "matiere": ch.matiere_obj.nom if ch.matiere_obj else "?",
+                    "date_origine": date_origine.isoformat(),
+                    "nouvelle_date": nouveau_jour.isoformat(),
+                    "raison": "doublon matière (règle 1 nouveau / matière / jour)",
+                })
+                place = True
+                break
+
+        if not place:
+            non_decalables.append({
+                "chapitre_id": ch.id,
+                "titre": ch.titre,
+                "matiere": ch.matiere_obj.nom if ch.matiere_obj else "?",
+                "date_origine": date_origine.isoformat(),
+                "raison": "doublon matière, aucun jour libre dans la tolérance",
+            })
+
+    # --- Règle 2 : plafond horaire par jour ---------------------------
+    if plafond_minutes_par_jour and plafond_minutes_par_jour > 0:
+        # Recompte les chapitres par jour APRÈS les décalages règle 1.
+        charge_par_jour: dict[date, list[Chapitre]] = {}
+        for ch in chapitres:
+            charge_par_jour.setdefault(ch.date_prochaine, []).append(ch)
+
+        for jour, chaps_du_jour in list(charge_par_jour.items()):
+            charge = len(chaps_du_jour) * DUREE_REVISION_MIN
+            if charge <= plafond_minutes_par_jour:
+                continue
+
+            nb_a_decaler = (charge - plafond_minutes_par_jour + DUREE_REVISION_MIN - 1) // DUREE_REVISION_MIN
+            # On déplace en priorité les chapitres au niveau Leitner le PLUS
+            # élevé (déjà bien ancrés, peuvent se permettre d'attendre).
+            candidats = sorted(chaps_du_jour, key=lambda c: -(c.niveau_actuel or 0))
+
+            for ch in candidats[:nb_a_decaler]:
+                date_origine = ch.date_prochaine
+                place = False
+                for offset in range(1, tolerance_jours + 1):
+                    nouveau_jour = date_origine + timedelta(days=offset)
+                    deja = len(charge_par_jour.get(nouveau_jour, []))
+                    if (deja + 1) * DUREE_REVISION_MIN <= plafond_minutes_par_jour:
+                        ch.date_prochaine = nouveau_jour
+                        charge_par_jour.setdefault(nouveau_jour, []).append(ch)
+                        charge_par_jour[jour].remove(ch)
+                        decalages.append({
+                            "chapitre_id": ch.id,
+                            "titre": ch.titre,
+                            "matiere": ch.matiere_obj.nom if ch.matiere_obj else "?",
+                            "date_origine": date_origine.isoformat(),
+                            "nouvelle_date": nouveau_jour.isoformat(),
+                            "raison": f"plafond {plafond_minutes_par_jour} min/jour dépassé",
+                        })
+                        place = True
+                        break
+
+                if not place:
+                    non_decalables.append({
+                        "chapitre_id": ch.id,
+                        "titre": ch.titre,
+                        "matiere": ch.matiere_obj.nom if ch.matiere_obj else "?",
+                        "date_origine": date_origine.isoformat(),
+                        "raison": "plafond dépassé, aucun jour libre dans la tolérance",
+                    })
+
+    return {
+        "nb_decalages": len(decalages),
+        "decalages": decalages,
+        "nb_non_decalables": len(non_decalables),
+        "non_decalables": non_decalables,
+    }
+
+
 # ===========================================================================
 # 5. Extraction de texte avec cache
 # ===========================================================================
@@ -1034,6 +1187,7 @@ __all__ = [
     "projeter_chapitre",
     "projeter_tous_chapitres",
     "detecter_conflits_jour",
+    "lisser_automatiquement_dates_leitner",
     "DUREE_REVISION_MIN",
     "initialiser_chapitre_pour_revision",
     "get_or_extract_chapter_text",
