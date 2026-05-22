@@ -139,11 +139,13 @@ def _proposer_action(
         en_retard = dette_revision(session, today=_today())
         if en_retard:
             chap = en_retard[0]
+            # Défense en profondeur : dette_revision filtre déjà les NULL,
+            # mais on évite tout AttributeError si la requête change un jour.
+            date_str = chap.date_prochaine.strftime("%d/%m") if chap.date_prochaine else "?"
             return {
                 "type": "revision_retard",
                 "titre": f"⚠️ **Révision en retard :** {chap.titre}",
-                "detail": f"Prévue le {chap.date_prochaine.strftime('%d/%m')} — "
-                          f"ouvre-la pour rattraper le retard.",
+                "detail": f"Prévue le {date_str} — ouvre-la pour rattraper le retard.",
                 "chapitre_id": chap.id,
             }
 
