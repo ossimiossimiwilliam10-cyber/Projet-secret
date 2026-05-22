@@ -437,7 +437,17 @@ def render() -> None:
             elif checkin:
                 st.success("✅ Check-in OK")
             else:
-                st.caption("ℹ️ Pas de check-in du jour")
+                st.warning("👇 Pense à faire ton check-in du jour")
+
+        # Widget de check-in directement accessible sur cette page.
+        # Effet réel : module le plafond journalier d'étude utilisé par
+        # le scheduler (-30 % si fatigue > 7 ou mental > 7).
+        from modules._widgets_checkin import render_checkin_quotidien_widget
+        render_checkin_quotidien_widget(
+            session,
+            titre="📊 Check-in Biomécanique du jour (impacte la génération)",
+            key_prefix="gen_checkin",
+        )
 
         # === Lancement de la génération ===
         st.subheader("1. Lancer la planification")
