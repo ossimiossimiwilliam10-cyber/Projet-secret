@@ -138,7 +138,11 @@ _EXPECTED_COLUMNS = {
         "heures_etude_cible_par_semaine": "FLOAT DEFAULT 21.0",
         "heures_etude_plafond_par_jour":  "FLOAT DEFAULT 6.0",
     },
-    # `ues`, `matieres`, `achievements`, `objectifs` et `jobs` sont ENTIÈREMENT
+    "jobs": {
+        # Lieu du job — pour croiser avec trajets_habituels du profil.
+        "lieu": "VARCHAR(200) DEFAULT ''",
+    },
+    # `ues`, `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).
 }
 
