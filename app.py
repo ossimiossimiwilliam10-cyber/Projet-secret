@@ -55,6 +55,7 @@ def main() -> None:
         "Configuration": [
             st.Page(profil.render, title="Profil", icon="👤", url_path="profil"),
             st.Page(bibliotheque.render, title="Bibliothèque", icon="📚", url_path="bibliotheque"),
+            st.Page("pages/aide.py", title="Aide & Mode d'emploi", icon="❓", url_path="aide"),
         ],
         "Ma semaine": [
             st.Page(etudes.render, title="Études", icon="📖", url_path="hebdo-etudes"),
