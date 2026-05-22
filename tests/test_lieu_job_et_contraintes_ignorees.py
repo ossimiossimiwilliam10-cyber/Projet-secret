@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.db import Base
-from database.models import Job, Profil, SaisieHebdo, Semaine
+from database.models import Job, Utilisateur, SaisieHebdo, Semaine
 from services.ai_planner import build_planner_prompt
 
 
@@ -35,7 +35,7 @@ def session():
         engine.dispose()
 
 
-def _setup_min(session) -> tuple[Semaine, SaisieHebdo, Profil]:
+def _setup_min(session) -> tuple[Semaine, SaisieHebdo, Utilisateur]:
     today = date.today()
     semaine = Semaine(
         annee=today.year, numero_semaine=today.isocalendar().week,
@@ -44,13 +44,22 @@ def _setup_min(session) -> tuple[Semaine, SaisieHebdo, Profil]:
     session.add(semaine)
     session.flush()
     saisie = SaisieHebdo(semaine_id=semaine.id)
-    profil = Profil(
+    from database.models import BiometrieConfig, LogistiqueConfig, SystemeConfig, GamificationState
+    profil = Utilisateur(
         nom="Test",
-        heure_lever=time(7, 0), heure_coucher=time(23, 0),
-        temps_transport_min=20,
-        trajets_habituels={"Strasbourg-Luxembourg": 150, "Appartement-Fac": 15},
-        gemini_api_key="fake",
-        gemini_model="gemini-2.5-flash",
+        biometrie=BiometrieConfig(
+            heure_lever=time(7, 0), 
+            heure_coucher=time(23, 0),
+        ),
+        logistique=LogistiqueConfig(
+            temps_transport_min=20,
+            trajets_habituels={"Strasbourg-Luxembourg": 150, "Appartement-Fac": 15},
+        ),
+        systeme=SystemeConfig(
+            gemini_api_key="fake",
+            gemini_model="gemini-2.5-flash",
+        ),
+        gamification=GamificationState()
     )
     session.add_all([saisie, profil])
     session.commit()
@@ -119,7 +128,7 @@ def test_contrainte_ignoree_est_absente_du_prompt(session):
     """Si une contrainte fixe est listée dans ``contraintes_ignorees``,
     elle ne doit PAS apparaître dans le prompt envoyé à Gemini."""
     semaine, saisie, profil = _setup_min(session)
-    profil.contraintes_fixes = [
+    profil.logistique.contraintes_fixes = [
         {"jour": "lundi", "heure_debut": "08:00", "heure_fin": "10:00", "libelle": "CM Mathématiques"},
         {"jour": "mardi", "heure_debut": "14:00", "heure_fin": "16:00", "libelle": "Exam de substitution"},
     ]
@@ -139,7 +148,7 @@ def test_contrainte_ignoree_est_absente_du_prompt(session):
 def test_aucun_filtre_si_liste_ignorees_vide(session):
     """Par défaut, toutes les contraintes fixes apparaissent."""
     semaine, saisie, profil = _setup_min(session)
-    profil.contraintes_fixes = [
+    profil.logistique.contraintes_fixes = [
         {"jour": "lundi", "heure_debut": "08:00", "heure_fin": "10:00", "libelle": "TD Physique"},
     ]
     session.commit()

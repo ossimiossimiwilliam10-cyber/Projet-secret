@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from database.models import Chapitre, Objectif, Profil
+from database.models import Chapitre, Objectif, Utilisateur
 
 
 # ===========================================================================
@@ -171,8 +171,8 @@ def proposer_strategie(
     Raises:
         ValueError si pas de clé API ou si Gemini répond mal.
     """
-    profil = session.query(Profil).first()
-    if not profil or not (profil.gemini_api_key or "").strip():
+    profil = session.query(Utilisateur).first()
+    if not profil or not (profil.systeme.gemini_api_key or "").strip():
         raise ValueError("Clé API Gemini introuvable dans le profil.")
 
     # Snapshot état actuel
@@ -209,9 +209,9 @@ def proposer_strategie(
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.gemini_api_key.strip())
+    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
     response = client.models.generate_content(
-        model=profil.gemini_model or "gemini-2.5-flash",
+        model=profil.systeme.gemini_model or "gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",

@@ -1,4 +1,4 @@
-"""Onglet **Profil étudiant**.
+"""Onglet **Utilisateur étudiant**.
 
 Le profil est un singleton applicatif : une seule ligne dans la table ``profil``.
 Le formulaire est divisé en 6 sections expansibles, conformément au cahier des
@@ -23,7 +23,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from database import Profil, get_session, session_scope
+from database import Utilisateur, get_session, session_scope
 from services.gamification_service import progression_niveau
 
 
@@ -81,48 +81,69 @@ def load_profil() -> dict[str, Any]:
     utilisation".
     """
     with get_session() as session:
-        p = session.query(Profil).first()
+        p = session.query(Utilisateur).first()
         if p is None:
             return {}
         return {
             "id": p.id,
             "nom": p.nom or "",
-            "heure_lever": p.heure_lever or time(7, 0),
-            "heure_coucher": p.heure_coucher or time(23, 30),
-            "heures_sommeil_cible": float(p.heures_sommeil_cible or 8.0),
-            "chronotype": p.chronotype or "intermediaire",
-            "pic_concentration": p.pic_concentration or "matin",
-            "duree_max_session_min": int(p.duree_max_session_min or 50),
-            "pause_entre_sessions_min": int(p.pause_entre_sessions_min or 10),
-            "methode_travail": p.methode_travail or "mixte",
-            "capacite_weekend": p.capacite_weekend or "partiel",
-            "tolerance_fatigue": p.tolerance_fatigue or "moyenne",
-            "heures_etude_cible_par_semaine": float(p.heures_etude_cible_par_semaine or 21.0),
-            "heures_etude_plafond_par_jour": float(p.heures_etude_plafond_par_jour or 6.0),
-            "temps_transport_min": int(p.temps_transport_min or 0),
-            "trajets_habituels": dict(p.trajets_habituels or {}),
-            "nb_repas_par_jour": int(p.nb_repas_par_jour or 3),
-            "duree_repas_min": int(p.duree_repas_min or 30),
-            "duree_prep_repas_min": int(p.duree_prep_repas_min or 30),
-            "besoin_sieste": bool(p.besoin_sieste),
-            "duree_sieste_min": int(p.duree_sieste_min or 20),
-            "contraintes_fixes": list(p.contraintes_fixes or []),
-            "gemini_api_key": p.gemini_api_key or "",
-            "gemini_model": p.gemini_model or "gemini-2.5-flash",
+            "heure_lever": p.biometrie.heure_lever or time(7, 0),
+            "heure_coucher": p.biometrie.heure_coucher or time(23, 30),
+            "heures_sommeil_cible": float(p.biometrie.heures_sommeil_cible or 8.0),
+            "chronotype": p.biometrie.chronotype or "intermediaire",
+            "pic_concentration": p.biometrie.pic_concentration or "matin",
+            "duree_max_session_min": int(p.biometrie.duree_max_session_min or 50),
+            "pause_entre_sessions_min": int(p.biometrie.pause_entre_sessions_min or 10),
+            "methode_travail": p.biometrie.methode_travail or "mixte",
+            "capacite_weekend": p.biometrie.capacite_weekend or "partiel",
+            "tolerance_fatigue": p.biometrie.tolerance_fatigue or "moyenne",
+            "heures_etude_cible_par_semaine": float(p.biometrie.heures_etude_cible_par_semaine or 21.0),
+            "heures_etude_plafond_par_jour": float(p.biometrie.heures_etude_plafond_par_jour or 6.0),
+            "temps_transport_min": int(p.logistique.temps_transport_min or 0),
+            "trajets_habituels": dict(p.logistique.trajets_habituels or {}),
+            "nb_repas_par_jour": int(p.logistique.nb_repas_par_jour or 3),
+            "duree_repas_min": int(p.logistique.duree_repas_min or 30),
+            "duree_prep_repas_min": int(p.logistique.duree_prep_repas_min or 30),
+            "besoin_sieste": bool(p.biometrie.besoin_sieste),
+            "duree_sieste_min": int(p.biometrie.duree_sieste_min or 20),
+            "contraintes_fixes": list(p.logistique.contraintes_fixes or []),
+            "gemini_api_key": p.systeme.gemini_api_key or "",
+            "gemini_model": p.systeme.gemini_model or "gemini-2.5-flash",
         }
 
 
 def save_profil(data: dict[str, Any]) -> None:
     """Upsert du profil (singleton)."""
     with session_scope() as session:
-        p = session.query(Profil).first()
+        from database.models import GamificationState, SystemeConfig, LogistiqueConfig, BiometrieConfig
+        p = session.query(Utilisateur).first()
         if p is None:
-            p = Profil()
+            p = Utilisateur(
+                gamification=GamificationState(),
+                systeme=SystemeConfig(),
+                logistique=LogistiqueConfig(),
+                biometrie=BiometrieConfig()
+            )
             session.add(p)
+            
+        gamification_attrs = ["xp", "niveau", "streak_jours", "streak_record", "derniere_activite_xp", "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total"]
+        systeme_attrs = ["gemini_api_key", "gemini_model", "replanning_auto_actif"]
+        biometrie_attrs = ["heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype", "pic_concentration", "duree_max_session_min", "pause_entre_sessions_min", "methode_travail", "capacite_weekend", "tolerance_fatigue", "heures_etude_cible_par_semaine", "heures_etude_plafond_par_jour", "besoin_sieste", "duree_sieste_min"]
+        logistique_attrs = ["temps_transport_min", "trajets_habituels", "nb_repas_par_jour", "duree_repas_min", "duree_prep_repas_min", "contraintes_fixes"]
+
         for key, value in data.items():
             if key == "id":
                 continue
-            setattr(p, key, value)
+            if key in gamification_attrs:
+                setattr(p.gamification, key, value)
+            elif key in systeme_attrs:
+                setattr(p.systeme, key, value)
+            elif key in biometrie_attrs:
+                setattr(p.biometrie, key, value)
+            elif key in logistique_attrs:
+                setattr(p.logistique, key, value)
+            else:
+                setattr(p, key, value)
 
 
 # ---------------------------------------------------------------------------
@@ -193,14 +214,20 @@ def test_gemini_connection(api_key: str, model: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 def render() -> None:
     """Point d'entrée appelé par ``st.Page``."""
-    
+
+    from services.scheduler_engine import calculer_velocite_historique
+
     with get_session() as session:
-        profil_db = session.query(Profil).first()
-        
-    if profil_db:
-        xp_total = profil_db.xp or 0
+        profil_db = session.query(Utilisateur).first()
+        velocite_mult = 1.0
+        velocite_msg = ""
+        if profil_db:
+            velocite_mult, velocite_msg = calculer_velocite_historique(session, profil_db.id)
+
+    if profil_db and profil_db.gamification:
+        xp_total = profil_db.gamification.xp or 0
         prog = progression_niveau(xp_total)
-        
+
         col_lvl, col_xp, col_sport = st.columns([1, 2, 1])
         with col_lvl:
             st.metric("🏆 Niveau", prog["niveau"])
@@ -209,17 +236,21 @@ def render() -> None:
             st.write(f"✨ {prog['xp_dans_palier']:,} / {prog['xp_palier_taille']:,} XP")
             st.progress(ratio)
         with col_sport:
-            st.metric("🏋️ Séances Sport", profil_db.nb_seances_sport_total or 0)
+            st.metric("🏋️ Séances Sport", profil_db.gamification.nb_seances_sport_total or 0)
         st.divider()
 
-    st.title("👤 Profil étudiant")
+    st.title("👤 Utilisateur étudiant")
     st.caption(
         "Ces réglages alimentent l'IA à chaque génération de planning. "
         "Pas besoin de tout remplir d'un coup — tu peux y revenir."
     )
 
-    data = load_profil()
-    is_new = not data  # profil vide → première utilisation
+    if profil_db:
+        pct = int(velocite_mult * 100)
+        color = "green" if pct >= 100 else "orange" if pct >= 80 else "red"
+        st.info(f"**Vélocité historique : :{color}[{pct}%]** — {velocite_msg}")
+
+    data = load_profil()    is_new = not data  # profil vide → première utilisation
     if is_new:
         st.info(
             "👋 **Première utilisation détectée.** "
@@ -668,8 +699,8 @@ def render() -> None:
         return
 
     with col_save_msg:
-        st.success("✅ Profil enregistré.")
-    st.toast("Profil enregistré", icon="✅")
+        st.success("✅ Utilisateur enregistré.")
+    st.toast("Utilisateur enregistré", icon="✅")
 
 # ---------------------------------------------------------------------------
 # Helpers internes

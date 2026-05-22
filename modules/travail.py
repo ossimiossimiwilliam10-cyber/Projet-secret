@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import streamlit as st
 from database.db import get_session, session_scope
-from database.models import Job, Profil
+from database.models import Job, Utilisateur
 from utils.helpers import get_or_create_current_week
 
 JOURS = [
@@ -30,8 +30,8 @@ def render() -> None:
         semaine, _, _ = get_or_create_current_week(session, transfer_reported=False)
 
         # Liste des trajets habituels pour offrir un selecteur de lieu cohérent.
-        profil = session.query(Profil).first()
-        trajets_habituels = dict(profil.trajets_habituels or {}) if profil else {}
+        profil = session.query(Utilisateur).first()
+        trajets_habituels = dict(profil.logistique.trajets_habituels or {}) if profil else {}
 
         # 1. Formulaire d'ajout
         with st.expander("➕ Enregistrer une activité professionnelle", expanded=True):
@@ -56,14 +56,14 @@ def render() -> None:
                     )
 
                 # 📍 Lieu du job — pour croiser avec les trajets habituels
-                # du Profil. Si un trajet correspond, l'IA utilise sa durée
+                # du Utilisateur. Si un trajet correspond, l'IA utilise sa durée
                 # exacte au lieu du temps par défaut.
                 lieu_options = ["(aucun)"] + list(trajets_habituels.keys()) + ["✏️ Saisir un autre lieu…"]
                 lieu_choisi = st.selectbox(
                     "📍 Lieu du job (matche un trajet habituel)",
                     options=lieu_options,
                     index=0,
-                    help="Choisis un trajet déclaré dans ton Profil pour que "
+                    help="Choisis un trajet déclaré dans ton Utilisateur pour que "
                          "l'IA calcule exactement le bon temps de déplacement. "
                          "Ex. : « Strasbourg-Luxembourg » → 150 min de trajet.",
                 )

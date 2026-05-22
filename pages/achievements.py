@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from database import Achievement, Profil, get_session
+from database import Achievement, Utilisateur, get_session
 from services.gamification_service import (
     ACHIEVEMENTS,
     NIVEAU_MAX,
@@ -34,19 +34,19 @@ def _get_unlocked_codes() -> dict[str, str]:
 def _get_profil_snapshot() -> dict:
     """Snapshot du profil pour les KPIs gamification."""
     with get_session() as session:
-        p = session.query(Profil).first()
+        p = session.query(Utilisateur).first()
         if p is None:
             return {
                 "xp": 0, "niveau": 1, "streak": 0, "streak_record": 0,
                 "nb_quiz": 0, "nb_maitrise": 0,
             }
         return {
-            "xp": p.xp or 0,
-            "niveau": p.niveau or 1,
-            "streak": p.streak_jours or 0,
-            "streak_record": p.streak_record or 0,
-            "nb_quiz": p.nb_quiz_total or 0,
-            "nb_maitrise": p.nb_chapitres_maitrise or 0,
+            "xp": p.gamification.xp or 0,
+            "niveau": p.gamification.niveau or 1,
+            "streak": p.gamification.streak_jours or 0,
+            "streak_record": p.gamification.streak_record or 0,
+            "nb_quiz": p.gamification.nb_quiz_total or 0,
+            "nb_maitrise": p.gamification.nb_chapitres_maitrise or 0,
         }
 
 

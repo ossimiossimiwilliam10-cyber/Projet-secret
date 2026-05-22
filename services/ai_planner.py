@@ -17,11 +17,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from database.models import Profil, SaisieHebdo, Semaine
+from database.models import Utilisateur, SaisieHebdo, Semaine
 from services.scheduler_engine import (
     JOURS,
     calculer_cible_hebdo_minutes,
     calculer_quota_etude_minutes,
+    calculer_courbe_energie,
+    calculer_velocite_historique,
     lisser_revisions_leitner,
     repartir_nouveaux_chapitres,
 )
@@ -140,7 +142,7 @@ def build_planner_prompt(
     session: Session,
     semaine: Semaine,
     saisie: SaisieHebdo,
-    profil: Profil,
+    profil: Utilisateur,
     consignes_manuelles: str = "",
 ) -> str:
     """Compile toutes les données en un prompt structuré pour Gemini."""
@@ -165,7 +167,7 @@ def build_planner_prompt(
 
     # Fusion des contraintes fixes globales et des horaires de travail.
     # On expose aussi le LIEU du job (s'il est renseigné) pour que l'IA
-    # puisse croiser avec ``Profil.trajets_habituels`` et calculer le
+    # puisse croiser avec ``Utilisateur.trajets_habituels`` et calculer le
     # bon temps de transport (ex. Strasbourg → Luxembourg = 150 min vs
     # trajet par défaut 20 min).
     #
@@ -179,7 +181,7 @@ def build_planner_prompt(
         str(x) for x in (ajustements_db.get("contraintes_ignorees") or [])
     ]
     contraintes_totales = [
-        c for c in (profil.contraintes_fixes or [])
+        c for c in (profil.logistique.contraintes_fixes or [])
         if c.get("libelle") not in contraintes_ignorees
     ]
     for j in jobs_db:
@@ -196,7 +198,7 @@ def build_planner_prompt(
             }
         )
 
-    # -- 1. Profil --
+    # -- 1. Utilisateur --
     # (Les paramètres du profil sont gérés par le moteur ou transmis dans le prompt)
 
     # -- 2. Chapitres dus pour révision espacée (Leitner) ----------------
@@ -236,6 +238,17 @@ def build_planner_prompt(
     quota_etude_min = calculer_quota_etude_minutes(profil, checkin_data)
     cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
 
+    velocite_mult, msg_velocite = calculer_velocite_historique(session, profil.id)
+    quota_etude_min = int(quota_etude_min * velocite_mult)
+    cible_hebdo_min = int(cible_hebdo_min * velocite_mult)
+
+    courbe_energie = calculer_courbe_energie(
+        profil.biometrie.heure_lever,
+        profil.biometrie.heure_coucher,
+        profil.biometrie.chronotype or "intermediaire",
+        checkin_data
+    )
+
     repartition_nouveaux = repartir_nouveaux_chapitres(
         session, saisie.matieres_selectionnees, semaine,
     )
@@ -261,9 +274,9 @@ DATES : Semaine du {semaine.date_debut} au {semaine.date_fin}.
 <CONTRAINTES_VITALES>
 Règles non-négociables. Ne JAMAIS les violer.
 
-- SOMMEIL : lever {_format_time(profil.heure_lever)}, coucher {_format_time(profil.heure_coucher)}. Cible {profil.heures_sommeil_cible} h/nuit.
-- REPAS : {profil.nb_repas_par_jour} repas/jour ({profil.duree_repas_min} min chacun, prep {profil.duree_prep_repas_min if not (saisie.courses_config or {}).get("meal_prep") else 10} min).
-- SIESTE : {"Oui (" + str(profil.duree_sieste_min) + " min)" if profil.besoin_sieste else "Non"}.
+- SOMMEIL : lever {_format_time(profil.biometrie.heure_lever)}, coucher {_format_time(profil.biometrie.heure_coucher)}. Cible {profil.biometrie.heures_sommeil_cible} h/nuit.
+- REPAS : {profil.logistique.nb_repas_par_jour} repas/jour ({profil.logistique.duree_repas_min} min chacun, prep {profil.logistique.duree_prep_repas_min if not (saisie.courses_config or {}).get("meal_prep") else 10} min).
+- SIESTE : {"Oui (" + str(profil.biometrie.duree_sieste_min) + " min)" if profil.biometrie.besoin_sieste else "Non"}.
 - OBLIGATOIRE : repas, sommeil, contraintes fixes, sport, transport, jobs ont {{"obligatoire": true}}. Le reste a {{"obligatoire": false}}.
 - MEAL PREP : Si {{"meal_prep": true}} dans Courses, la préparation quotidienne des repas est réduite à 10 min.
 - MENU : Si un "menu_hebdo" est présent, mentionne-le brièvement dans les suggestions.
@@ -288,7 +301,7 @@ Dictionnaire des trajets habituels (durées en minutes) :
 2. Sinon, déduis depuis le LIBELLÉ de la contrainte (ex. libellé contenant
    « Luxembourg » → trajet vers le Luxembourg ; libellé « Fac » ou
    « Université » → trajet "Appartement-Fac" si défini).
-3. En dernier recours : trajet par défaut = {profil.temps_transport_min} min.
+3. En dernier recours : trajet par défaut = {profil.logistique.temps_transport_min} min.
 
 Exemple concret : un job le samedi 09:00 → 17:00 avec lieu
 "Luxembourg" et un trajet habituel "Strasbourg-Luxembourg : 150 min"
@@ -297,10 +310,13 @@ Exemple concret : un job le samedi 09:00 → 17:00 avec lieu
 </LOGISTIQUE_TRAJETS>
 
 <PEDAGOGIE_ET_RYTHME>
-- CHRONOTYPE : pic de concentration sur {profil.pic_concentration}. Place
+- CHRONOTYPE : pic de concentration sur {profil.biometrie.pic_concentration}. Place
   les études les plus difficiles à ce moment.
-- DURÉE DE SESSION : maximum {profil.duree_max_session_min} min consécutives,
-  puis pause {profil.pause_entre_sessions_min} min.
+- MOTEUR CIRCADIEN (Calculé mathématiquement pour aujourd'hui) :
+  🔥 CRÉNEAUX HAUTE ÉNERGIE (Place les nouveaux chapitres Leitner J1 ici) : {", ".join(courbe_energie["haute_energie"]) or "Aucun"}
+  🔋 CRÉNEAUX BASSE ÉNERGIE (Place les relectures/flashcards ici) : {", ".join(courbe_energie["basse_energie"]) or "Aucun"}
+- DURÉE DE SESSION : maximum {profil.biometrie.duree_max_session_min} min consécutives,
+  puis pause {profil.biometrie.pause_entre_sessions_min} min.
 - RÉCUPÉRATION POST-SPORT : pas de théorie dense dans les 2 h qui suivent
   une séance « Intense ».
 - BUFFER : laisse ~20 % de temps libre par jour pour les imprévus.
@@ -323,6 +339,7 @@ ingrédient dans le JOUR indiqué — INTERDIT de le déplacer.
 QUOTAS D'ÉTUDE — à respecter STRICTEMENT.
 - Objectif HEBDOMADAIRE d'étude (cours + révisions perso, hors travaux ponctuels) : {cible_hebdo_min} min ({cible_hebdo_min / 60:.1f} h sur la semaine).
 - Plafond JOURNALIER (modulé par le check-in) : {quota_etude_min} min ({quota_etude_min / 60:.1f} h max par jour).
+- VÉLOCITÉ : {msg_velocite}
 Tu places les chapitres pré-calculés ci-dessous en visant l'objectif
 hebdomadaire SANS dépasser le plafond journalier sur aucun jour.
 
@@ -413,8 +430,8 @@ def generate_schedule_from_ai(
     if not saisie:
         raise ValueError("Aucune saisie hebdomadaire trouvée pour cette semaine.")
 
-    profil = session.query(Profil).first()
-    if not profil or not profil.gemini_api_key:
+    profil = session.query(Utilisateur).first()
+    if not profil or not profil.systeme.gemini_api_key:
         raise ValueError("Clé API Gemini introuvable dans le profil.")
 
     # 2. Construction du prompt
@@ -427,10 +444,10 @@ def generate_schedule_from_ai(
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.gemini_api_key.strip())
+    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
 
     response = client.models.generate_content(
-        model=profil.gemini_model,
+        model=profil.systeme.gemini_model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -554,8 +571,8 @@ def integrer_nouveautes_a_semaine(session: Session, semaine_id: int) -> dict[str
     if not semaine:
         raise ValueError("Semaine introuvable.")
 
-    profil = session.query(Profil).first()
-    if not profil or not profil.gemini_api_key:
+    profil = session.query(Utilisateur).first()
+    if not profil or not profil.systeme.gemini_api_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     today = datetime.date.today()
@@ -628,12 +645,12 @@ Leitner sont dues). Ta mission : INTÉGRER ces nouveautés au planning existant 
 toucher à ce qui est déjà validé ou obligatoire.
 
 PROFIL :
-- Heure de lever : {profil.heure_lever}
-- Heure de coucher : {profil.heure_coucher}
-- Pic de concentration : {profil.pic_concentration}
-- Durée max d'une session : {profil.duree_max_session_min} min
-- Pause entre sessions : {profil.pause_entre_sessions_min} min
-- Plafond d'étude / jour : {profil.heures_etude_plafond_par_jour or 6.0} h
+- Heure de lever : {profil.biometrie.heure_lever}
+- Heure de coucher : {profil.biometrie.heure_coucher}
+- Pic de concentration : {profil.biometrie.pic_concentration}
+- Durée max d'une session : {profil.biometrie.duree_max_session_min} min
+- Pause entre sessions : {profil.biometrie.pause_entre_sessions_min} min
+- Plafond d'étude / jour : {profil.biometrie.heures_etude_plafond_par_jour or 6.0} h
 
 CONTEXTE :
 - Date du jour : {today.strftime('%A %d/%m/%Y')} ({jours[jour_idx_today]})
@@ -655,7 +672,7 @@ fusionner, ou les écarter avec une justification pour faire de la place) :
 RÈGLES :
 1. Tu ne génères QUE les jours restants ({jours_restants}). Les jours passés ne te
    concernent pas.
-2. Tu ne dois pas dépasser {profil.heures_etude_plafond_par_jour or 6.0} h d'étude sur
+2. Tu ne dois pas dépasser {profil.biometrie.heures_etude_plafond_par_jour or 6.0} h d'étude sur
    un même jour.
 3. Pour chaque tâche d'étude, inclus "chapitre_ids": [id, ...] avec les IDs réels.
 4. Si tu ne peux pas placer toutes les nouveautés, mentionne dans "taches_ecartees"
@@ -686,9 +703,9 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.gemini_api_key.strip())
+    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
     response = client.models.generate_content(
-        model=profil.gemini_model,
+        model=profil.systeme.gemini_model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -767,8 +784,8 @@ def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
     if not semaine:
         raise ValueError("Semaine introuvable.")
 
-    profil = session.query(Profil).first()
-    if not profil or not profil.gemini_api_key:
+    profil = session.query(Utilisateur).first()
+    if not profil or not profil.systeme.gemini_api_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     today = datetime.date.today()
@@ -818,11 +835,11 @@ def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
     prompt = f"""Tu es un planificateur expert. Tu dois redistribuer les tâches restantes d'un étudiant sur les jours restants de la semaine, en tenant compte du retard.
 
 PROFIL :
-- Heure de lever : {profil.heure_lever}
-- Heure de coucher : {profil.heure_coucher}
-- Pic de concentration : {profil.pic_concentration}
-- Durée max d'une session : {profil.duree_max_session_min} min
-- Pause entre sessions : {profil.pause_entre_sessions_min} min
+- Heure de lever : {profil.biometrie.heure_lever}
+- Heure de coucher : {profil.biometrie.heure_coucher}
+- Pic de concentration : {profil.biometrie.pic_concentration}
+- Durée max d'une session : {profil.biometrie.duree_max_session_min} min
+- Pause entre sessions : {profil.biometrie.pause_entre_sessions_min} min
 
 CONTEXTE :
 - Date du jour : {today.strftime('%A %d/%m/%Y')} ({jours[jour_idx_today]})
@@ -871,9 +888,9 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.gemini_api_key.strip())
+    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
     response = client.models.generate_content(
-        model=profil.gemini_model,
+        model=profil.systeme.gemini_model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",

@@ -44,72 +44,98 @@ from .db import Base
 
 
 # ---------------------------------------------------------------------------
-# Profil — singleton
+# Utilisateur & Configurations (Domain-Driven Design)
 # ---------------------------------------------------------------------------
-class Profil(Base):
-    """Profil unique de l'étudiant (une seule ligne attendue en pratique)."""
 
-    __tablename__ = "profil"
+class Utilisateur(Base):
+    """Racine de l'utilisateur (remplace l'ancien Profil monolithique)."""
+    __tablename__ = "utilisateurs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     nom = Column(String(100), nullable=False, default="")
 
-    # --- Rythme & sommeil --------------------------------------------------
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    gamification = relationship("GamificationState", back_populates="utilisateur", uselist=False, cascade="all, delete-orphan")
+    systeme = relationship("SystemeConfig", back_populates="utilisateur", uselist=False, cascade="all, delete-orphan")
+    logistique = relationship("LogistiqueConfig", back_populates="utilisateur", uselist=False, cascade="all, delete-orphan")
+    biometrie = relationship("BiometrieConfig", back_populates="utilisateur", uselist=False, cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Utilisateur id={self.id} nom={self.nom!r}>"
+
+
+class BiometrieConfig(Base):
+    __tablename__ = "biometrie_config"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    
     heure_lever = Column(Time, nullable=True)
     heure_coucher = Column(Time, nullable=True)
     heures_sommeil_cible = Column(Float, default=8.0)
+    besoin_sieste = Column(Boolean, default=False)
+    duree_sieste_min = Column(Integer, default=20)
+    
     chronotype = Column(String(20), default="intermediaire")
     pic_concentration = Column(String(20), default="matin")
-
-    # --- Capacité de travail ----------------------------------------------
+    
     duree_max_session_min = Column(Integer, default=50)
     pause_entre_sessions_min = Column(Integer, default=10)
     methode_travail = Column(String(20), default="mixte")
     capacite_weekend = Column(String(20), default="partiel")
     tolerance_fatigue = Column(String(20), default="moyenne")
-    # Quota d'étude personnel — cours + révisions confondus, tout ce qui est
-    # « activité intellectuelle scolaire ».
-    # - Objectif hebdomadaire : total visé sur la semaine (l'IA répartit).
-    # - Plafond journalier : pas plus que ça en une journée, quel que soit
-    #   l'objectif hebdo.
+    
     heures_etude_cible_par_semaine = Column(Float, default=21.0)
     heures_etude_plafond_par_jour = Column(Float, default=6.0)
 
-    # --- Transport ---------------------------------------------------------
+    utilisateur = relationship("Utilisateur", back_populates="biometrie")
+
+
+class LogistiqueConfig(Base):
+    __tablename__ = "logistique_config"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    
     temps_transport_min = Column(Integer, default=0)
     trajets_habituels = Column(JSON, default=dict)
-
-    # --- Repas & sieste ----------------------------------------------------
+    
     nb_repas_par_jour = Column(Integer, default=3)
     duree_repas_min = Column(Integer, default=30)
     duree_prep_repas_min = Column(Integer, default=30)
-    besoin_sieste = Column(Boolean, default=False)
-    duree_sieste_min = Column(Integer, default=20)
-
-    # --- Contraintes fixes récurrentes ------------------------------------
+    
     contraintes_fixes = Column(JSON, default=list)
 
-    # --- Paramètres IA -----------------------------------------------------
+    utilisateur = relationship("Utilisateur", back_populates="logistique")
+
+
+class SystemeConfig(Base):
+    __tablename__ = "systeme_config"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    
     gemini_api_key = Column(String(500), default="")
     gemini_model = Column(String(50), default="gemini-2.5-flash")
+    replanning_auto_actif = Column(Boolean, default=True)
 
-    # --- Gamification (F3a) ----------------------------------------------
-    xp = Column(Integer, default=0)                       # XP total cumulé
-    niveau = Column(Integer, default=1)                   # niveau dérivé de xp
-    streak_jours = Column(Integer, default=0)             # série actuelle
-    streak_record = Column(Integer, default=0)            # record perso de streak
-    derniere_activite_xp = Column(Date, nullable=True)    # dernière date où XP gagnés (pour streak)
-    nb_quiz_total = Column(Integer, default=0)            # cumul quiz faits
-    nb_chapitres_maitrise = Column(Integer, default=0)    # cumul chap au niveau max
-    nb_seances_sport_total = Column(Integer, default=0)   # cumul séances de sport faites
-    replanning_auto_actif = Column(Boolean, default=True) # A1 : auto-replanning ?
+    utilisateur = relationship("Utilisateur", back_populates="systeme")
 
-    # --- Horodatages -------------------------------------------------------
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"<Profil id={self.id} nom={self.nom!r}>"
+class GamificationState(Base):
+    __tablename__ = "gamification_state"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    
+    xp = Column(Integer, default=0)
+    niveau = Column(Integer, default=1)
+    streak_jours = Column(Integer, default=0)
+    streak_record = Column(Integer, default=0)
+    derniere_activite_xp = Column(Date, nullable=True)
+    nb_quiz_total = Column(Integer, default=0)
+    nb_chapitres_maitrise = Column(Integer, default=0)
+    nb_seances_sport_total = Column(Integer, default=0)
+
+    utilisateur = relationship("Utilisateur", back_populates="gamification")
 
 
 # ---------------------------------------------------------------------------

@@ -314,8 +314,8 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
         return
 
     # Récupération du plafond journalier pour détecter les sur-charges.
-    from database.models import Profil
-    profil = session.query(Profil).first()
+    from database.models import Utilisateur
+    profil = session.query(Utilisateur).first()
     plafond_min = calculer_quota_etude_minutes(profil, checkin=None) if profil else 0
 
     # --- Détection des conflits jour par jour -------------------------

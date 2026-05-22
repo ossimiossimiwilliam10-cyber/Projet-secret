@@ -16,7 +16,7 @@ from .db import (
     migrate_schema,
 )
 from .models import (
-    Profil,
+    Utilisateur,
     Achievement,
     UE,
     Matiere,
@@ -45,7 +45,7 @@ __all__ = [
     "reset_db",
     "migrate_schema",
     # models
-    "Profil",
+    "Utilisateur",
     "Achievement",
     "UE",
     "Matiere",

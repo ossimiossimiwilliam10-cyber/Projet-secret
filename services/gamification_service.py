@@ -5,7 +5,7 @@ Centralise toute la logique XP / niveaux / streak / achievements.
 Architecture :
 - ``ACHIEVEMENTS`` : catalogue en dur des badges, avec leur logique de déblocage.
 - Fonctions ``attribuer_xp_*`` : appelées depuis les hooks (quiz, promotion Leitner…).
-  Elles mettent à jour le profil, vérifient les level-ups, vérifient les nouveaux
+  Elles mettent à jour le utilisateur, vérifient les level-ups, vérifient les nouveaux
   achievements débloqués, et retournent une liste d'événements à afficher.
 - ``calculer_niveau_pour_xp`` / ``xp_total_pour_niveau`` : formule de progression.
 - ``update_streak`` : met à jour la série quotidienne.
@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from database.models import Achievement, Chapitre, Profil
+from database.models import Achievement, Chapitre, Utilisateur
 
 
 # ===========================================================================
@@ -82,7 +82,7 @@ class AchievementDef:
     nom: str
     description: str
     rarete: str  # "commun" | "peu_commun" | "rare" | "epique" | "legendaire"
-    # check(profil, event_type, event_data) → True si débloquable maintenant
+    # check(utilisateur, event_type, event_data) → True si débloquable maintenant
     check: Any = field(repr=False)
 
 
@@ -95,47 +95,47 @@ RARETE_COULEURS: dict[str, str] = {
 }
 
 
-def _check_first_quiz(profil: Profil, event_type: str, data: dict) -> bool:
-    return event_type == "quiz" and profil.nb_quiz_total >= 1
+def _check_first_quiz(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+    return event_type == "quiz" and utilisateur.nb_quiz_total >= 1
 
 
-def _check_perfect_quiz(profil: Profil, event_type: str, data: dict) -> bool:
+def _check_perfect_quiz(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
     return event_type == "quiz" and data.get("score", 0) >= 0.9
 
 
 def _check_streak(seuil: int):
-    def _f(profil: Profil, event_type: str, data: dict) -> bool:
-        return profil.streak_jours >= seuil
+    def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+        return utilisateur.streak_jours >= seuil
     return _f
 
 
 def _check_chapitres_maitrise(seuil: int):
-    def _f(profil: Profil, event_type: str, data: dict) -> bool:
-        return profil.nb_chapitres_maitrise >= seuil
+    def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+        return utilisateur.nb_chapitres_maitrise >= seuil
     return _f
 
 
 def _check_niveau(seuil: int):
-    def _f(profil: Profil, event_type: str, data: dict) -> bool:
-        return profil.niveau >= seuil
+    def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+        return utilisateur.niveau >= seuil
     return _f
 
 
 def _check_nb_quiz(seuil: int):
-    def _f(profil: Profil, event_type: str, data: dict) -> bool:
-        return profil.nb_quiz_total >= seuil
+    def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+        return utilisateur.nb_quiz_total >= seuil
     return _f
 
 
 def _check_xp(seuil: int):
-    def _f(profil: Profil, event_type: str, data: dict) -> bool:
-        return profil.xp >= seuil
+    def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+        return utilisateur.xp >= seuil
     return _f
 
 
 def _check_nb_sport(seuil: int):
-    def _f(profil: Profil, event_type: str, data: dict) -> bool:
-        return (profil.nb_seances_sport_total or 0) >= seuil
+    def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
+        return (utilisateur.nb_seances_sport_total or 0) >= seuil
     return _f
 
 
@@ -322,7 +322,7 @@ def progression_niveau(xp: int) -> dict[str, int | float]:
 # ===========================================================================
 # Streak
 # ===========================================================================
-def update_streak(profil: Profil, today: datetime.date | None = None) -> dict[str, Any]:
+def update_streak(utilisateur: Utilisateur, today: datetime.date | None = None) -> dict[str, Any]:
     """Met à jour le streak en fonction de la date du jour.
 
     - Si ``derniere_activite_xp`` == aujourd'hui → rien à faire (déjà compté)
@@ -333,27 +333,27 @@ def update_streak(profil: Profil, today: datetime.date | None = None) -> dict[st
     Retourne {streak: int, change: 'init'|'cont'|'reset'|'noop', record_battu: bool}.
     """
     today = today or datetime.date.today()
-    derniere = profil.derniere_activite_xp
+    derniere = utilisateur.gamification.derniere_activite_xp
 
     if derniere == today:
-        return {"streak": profil.streak_jours, "change": "noop", "record_battu": False}
+        return {"streak": utilisateur.streak_jours, "change": "noop", "record_battu": False}
 
     if derniere is None:
         nouveau_streak = 1
         change = "init"
     elif (today - derniere).days == 1:
-        nouveau_streak = (profil.streak_jours or 0) + 1
+        nouveau_streak = (utilisateur.streak_jours or 0) + 1
         change = "cont"
     else:
         nouveau_streak = 1
         change = "reset"
 
-    record_battu = nouveau_streak > (profil.streak_record or 0)
+    record_battu = nouveau_streak > (utilisateur.streak_record or 0)
 
-    profil.streak_jours = nouveau_streak
-    profil.derniere_activite_xp = today
+    utilisateur.streak_jours = nouveau_streak
+    utilisateur.gamification.derniere_activite_xp = today
     if record_battu:
-        profil.streak_record = nouveau_streak
+        utilisateur.streak_record = nouveau_streak
 
     return {
         "streak": nouveau_streak,
@@ -385,11 +385,11 @@ def _achievements_deja_debloques(session: Session) -> set[str]:
 
 def check_nouveaux_achievements(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     event_type: str = "",
     event_data: dict | None = None,
 ) -> list[AchievementDef]:
-    """Vérifie quels achievements le profil débloque MAINTENANT.
+    """Vérifie quels achievements le utilisateur débloque MAINTENANT.
 
     Insère les nouveaux dans la BD et retourne la liste pour affichage côté UI.
     """
@@ -400,7 +400,7 @@ def check_nouveaux_achievements(
         if ach.code in deja:
             continue
         try:
-            if ach.check(profil, event_type, event_data):
+            if ach.check(utilisateur, event_type, event_data):
                 session.add(Achievement(code=ach.code))
                 nouveaux.append(ach)
         except Exception:
@@ -431,29 +431,29 @@ class GainXP:
 
 def _appliquer_gain(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     xp_brut: int,
     raison: str,
     event_type: str,
     event_data: dict,
     update_streak_aussi: bool = True,
 ) -> GainXP:
-    """Logique commune : applique multiplicateur streak, met à jour profil,
+    """Logique commune : applique multiplicateur streak, met à jour utilisateur,
     check level-up, check achievements. Retourne le GainXP complet pour
     affichage."""
-    streak_info = {"streak": profil.streak_jours, "change": "noop"}
+    streak_info = {"streak": utilisateur.streak_jours, "change": "noop"}
     if update_streak_aussi:
-        streak_info = update_streak(profil)
+        streak_info = update_streak(utilisateur)
 
-    mult = calcul_multiplicateur_streak(profil.streak_jours or 1)
+    mult = calcul_multiplicateur_streak(utilisateur.streak_jours or 1)
     xp_final = int(round(xp_brut * mult))
 
-    niveau_avant = profil.niveau or 1
-    profil.xp = (profil.xp or 0) + xp_final
-    profil.niveau = calculer_niveau_pour_xp(profil.xp)
-    niveau_apres = profil.niveau
+    niveau_avant = utilisateur.niveau or 1
+    utilisateur.xp = (utilisateur.xp or 0) + xp_final
+    utilisateur.niveau = calculer_niveau_pour_xp(utilisateur.xp)
+    niveau_apres = utilisateur.niveau
 
-    nouveaux = check_nouveaux_achievements(session, profil, event_type, event_data)
+    nouveaux = check_nouveaux_achievements(session, utilisateur, event_type, event_data)
 
     return GainXP(
         xp_gagne=xp_final,
@@ -461,14 +461,14 @@ def _appliquer_gain(
         niveau_avant=niveau_avant,
         niveau_apres=niveau_apres,
         nouveaux_achievements=nouveaux,
-        streak_actuel=profil.streak_jours or 0,
+        streak_actuel=utilisateur.streak_jours or 0,
         streak_continue=streak_info["change"] in ("init", "cont"),
     )
 
 
 def attribuer_xp_quiz(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     score: float,
     chapitre: Chapitre | None = None,
 ) -> GainXP:
@@ -480,7 +480,7 @@ def attribuer_xp_quiz(
     - +30 si score ≥ 0.9 (cumulé)
     - × multiplicateur streak
     """
-    profil.nb_quiz_total = (profil.nb_quiz_total or 0) + 1
+    utilisateur.nb_quiz_total = (utilisateur.nb_quiz_total or 0) + 1
 
     xp = XP_QUIZ_BASE
     raison = f"Quiz fait (score {int(score * 100)}%)"
@@ -492,12 +492,12 @@ def attribuer_xp_quiz(
         raison = f"Quiz brillant (score {int(score * 100)}%)"
 
     event_data = {"score": score, "chapitre_id": chapitre.id if chapitre else None}
-    return _appliquer_gain(session, profil, xp, raison, "quiz", event_data)
+    return _appliquer_gain(session, utilisateur, xp, raison, "quiz", event_data)
 
 
 def attribuer_xp_promotion_leitner(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     niveau_avant: int,
     niveau_apres: int,
     chapitre: Chapitre,
@@ -516,7 +516,7 @@ def attribuer_xp_promotion_leitner(
 
     if niveau_apres >= niveau_max_leitner and niveau_avant < niveau_max_leitner:
         xp += XP_CHAPITRE_MAITRISE
-        profil.nb_chapitres_maitrise = (profil.nb_chapitres_maitrise or 0) + 1
+        utilisateur.nb_chapitres_maitrise = (utilisateur.nb_chapitres_maitrise or 0) + 1
         raison += " · 🌟 Chapitre maîtrisé !"
 
     event_data = {
@@ -527,14 +527,14 @@ def attribuer_xp_promotion_leitner(
     # Pas de update_streak ici : généralement appelé juste après attribuer_xp_quiz
     # qui l'a déjà fait. On évite de double-update.
     return _appliquer_gain(
-        session, profil, xp, raison, "promotion_leitner", event_data,
+        session, utilisateur, xp, raison, "promotion_leitner", event_data,
         update_streak_aussi=False,
     )
 
 
 def attribuer_xp_tache(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     duree_min: int,
     obligatoire: bool = False,
     titre: str = "",
@@ -545,41 +545,41 @@ def attribuer_xp_tache(
         base *= XP_TACHE_OBLIGATOIRE_MULTIPLICATEUR
     xp = max(1, int(round(base)))
     raison = f"Tâche faite : {titre[:30]}" if titre else "Tâche faite"
-    return _appliquer_gain(session, profil, xp, raison, "tache_faite", {"duree_min": duree_min})
+    return _appliquer_gain(session, utilisateur, xp, raison, "tache_faite", {"duree_min": duree_min})
 
 
 def attribuer_xp_sport(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     intensite: str = "",
     titre: str = "",
 ) -> GainXP:
     """À appeler quand une séance de sport est marquée terminée."""
-    profil.nb_seances_sport_total = (profil.nb_seances_sport_total or 0) + 1
+    utilisateur.nb_seances_sport_total = (utilisateur.nb_seances_sport_total or 0) + 1
     
     xp = XP_SPORT_BASE
     if "Intense" in intensite:
         xp += XP_SPORT_INTENSE_BONUS
     
     raison = f"Séance de sport : {titre[:30]}" if titre else "Séance de sport"
-    return _appliquer_gain(session, profil, xp, raison, "sport_fait", {"intensite": intensite})
+    return _appliquer_gain(session, utilisateur, xp, raison, "sport_fait", {"intensite": intensite})
 
 
 def attribuer_xp_intendance_alimentaire(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     type_tache: str,  # "courses" | "meal_prep"
     titre: str = "",
 ) -> GainXP:
     """À appeler quand les courses ou le meal prep sont terminés."""
     xp = XP_COURSES_FAITES if type_tache == "courses" else XP_MEAL_PREP_FAIT
     raison = f"Intendance : {titre[:30]}" if titre else f"Intendance ({type_tache})"
-    return _appliquer_gain(session, profil, xp, raison, f"{type_tache}_fait", {})
+    return _appliquer_gain(session, utilisateur, xp, raison, f"{type_tache}_fait", {})
 
 
 def attribuer_xp_categorie(
     session: Session,
-    profil: Profil,
+    utilisateur: Utilisateur,
     categorie: str,
     duree_min: int = 30,
     titre: str = "",
@@ -609,20 +609,26 @@ def attribuer_xp_categorie(
         xp = (duree_min / 60) * XP_JOB_HEURE
 
     xp = max(5, int(round(xp)))
-    return _appliquer_gain(session, profil, xp, raison, f"{categorie}_fait", extra_data)
+    return _appliquer_gain(session, utilisateur, xp, raison, f"{categorie}_fait", extra_data)
 
 
 # ===========================================================================
-# Helper : récupère ou crée le profil singleton
+# Helper : récupère ou crée le utilisateur singleton
 # ===========================================================================
-def get_or_create_profil(session: Session) -> Profil:
-    """Retourne le profil unique, en le créant si besoin (cas premier lancement)."""
-    profil = session.query(Profil).first()
-    if profil is None:
-        profil = Profil()
-        session.add(profil)
+def get_or_create_utilisateur(session: Session) -> Utilisateur:
+    """Retourne le utilisateur unique, en le créant si besoin (cas premier lancement)."""
+    utilisateur = session.query(Utilisateur).first()
+    if utilisateur is None:
+        from database.models import GamificationState, SystemeConfig, LogistiqueConfig, BiometrieConfig
+        utilisateur = Utilisateur(
+            gamification=GamificationState(),
+            systeme=SystemeConfig(),
+            logistique=LogistiqueConfig(),
+            biometrie=BiometrieConfig()
+        )
+        session.add(utilisateur)
         session.flush()
-    return profil
+    return utilisateur
 
 
 __all__ = [
@@ -649,5 +655,5 @@ __all__ = [
     "attribuer_xp_categorie",
     "check_nouveaux_achievements",
     # Helper
-    "get_or_create_profil",
+    "get_or_create_utilisateur",
 ]

@@ -52,6 +52,130 @@ SEUIL_FATIGUE: int = 7
 
 
 # ---------------------------------------------------------------------------
+# Moteur Circadien
+# ---------------------------------------------------------------------------
+import math
+
+def calculer_courbe_energie(
+    heure_lever: date.time | None,
+    heure_coucher: date.time | None,
+    chronotype: str,
+    checkin: dict[str, Any] | None,
+) -> dict[str, list[str]]:
+    """Génère une courbe d'énergie mathématique sur la journée.
+
+    Définit les "Créneaux Haute Énergie" (pics de la courbe, > 0.8)
+    et les "Créneaux Basse Énergie" (creux de la courbe, < 0.4).
+
+    Args:
+        heure_lever: Heure de lever de l'étudiant.
+        heure_coucher: Heure de coucher de l'étudiant.
+        chronotype: "matin", "soir", ou "intermediaire".
+        checkin: Dictionnaire optionnel contenant "fatigue_physique".
+
+    Returns:
+        Dict avec deux clés : "haute_energie" et "basse_energie",
+        contenant des listes de chaînes horaires (ex: "09:00-11:30").
+    """
+    from datetime import datetime, time, timedelta
+
+    hl = heure_lever or time(7, 0)
+    hc = heure_coucher or time(23, 0)
+    
+    # Conversion en minutes depuis minuit
+    hl_min = hl.hour * 60 + hl.minute
+    hc_min = hc.hour * 60 + hc.minute
+    if hc_min <= hl_min:
+        hc_min += 24 * 60 # Coucher le lendemain
+
+    duree_journee_min = hc_min - hl_min
+    if duree_journee_min <= 0:
+        return {"haute_energie": [], "basse_energie": []}
+
+    # Modulateur de Biorhythme selon le chronotype
+    offset_pic_pct = 0.25 # Matin par défaut (quart de la journée)
+    if chronotype == "couche_tard":
+        offset_pic_pct = 0.65
+    elif chronotype == "intermediaire":
+        offset_pic_pct = 0.40
+
+    pic_absolu_min = hl_min + int(duree_journee_min * offset_pic_pct)
+
+    # Modulateur d'amplitude selon le checkin
+    amplitude_max = 1.0
+    if checkin:
+        fatigue = float(checkin.get("fatigue_physique", 0) or 0)
+        if fatigue > 7:
+            amplitude_max = 0.7 # Écrase la courbe si épuisé
+
+    # Calcul par segments de 30 minutes
+    segments_haute = []
+    segments_basse = []
+    
+    current_min = hl_min
+    while current_min < hc_min:
+        # Fonction normale (cloche) centrée sur le pic absolu
+        # σ = largeur de la cloche (ex: 3 heures)
+        sigma = 180.0
+        exponent = -0.5 * ((current_min - pic_absolu_min) / sigma) ** 2
+        score_energie = amplitude_max * math.exp(exponent)
+        
+        # Ajout d'une baisse "post-déjeuner" (coup de barre classique vers 14h/14h30)
+        # On simule ça par un creux forcé autour de 14h (840 min)
+        creux_dej = -0.3 * math.exp(-0.5 * ((current_min - 840) / 90.0) ** 2)
+        score_energie += creux_dej
+        
+        score_energie = max(0.0, min(1.0, score_energie))
+        
+        h_str = f"{(current_min // 60) % 24:02d}:{(current_min % 60):02d}"
+        
+        if score_energie >= 0.75:
+            segments_haute.append(h_str)
+        elif score_energie <= 0.40:
+            segments_basse.append(h_str)
+            
+        current_min += 30
+
+    # Fonction utilitaire pour grouper les "09:00", "09:30", "10:00" en "09:00-10:30"
+    def grouper_segments(segments):
+        if not segments:
+            return []
+        groupes = []
+        debut = segments[0]
+        precedent = segments[0]
+        
+        for s in segments[1:]:
+            # Vérifie si contigu (30 min d'écart)
+            h_prev, m_prev = map(int, precedent.split(":"))
+            h_curr, m_curr = map(int, s.split(":"))
+            
+            diff_min = (h_curr * 60 + m_curr) - (h_prev * 60 + m_prev)
+            if diff_min < 0: diff_min += 24*60
+            
+            if diff_min == 30:
+                precedent = s
+            else:
+                # Ferme le groupe
+                h_fin, m_fin = map(int, precedent.split(":"))
+                fin_min = h_fin * 60 + m_fin + 30
+                fin_str = f"{(fin_min // 60) % 24:02d}:{(fin_min % 60):02d}"
+                groupes.append(f"{debut}-{fin_str}")
+                debut = s
+                precedent = s
+                
+        # Dernier groupe
+        h_fin, m_fin = map(int, precedent.split(":"))
+        fin_min = h_fin * 60 + m_fin + 30
+        fin_str = f"{(fin_min // 60) % 24:02d}:{(fin_min % 60):02d}"
+        groupes.append(f"{debut}-{fin_str}")
+        return groupes
+
+    return {
+        "haute_energie": grouper_segments(segments_haute),
+        "basse_energie": grouper_segments(segments_basse)
+    }
+
+# ---------------------------------------------------------------------------
 # Quota d'étude
 # ---------------------------------------------------------------------------
 def calculer_quota_etude_minutes(
@@ -281,4 +405,79 @@ __all__ = [
     "calculer_cible_hebdo_minutes",
     "repartir_nouveaux_chapitres",
     "lisser_revisions_leitner",
+    "calculer_courbe_energie",
+    "calculer_velocite_historique",
 ]
+
+# ---------------------------------------------------------------------------
+# Vélocité historique (Anti-Burnout)
+# ---------------------------------------------------------------------------
+def calculer_velocite_historique(session: Session, utilisateur_id: int) -> tuple[float, str]:
+    """Analyse les 3 dernières semaines échues pour calculer un multiplicateur de réalisme.
+
+    Si l'étudiant prévoit systématiquement 20h mais n'en fait que 10h,
+    la vélocité baissera, permettant au moteur de lisser ses objectifs.
+
+    Returns:
+        Un tuple (multiplicateur_lissé, explication_textuelle).
+    """
+    from datetime import date
+    from database.models import Semaine, Tache
+
+    today = date.today()
+
+    # Les 3 dernières semaines terminées
+    semaines_passees = (
+        session.query(Semaine)
+        .filter(Semaine.date_fin < today)
+        .order_by(Semaine.date_fin.desc())
+        .limit(3)
+        .all()
+    )
+
+    if not semaines_passees:
+        return 1.0, "Aucune donnée historique. Vélocité standard (100%)."
+
+    semaine_ids = [s.id for s in semaines_passees]
+
+    taches_etude = (
+        session.query(Tache)
+        .filter(
+            Tache.semaine_id.in_(semaine_ids),
+            Tache.type == "etude",
+            Tache.obligatoire.is_(False)
+        )
+        .all()
+    )
+
+    if not taches_etude:
+        return 1.0, "Pas assez de recul sur les tâches d'étude. Vélocité standard (100%)."
+
+    temps_prevu = 0
+    temps_fait = 0
+
+    for t in taches_etude:
+        duree = t.duree_min or 0
+        temps_prevu += duree
+        if t.statut == "fait":
+            temps_fait += duree
+        elif t.statut == "partiellement":
+            temps_fait += int(duree * 0.5)
+
+    if temps_prevu == 0:
+        return 1.0, "Vélocité standard (100%)."
+
+    ratio_brut = temps_fait / temps_prevu
+    # Lissage pour éviter les punitions trop brutales : on fait la moyenne avec 1.0
+    multiplicateur = (ratio_brut + 1.0) / 2.0
+    
+    # Plancher à 0.5 (on ne divise jamais par plus de 2) et plafond à 1.1 (léger bonus si très efficace)
+    multiplicateur = max(0.5, min(1.1, multiplicateur))
+
+    pct = int(multiplicateur * 100)
+    real_pct = int(ratio_brut * 100)
+    
+    msg = (f"Sur les 3 dernières semaines, tu as complété {real_pct}% de ce que tu avais prévu. "
+           f"Le moteur a ajusté ta capacité à {pct}% pour te préserver.")
+
+    return multiplicateur, msg

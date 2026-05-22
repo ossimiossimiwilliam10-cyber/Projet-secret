@@ -21,7 +21,7 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, Profil, Semaine, Tache
+from database.models import Chapitre, Utilisateur, Semaine, Tache
 from services.ai_planner import replan_remaining_week
 from services.scheduler_engine import calculer_cible_hebdo_minutes
 from services import gamification_service
@@ -432,7 +432,7 @@ def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
     )
     total_fait = int(etude_min_fait + etude_min_partiel)
 
-    profil = session.query(Profil).first()
+    profil = session.query(Utilisateur).first()
     cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
     if cible_hebdo_min <= 0:
         return
@@ -455,7 +455,7 @@ def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
         f"<div style='background:{color};width:{pct_capped:.1f}%;height:100%;'></div>"
         f"</div>"
         f"<div style='font-size:0.75rem;color:#6b7280;margin-top:4px;'>"
-        f"Objectif hebdo défini dans ton Profil (cours + révisions perso confondus)."
+        f"Objectif hebdo défini dans ton Utilisateur (cours + révisions perso confondus)."
         f"</div>"
         f"</div>",
         unsafe_allow_html=True,

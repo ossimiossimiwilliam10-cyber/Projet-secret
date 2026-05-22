@@ -75,7 +75,7 @@ def _render_navigation() -> None:
     st.markdown(
         """
 ### ⚙️ Configuration
-- **👤 Profil** — Ton chronotype, ton plafond d'étude par jour, ton
+- **👤 Utilisateur** — Ton chronotype, ton plafond d'étude par jour, ton
   objectif hebdomadaire, tes trajets habituels, ta clé Gemini. À
   remplir une fois, à ajuster occasionnellement. La **zone Sauvegarde
   & Restauration** est en bas — pense à télécharger un backup toutes
@@ -208,7 +208,7 @@ Streamlit Cloud peut perdre tes données si l'instance est recréée.
 **Télécharge une sauvegarde régulièrement** (le dimanche soir par
 exemple, en même temps que tu prépares la semaine suivante) :
 
-1. **Profil → 💾 Sauvegarde & Restauration**.
+1. **Utilisateur → 💾 Sauvegarde & Restauration**.
 2. Clique **💾 Télécharger** — tu récupères un `.zip` horodaté avec
    ta base + tes PDFs.
 3. Range-le sur ton ordi ou ton Drive.

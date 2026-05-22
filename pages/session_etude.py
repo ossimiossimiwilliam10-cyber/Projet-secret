@@ -353,7 +353,7 @@ def _submit_qcm(chap_id: int, questions: list[dict]) -> None:
                 if g_promo:
                     gains_xp.append({"type": "promotion", "gain": _serialize_gain(g_promo)})
             # --- A1 : Replanning auto silencieux si quiz raté ------------
-            replan_auto = bool(profil.replanning_auto_actif and score_num < 0.5)
+            replan_auto = bool(profil.systeme.replanning_auto_actif and score_num < 0.5)
     except Exception as exc:
         st.error(f"❌ Erreur lors de l'application de Leitner : {exc}")
         return
@@ -580,7 +580,7 @@ def _submit_quiz(chap_id: int, questions: list[str]) -> None:
                     if g_promo:
                         gains_xp.append({"type": "promotion", "gain": _serialize_gain(g_promo)})
                 replan_auto = bool(
-                    profil.replanning_auto_actif and evaluation["score_num"] < 0.5
+                    profil.systeme.replanning_auto_actif and evaluation["score_num"] < 0.5
                 )
         except Exception as exc:
             st.error(f"❌ Erreur d'évaluation : {exc}")
@@ -867,21 +867,21 @@ def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
     import tempfile
     import os
     from google import genai
-    from database.models import Profil, Chapitre
+    from database.models import Utilisateur, Chapitre
 
     with st.spinner("🧠 Gemini écoute, transcrit et évalue ta démonstration... (ça peut prendre 30 sec)"):
         try:
             # 1. On récupère la clé API ET le contenu du chapitre
             with get_session() as session:
-                profil = session.query(Profil).first()
+                profil = session.query(Utilisateur).first()
                 chapitre = session.get(Chapitre, chap_id)
                 
-                if not profil or not profil.gemini_api_key:
+                if not profil or not profil.systeme.gemini_api_key:
                     st.error("❌ Clé API Gemini introuvable.")
                     return
                 
-                api_key = profil.gemini_api_key.strip()
-                model_name = profil.gemini_model
+                api_key = profil.systeme.gemini_api_key.strip()
+                model_name = profil.systeme.gemini_model
                 
                 titre_chapitre = chapitre.titre if chapitre else "Inconnu"
                 # On utilise la fiche IA comme correction officielle. 

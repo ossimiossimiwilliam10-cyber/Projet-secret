@@ -7,7 +7,7 @@ from PIL import Image
 import streamlit as st
 
 from database.db import get_session, session_scope
-from database.models import Profil
+from database.models import Utilisateur
 
 def _parse_gemini_json(text: str) -> dict:
     s = text.strip()
@@ -64,8 +64,8 @@ def render() -> None:
     st.caption("Prends en photo ton planning (ENT, planning de travail). L'IA va extraire les horaires toute seule.")
 
     with get_session() as session:
-        profil = session.query(Profil).first()
-        if not profil or not profil.gemini_api_key:
+        profil = session.query(Utilisateur).first()
+        if not profil or not profil.systeme.gemini_api_key:
             st.warning("⚠️ Clé API Gemini manquante. Configure ton profil d'abord.")
             return
 
@@ -81,16 +81,16 @@ def render() -> None:
                     image = Image.open(uploaded_file)
                     nouveaux_evenements = _extraire_planning_image_ia(
                         image,
-                        profil.gemini_api_key,
-                        profil.gemini_model
+                        profil.systeme.gemini_api_key,
+                        profil.systeme.gemini_model
                     )
 
                     if nouveaux_evenements:
-                        contraintes_actuelles = list(profil.contraintes_fixes or [])
+                        contraintes_actuelles = list(profil.logistique.contraintes_fixes or [])
                         contraintes_actuelles.extend(nouveaux_evenements)
 
                         with session_scope() as write_session:
-                            profil_to_update = write_session.get(Profil, profil.id)
+                            profil_to_update = write_session.get(Utilisateur, profil.id)
                             profil_to_update.contraintes_fixes = contraintes_actuelles
 
                         st.success(f"✅ {len(nouveaux_evenements)} contraintes ajoutées à ton profil !")

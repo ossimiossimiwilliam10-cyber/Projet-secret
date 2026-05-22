@@ -18,7 +18,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session
 
-from database import Chapitre, Matiere, Profil, UE, get_session, session_scope
+from database import Chapitre, Matiere, Utilisateur, UE, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
 from services.revision_service import (
@@ -58,10 +58,10 @@ UE_COLORS_DEFAULT = [
 def _get_api_config() -> tuple[str, str]:
     """Récupère la clé API et le modèle depuis le profil."""
     with get_session() as session:
-        p = session.query(Profil).first()
-        if not p or not p.gemini_api_key:
+        p = session.query(Utilisateur).first()
+        if not p or not p.systeme.gemini_api_key:
             return "", "gemini-2.5-flash"
-        return p.gemini_api_key, p.gemini_model
+        return p.systeme.gemini_api_key, p.systeme.gemini_model
 
 
 def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
@@ -618,7 +618,7 @@ def _render_import_unifie() -> None:
     if not api_key:
         st.warning(
             "⚠️ Aucune clé API Gemini n'est configurée. "
-            "Rends-toi dans l'onglet **Profil** pour en ajouter une avant "
+            "Rends-toi dans l'onglet **Utilisateur** pour en ajouter une avant "
             "d'importer un PDF."
         )
         return

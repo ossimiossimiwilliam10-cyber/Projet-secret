@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.db import get_session
-from database.models import Chapitre, Matiere, Semaine, Tache, Profil
+from database.models import Chapitre, Matiere, Semaine, Tache, Utilisateur
 from services.gamification_service import (
     progression_niveau,
     NIVEAU_MAX,
@@ -111,7 +111,7 @@ def render() -> None:
 
         st.divider()
 
-        # 1bis. Bandeau quota d'étude — connecté au réglage Profil.
+        # 1bis. Bandeau quota d'étude — connecté au réglage Utilisateur.
         _render_quota_etude_banner(session)
 
         st.divider()
@@ -143,15 +143,15 @@ def _render_checkin_quotidien(session: Session) -> None:
 # ===========================================================================
 def _render_xp_bar(session: Session) -> None:
     """Bandeau au sommet du dashboard avec niveau, XP, streak."""
-    profil = session.query(Profil).first()
+    profil = session.query(Utilisateur).first()
     if profil is None:
         return
 
-    xp_total = profil.xp or 0
-    streak = profil.streak_jours or 0
-    streak_record = profil.streak_record or 0
-    nb_quiz = profil.nb_quiz_total or 0
-    nb_maitrise = profil.nb_chapitres_maitrise or 0
+    xp_total = profil.gamification.xp or 0
+    streak = profil.gamification.streak_jours or 0
+    streak_record = profil.gamification.streak_record or 0
+    nb_quiz = profil.gamification.nb_quiz_total or 0
+    nb_maitrise = profil.gamification.nb_chapitres_maitrise or 0
 
     prog = progression_niveau(xp_total)
     niveau = prog["niveau"]
@@ -831,7 +831,7 @@ def _render_charge_hebdo(session: Session) -> None:
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=300, yaxis_title="Heures")
 
     # Ligne de référence : objectif hebdomadaire du profil.
-    profil = session.query(Profil).first()
+    profil = session.query(Utilisateur).first()
     if profil is not None:
         cible_h = calculer_cible_hebdo_minutes(profil) / 60
         fig.add_hline(
@@ -848,7 +848,7 @@ def _render_charge_hebdo(session: Session) -> None:
 
 
 # ===========================================================================
-# Section 1bis — Bandeau quota d'étude (connecté au réglage Profil)
+# Section 1bis — Bandeau quota d'étude (connecté au réglage Utilisateur)
 # ===========================================================================
 def _render_quota_etude_banner(session: Session) -> None:
     """Compare les heures d'étude validées CETTE semaine à l'objectif
@@ -877,7 +877,7 @@ def _render_quota_etude_banner(session: Session) -> None:
     ).scalar() or 0
     total_fait = int(etude_min_fait + etude_min_partiel * 0.5)
 
-    profil = session.query(Profil).first()
+    profil = session.query(Utilisateur).first()
     cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
     if cible_hebdo_min <= 0:
         return
@@ -892,8 +892,8 @@ def _render_quota_etude_banner(session: Session) -> None:
     else:
         color, label = "#6b7280", "📚 Marge à rattraper d'ici dimanche soir."
 
-    cible_h = (profil.heures_etude_cible_par_semaine if profil else 21.0)
-    plafond_h = (profil.heures_etude_plafond_par_jour if profil else 6.0)
+    cible_h = (profil.biometrie.heures_etude_cible_par_semaine if profil else 21.0)
+    plafond_h = (profil.biometrie.heures_etude_plafond_par_jour if profil else 6.0)
 
     st.markdown(
         f"<div style='padding:14px 18px;background:{color}15;"

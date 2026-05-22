@@ -53,7 +53,7 @@ def main() -> None:
 
     pages = {
         "Configuration": [
-            st.Page(profil.render, title="Profil", icon="👤", url_path="profil"),
+            st.Page(profil.render, title="Utilisateur", icon="👤", url_path="profil"),
             st.Page(bibliotheque.render, title="Bibliothèque", icon="📚", url_path="bibliotheque"),
             st.Page("pages/aide.py", title="Aide & Mode d'emploi", icon="❓", url_path="aide"),
         ],

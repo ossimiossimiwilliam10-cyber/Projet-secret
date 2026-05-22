@@ -26,7 +26,7 @@ import pandas as pd
 import streamlit as st
 
 from database.db import get_session, session_scope
-from database.models import Chapitre, Matiere, Profil, SaisieHebdo
+from database.models import Chapitre, Matiere, Utilisateur, SaisieHebdo
 from services.matiere_stats import (
     estimer_charge_minutes,
     format_label_matiere,
@@ -291,13 +291,13 @@ def render() -> None:
         # (pas au plafond × 7 — c'est l'objectif réel que l'étudiant vise).
         charge_min = estimer_charge_minutes(session, nouvelles_matieres_selectionnees)
         if charge_min > 0:
-            profil = session.query(Profil).first()
+            profil = session.query(Utilisateur).first()
             cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
             pct = charge_min / cible_hebdo_min * 100 if cible_hebdo_min else 0
 
             heures_str = f"{charge_min / 60:.1f} h"
             cible_str = f"{cible_hebdo_min / 60:.1f} h"
-            plafond_h = float(getattr(profil, "heures_etude_plafond_par_jour", 0) or 0)
+            plafond_h = float(getattr(profil.biometrie, "heures_etude_plafond_par_jour", 0) or 0)
             plafond_str = f"{plafond_h:.1f} h/jour" if plafond_h > 0 else "non défini"
 
             if charge_min < cible_hebdo_min * 0.6:
@@ -323,7 +323,7 @@ def render() -> None:
                     f"🚨 **Surcharge : {heures_str}** pour un objectif de "
                     f"{cible_str} ({pct:.0f} %). L'IA déclassera des chapitres "
                     f"dans `taches_ecartees`. Allège ta sélection ou augmente "
-                    f"ton objectif dans le **Profil**."
+                    f"ton objectif dans le **Utilisateur**."
                 )
 
         # --- 3. Travaux ponctuels (devoirs, exposés) ---

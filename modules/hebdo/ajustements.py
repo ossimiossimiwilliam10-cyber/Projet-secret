@@ -10,7 +10,7 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import Profil, SaisieHebdo, Semaine
+from database.models import Utilisateur, SaisieHebdo, Semaine
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -86,14 +86,14 @@ def render() -> None:
         # de substitution alors qu'ils sont scannés dans contraintes_fixes).
         st.divider()
         st.subheader("3. Contraintes à ignorer cette semaine")
-        profil = session.query(Profil).first()
-        contraintes_fixes_dispo = list(profil.contraintes_fixes or []) if profil else []
+        profil = session.query(Utilisateur).first()
+        contraintes_fixes_dispo = list(profil.logistique.contraintes_fixes or []) if profil else []
         contraintes_ignorees_db = config_db.get("contraintes_ignorees", [])
 
         if not contraintes_fixes_dispo:
             st.caption(
                 "_Aucune contrainte fixe dans ton profil. "
-                "Va sur **Profil → Contraintes fixes récurrentes** pour en définir._"
+                "Va sur **Utilisateur → Contraintes fixes récurrentes** pour en définir._"
             )
             contraintes_ignorees = []
         else:

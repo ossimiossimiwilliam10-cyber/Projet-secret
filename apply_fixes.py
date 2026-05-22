@@ -81,8 +81,8 @@ FIXES_REPLACE: list[dict] = [
         "file": "modules/import_externe.py",
         "name": "[#1.4] Query.get() (import_externe.py)",
         "replacements": [(
-            "profil_to_update = write_session.query(Profil).get(profil.id)",
-            "profil_to_update = write_session.get(Profil, profil.id)",
+            "profil_to_update = write_session.query(Utilisateur).get(profil.id)",
+            "profil_to_update = write_session.get(Utilisateur, profil.id)",
         )],
     },
     {

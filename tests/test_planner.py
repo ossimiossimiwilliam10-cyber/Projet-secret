@@ -17,7 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.db import Base
-from database.models import CheckInQuotidien, Profil, SaisieHebdo, Semaine
+from database.models import CheckInQuotidien, Utilisateur, SaisieHebdo, Semaine
 from services.ai_planner import build_planner_prompt
 
 
@@ -38,8 +38,8 @@ def session():
         engine.dispose()
 
 
-def _make_minimal_setup(session) -> tuple[Semaine, SaisieHebdo, Profil]:
-    """Crée le triplet minimal Semaine + SaisieHebdo + Profil et le persiste."""
+def _make_minimal_setup(session) -> tuple[Semaine, SaisieHebdo, Utilisateur]:
+    """Crée le triplet minimal Semaine + SaisieHebdo + Utilisateur et le persiste."""
     today = date.today()
     semaine = Semaine(
         annee=today.year,
@@ -51,13 +51,21 @@ def _make_minimal_setup(session) -> tuple[Semaine, SaisieHebdo, Profil]:
     session.flush()
 
     saisie = SaisieHebdo(semaine_id=semaine.id)
-    profil = Profil(
+    from database.models import BiometrieConfig, LogistiqueConfig, SystemeConfig, GamificationState
+    profil = Utilisateur(
         nom="Test",
-        heure_lever=time(7, 0),
-        heure_coucher=time(23, 0),
-        temps_transport_min=20,
-        gemini_api_key="fake-key",
-        gemini_model="gemini-2.5-flash",
+        biometrie=BiometrieConfig(
+            heure_lever=time(7, 0),
+            heure_coucher=time(23, 0),
+        ),
+        logistique=LogistiqueConfig(
+            temps_transport_min=20,
+        ),
+        systeme=SystemeConfig(
+            gemini_api_key="fake-key",
+            gemini_model="gemini-2.5-flash",
+        ),
+        gamification=GamificationState()
     )
     session.add_all([saisie, profil])
     session.commit()

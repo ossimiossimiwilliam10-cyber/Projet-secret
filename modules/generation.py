@@ -14,7 +14,7 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
-from database.models import CheckInQuotidien, Profil, Semaine, Tache
+from database.models import CheckInQuotidien, Utilisateur, Semaine, Tache
 from services.ai_planner import (
     detecter_chapitres_manquants,
     generate_schedule_from_ai,
@@ -428,7 +428,7 @@ def render() -> None:
             )
             return
 
-        profil = session.query(Profil).first()
+        profil = session.query(Utilisateur).first()
         checkin_row = (
             session.query(CheckInQuotidien)
             .filter(CheckInQuotidien.date == datetime.date.today())
