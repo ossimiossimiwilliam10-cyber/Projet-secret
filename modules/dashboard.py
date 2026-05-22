@@ -250,12 +250,29 @@ def _render_planning_grid(session: Session) -> None:
         )
         return
 
-    # Trouver la semaine actuelle (par défaut)
+    # Trouver la semaine actuelle par défaut. Mais si elle n'a pas de
+    # tâches (planning pas encore généré ou généré pour la semaine
+    # prochaine), on bascule sur la première semaine qui a un planning,
+    # pour éviter d'afficher un écran « pas de planning » alors qu'il y
+    # en a un ailleurs.
     today = date.today()
-    semaine_par_defaut = next(
+
+    def _has_taches(sem: Semaine) -> bool:
+        return session.query(Tache).filter_by(semaine_id=sem.id).limit(1).count() > 0
+
+    semaine_courante = next(
         (s for s in semaines if s.date_debut <= today <= s.date_fin),
-        semaines[0],
+        None,
     )
+    if semaine_courante is not None and _has_taches(semaine_courante):
+        semaine_par_defaut = semaine_courante
+    else:
+        # Bascule sur la première semaine avec planning (la plus récente d'abord,
+        # car semaines est trié date_debut.desc()).
+        semaine_par_defaut = next(
+            (s for s in semaines if _has_taches(s)),
+            semaine_courante or semaines[0],
+        )
 
     # --- Sélecteur de semaine -------------------------------------------
     def _label(s: Semaine) -> str:
@@ -297,10 +314,22 @@ def _render_planning_grid(session: Session) -> None:
         .all()
     )
     if not taches:
-        st.info(
-            f"La semaine S{semaine.numero_semaine} n'a pas encore de planning. "
-            f"Va dans **✨ Génération IA** pour la créer."
-        )
+        # Si une AUTRE semaine a un planning, suggérer de basculer.
+        autres_avec_planning = [
+            s for s in semaines if s.id != semaine.id and _has_taches(s)
+        ]
+        if autres_avec_planning:
+            labels = ", ".join(_label(s) for s in autres_avec_planning[:3])
+            st.info(
+                f"La semaine S{semaine.numero_semaine} sélectionnée n'a pas "
+                f"encore de planning. Tu as un planning dans : **{labels}** "
+                "— change la semaine via le sélecteur ci-dessus."
+            )
+        else:
+            st.info(
+                f"La semaine S{semaine.numero_semaine} n'a pas encore de planning. "
+                f"Va dans **✨ Génération IA** pour la créer."
+            )
         return
 
     # --- Mini-KPIs en bandeau --------------------------------------------
