@@ -151,15 +151,41 @@ def test_gemini_connection(api_key: str, model: str) -> tuple[bool, str]:
         text = (getattr(response, "text", "") or "").strip()
         if text:
             return True, f"Connexion réussie. Réponse du modèle : « {text[:80]} »"
-            
-        # --- Le fameux mouchard est ici ---
-        raison = "Inconnue"
+
+        # Traduction des codes finish_reason Gemini en messages
+        # humains. Sans ça, l'utilisateur voit "PROHIBITED_CONTENT"
+        # ou "MAX_TOKENS" sans contexte.
+        raisons_fr: dict[str, str] = {
+            "STOP":                "✅ Réponse terminée normalement (mais texte vide — étrange).",
+            "MAX_TOKENS":          "📏 Réponse coupée car trop longue.",
+            "SAFETY":              "🛡️ Filtré par les règles de sécurité Gemini.",
+            "RECITATION":          "📚 Le modèle a refusé pour cause de récitation (contenu copyrighté).",
+            "PROHIBITED_CONTENT":  "🚫 Contenu interdit détecté par Gemini.",
+            "LANGUAGE":            "🌐 Langue non supportée par ce modèle.",
+            "OTHER":               "❓ Raison inconnue du côté Gemini.",
+            "BLOCKLIST":           "⛔ Mot interdit détecté.",
+        }
+        raison_brute = "Inconnue"
         if hasattr(response, "candidates") and response.candidates:
-            raison = response.candidates[0].finish_reason
-        return False, f"Le modèle a refusé de répondre. Code d'arrêt : {raison}"
-        
-    except Exception as exc: 
-        return False, f"Échec : {type(exc).__name__} — {str(exc)[:300]}"
+            raison_brute = str(response.candidates[0].finish_reason or "Inconnue")
+        # Le finish_reason peut être un Enum ou une string — on extrait le nom.
+        raison_key = raison_brute.split(".")[-1].upper()
+        raison_fr = raisons_fr.get(raison_key, f"Code Gemini inconnu : {raison_brute}")
+        return False, f"Le modèle a refusé de répondre. {raison_fr}"
+
+    except Exception as exc:  # noqa: BLE001
+        # Messages contextuels selon le type d'erreur pour aider à diagnostiquer.
+        nom = type(exc).__name__
+        msg = str(exc)[:300]
+        if "401" in msg or "403" in msg or "Unauthor" in msg.lower():
+            return False, f"🔐 Clé API refusée par Gemini. Vérifie qu'elle est correcte et active.\n\nDétail : {msg}"
+        if "404" in msg:
+            return False, f"❓ Modèle introuvable. Vérifie le nom (`{model}`).\n\nDétail : {msg}"
+        if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
+            return False, f"⏱️ Quota Gemini dépassé pour le moment. Réessaie dans quelques minutes.\n\nDétail : {msg}"
+        if "timeout" in msg.lower() or "timed out" in msg.lower():
+            return False, f"⏰ Connexion à Gemini trop lente (timeout). Réessaie.\n\nDétail : {msg}"
+        return False, f"Échec : {nom} — {msg}"
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +497,7 @@ def render() -> None:
                 else:
                     st.error(msg)
 
-   # === Bouton enregistrer ===============================================
+    # === Bouton enregistrer ===============================================
     st.divider()
     col_save, col_save_msg = st.columns([1, 3])
     with col_save:
