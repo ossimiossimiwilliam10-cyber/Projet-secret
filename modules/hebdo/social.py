@@ -61,7 +61,7 @@ def render() -> None:
                 "type": TYPES_SOCIAL[1],
                 "duree_min": 60,
                 "creneau_pref": "Soir",
-                "jour_pref": "Vendredi"
+                "jour_pref": "vendredi"
             }])
 
         st.subheader("Tes rendez-vous et moments de détente")
@@ -73,7 +73,11 @@ def render() -> None:
                 "activite": st.column_config.TextColumn("Événement / Détail"),
                 "type": st.column_config.SelectboxColumn("Type d'activité", options=TYPES_SOCIAL, default=TYPES_SOCIAL[1]),
                 "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=120),
-                "jour_pref": st.column_config.SelectboxColumn("Jour", options=["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Peu importe"], default="Vendredi"),
+                "jour_pref": st.column_config.SelectboxColumn(
+                    "Jour",
+                    options=["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche", "peu importe"],
+                    default="vendredi",
+                ),
                 "creneau_pref": st.column_config.SelectboxColumn("Moment", options=["Midi", "Après-midi", "Soir", "Nuit"], default="Soir")
             },
             key="social_editor_v2"
@@ -91,7 +95,7 @@ def render() -> None:
                             "activite": str(row.get("activite", "Détente")).strip(),
                             "type": str(row["type"]),
                             "duree_min": int(row.get("duree_min", 60)),
-                            "jour_pref": str(row.get("jour_pref", "Peu importe")),
+                            "jour_pref": str(row.get("jour_pref", "peu importe")),
                             "creneau_pref": str(row.get("creneau_pref", "Soir"))
                         })
 
