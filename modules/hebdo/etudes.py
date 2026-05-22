@@ -35,9 +35,8 @@ from services.matiere_stats import (
 )
 from services.scheduler_engine import (
     calculer_cible_hebdo_minutes,
-    calculer_quota_etude_minutes,
 )
-from utils.helpers import get_or_create_current_week, get_or_create_week_for_offset
+from utils.helpers import get_or_create_week_for_offset
 
 # ---------------------------------------------------------------------------
 # Constantes

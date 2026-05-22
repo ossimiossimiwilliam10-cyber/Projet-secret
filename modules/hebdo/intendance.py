@@ -6,7 +6,6 @@ Permet de planifier les corvées domestiques, la paperasse et l'entretien person
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 import pandas as pd
 import streamlit as st

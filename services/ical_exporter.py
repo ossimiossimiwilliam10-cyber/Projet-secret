@@ -15,7 +15,6 @@ L'UID de chaque VEVENT est stable (`tache-{id}@exocerveau`) pour que :
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -126,7 +125,7 @@ def build_ics_for_semaine(
         taches_query = taches_query.filter(Tache.obligatoire.is_(False))
     taches = taches_query.order_by(Tache.jour, Tache.heure_debut).all()
 
-    now_utc = datetime.datetime.utcnow()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
     nb_events = 0
 
     for t in taches:

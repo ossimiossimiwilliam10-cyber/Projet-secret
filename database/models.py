@@ -22,7 +22,7 @@ Le rattachement à une UE est OPTIONNEL pour Matière.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -105,8 +105,8 @@ class Profil(Base):
     replanning_auto_actif = Column(Boolean, default=True) # A1 : auto-replanning ?
 
     # --- Horodatages -------------------------------------------------------
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Profil id={self.id} nom={self.nom!r}>"
@@ -127,7 +127,7 @@ class Achievement(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     code = Column(String(50), nullable=False, unique=True)  # ex: "perfect_quiz"
-    date_obtention = Column(DateTime, default=datetime.utcnow)
+    date_obtention = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Achievement {self.code} @ {self.date_obtention}>"
@@ -154,8 +154,8 @@ class UE(Base):
     couleur = Column(String(20), default="#4cd137")  # hex code pour distinction visuelle
     actif = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relations
     # Matières rattachées (ex: UE Maths → Algèbre, Analyse). Quand l'UE
@@ -201,8 +201,8 @@ class Matiere(Base):
         index=True,
     )
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relations
     ue = relationship("UE", back_populates="matieres")
@@ -272,8 +272,8 @@ class Chapitre(Base):
     notes = Column(Text, default="")
 
     # --- Horodatages -----------------------------------------------------
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relations
     matiere_obj = relationship("Matiere", back_populates="chapitres")
@@ -305,8 +305,8 @@ class Semaine(Base):
     taux_completion_pct = Column(Float, default=0.0)
     bilan_ia = Column(Text, default="")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     taches = relationship(
         "Tache",
@@ -367,8 +367,8 @@ class Tache(Base):
     justification_ia = Column(Text, default="")
     commentaire_etudiant = Column(Text, default="")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     semaine = relationship(
         "Semaine",
@@ -418,8 +418,8 @@ class SaisieHebdo(Base):
     intendance_config = Column(JSON, default=list)
     ajustements = Column(JSON, default=dict)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     semaine = relationship("Semaine", back_populates="saisie")
 
@@ -506,10 +506,10 @@ class Objectif(Base):
     ponderations = Column(JSON, default=dict)
 
     # --- Horodatages ---
-    date_creation = Column(DateTime, default=datetime.utcnow)
+    date_creation = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     date_atteinte = Column(DateTime, nullable=True)        # rempli quand statut → "atteint"
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relation vers la matière (optionnelle)
     matiere = relationship("Matiere", foreign_keys=[matiere_id])

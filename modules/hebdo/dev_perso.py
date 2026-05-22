@@ -7,7 +7,6 @@ qui enrichissent le planning au-delà des études pures.
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 import pandas as pd
 import streamlit as st

@@ -7,7 +7,6 @@ Permet de lister les travaux ponctuels, projets personnels ou tâches administra
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 import pandas as pd
 import streamlit as st

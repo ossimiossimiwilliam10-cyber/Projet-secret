@@ -36,7 +36,6 @@ try:
         dette_revision,
         lisser_automatiquement_dates_leitner,
         projeter_tous_chapitres,
-        repartition_par_niveau,
     )
     from services.scheduler_engine import calculer_quota_etude_minutes
 except ImportError as _exc:

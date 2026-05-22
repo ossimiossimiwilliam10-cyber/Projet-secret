@@ -263,7 +263,6 @@ def _generate_fiche(chap_id: int, force: bool) -> None:
 def _render_qcm_tab(chap_id: int) -> None:
     """QCM 4 choix interactif : génère → l'utilisateur répond → score → Leitner."""
     k_submitted = f"qcm_submitted_{chap_id}"
-    k_result = f"qcm_result_{chap_id}"
 
     # Charge le QCM en cache (s'il existe)
     with get_session() as session:

@@ -7,7 +7,6 @@ L'IA adapte le planning du lendemain en fonction de l'intensité des sorties.
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 import pandas as pd
 import streamlit as st

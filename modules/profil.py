@@ -24,7 +24,7 @@ import pandas as pd
 import streamlit as st
 
 from database import Profil, get_session, session_scope
-from services.gamification_service import progression_niveau, NIVEAU_MAX
+from services.gamification_service import progression_niveau
 
 
 # ---------------------------------------------------------------------------

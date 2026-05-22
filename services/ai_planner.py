@@ -197,16 +197,7 @@ def build_planner_prompt(
         )
 
     # -- 1. Profil --
-    profil_data = {
-        "heures_sommeil_cible": profil.heures_sommeil_cible,
-        "chronotype": profil.chronotype,
-        "pic_concentration": profil.pic_concentration,
-        "duree_max_session_min": profil.duree_max_session_min,
-        "pause_entre_sessions_min": profil.pause_entre_sessions_min,
-        "capacite_weekend": profil.capacite_weekend,
-        "tolerance_fatigue": profil.tolerance_fatigue,
-        "temps_transport_min_aller": profil.temps_transport_min,
-    }
+    # (Les paramètres du profil sont gérés par le moteur ou transmis dans le prompt)
 
     # -- 2. Chapitres dus pour révision espacée (Leitner) ----------------
     chapitres_dus = _get_chapitres_dus_pour_semaine(session, semaine)

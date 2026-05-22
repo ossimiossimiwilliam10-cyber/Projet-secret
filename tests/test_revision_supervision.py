@@ -22,7 +22,6 @@ from sqlalchemy.orm import sessionmaker
 from database.db import Base
 from database.models import Chapitre, Matiere
 from services.revision_service import (
-    DUREE_REVISION_MIN,
     INTERVALLES_J,
     MAX_NIVEAU,
     chapitres_jamais_initialises,
