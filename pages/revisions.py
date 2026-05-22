@@ -34,6 +34,7 @@ try:
         chapitres_par_jour_futur,
         detecter_conflits_jour,
         dette_revision,
+        lisser_automatiquement_dates_leitner,
         projeter_tous_chapitres,
         repartition_par_niveau,
     )
@@ -427,7 +428,6 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
             )
 
         if lisser_clic:
-            from services.revision_service import lisser_automatiquement_dates_leitner
             from database.db import session_scope
 
             try:

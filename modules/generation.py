@@ -453,6 +453,26 @@ def render() -> None:
         st.subheader("1. Lancer la planification")
         is_generee = semaine.statut == "generee"
 
+        # Bandeau de feedback persistant — affiché une seule fois après une
+        # génération / régénération / intégration réussie. Sans ce flag,
+        # st.rerun() effaçait le message de succès avant que l'utilisateur
+        # ne le voie, donnant l'impression que « rien ne s'est passé ».
+        flash = st.session_state.pop("generation_flash", None)
+        if flash:
+            labels = {
+                "first":       "🎉 Planning généré",
+                "regen":       "🔄 Planning régénéré",
+                "integration": "🔁 Nouveautés intégrées",
+            }
+            titre = labels.get(flash["kind"], "✅ Planning mis à jour")
+            st.success(
+                f"{titre} à **{flash['ts']}** · "
+                f"**{flash['nb_taches']} tâche(s)** · "
+                f"score de réalisme **{flash['score']}/100**. "
+                "Vérifie le planning ci-dessous, et la stratégie de l'IA "
+                "s'est mise à jour dans la section 2."
+            )
+
         consignes_manuelles = st.text_area(
             "💬 Consignes exceptionnelles pour cette semaine (optionnel)",
             value="",
@@ -470,8 +490,14 @@ def render() -> None:
                         consignes_manuelles=consignes_manuelles,
                     )
                     nb_taches = _save_planning_to_db(semaine.id, resultat_json)
-                    st.success(f"✅ Planning généré — **{nb_taches} tâches** placées.")
+                    # Feedback persistant via session_state — survit au rerun.
                     st.session_state["dernier_resultat_ia"] = resultat_json
+                    st.session_state["generation_flash"] = {
+                        "nb_taches": nb_taches,
+                        "score": int(resultat_json.get("score_realisme", 0) or 0),
+                        "kind": "regen" if is_generee else "first",
+                        "ts": datetime.datetime.now().strftime("%H:%M:%S"),
+                    }
                     st.toast("Planning prêt !", icon="🎉")
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
@@ -507,11 +533,13 @@ def render() -> None:
                                 session, semaine.id,
                             )
                             nb_int = resultat_inc.get("nb_taches_ajoutees", 0)
-                            st.success(
-                                f"✅ **{nb_int} tâche(s) ajoutée(s)** sans toucher à "
-                                "ton avancement."
-                            )
                             st.session_state["dernier_resultat_ia"] = resultat_inc
+                            st.session_state["generation_flash"] = {
+                                "nb_taches": nb_int,
+                                "score": int(resultat_inc.get("score_realisme", 0) or 0),
+                                "kind": "integration",
+                                "ts": datetime.datetime.now().strftime("%H:%M:%S"),
+                            }
                             st.toast("Nouveautés intégrées !", icon="🔁")
                             st.rerun()
                         except ValueError as exc:
