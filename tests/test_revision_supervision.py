@@ -22,9 +22,15 @@ from sqlalchemy.orm import sessionmaker
 from database.db import Base
 from database.models import Chapitre, Matiere
 from services.revision_service import (
+    DUREE_REVISION_MIN,
+    INTERVALLES_J,
+    MAX_NIVEAU,
     chapitres_jamais_initialises,
     chapitres_par_jour_futur,
+    detecter_conflits_jour,
     dette_revision,
+    projeter_chapitre,
+    projeter_tous_chapitres,
     repartition_par_niveau,
 )
 
@@ -165,3 +171,122 @@ def test_chapitres_jamais_initialises_isole_les_sans_date(session):
 
     result = chapitres_jamais_initialises(session)
     assert [c.id for c in result] == [chap_neuf.id]
+
+
+# ---------------------------------------------------------------------------
+# 5. projeter_chapitre (projection optimiste J1 → J3 → J7 → …)
+# ---------------------------------------------------------------------------
+def test_projeter_chapitre_genere_la_sequence_attendue():
+    """Démarrage à niveau 0 + date_prochaine = J+1 : la projection
+    optimiste doit générer J1, J3, J7, J14, J30… aux dates correctes."""
+    today = date.today()
+    date_depart = today + timedelta(days=INTERVALLES_J[0])  # demain (J+1)
+    horizon = today + timedelta(days=100)
+
+    proj = projeter_chapitre(
+        niveau_actuel=0, date_prochaine=date_depart, horizon=horizon,
+    )
+
+    # Doit contenir au moins J1, J1+3, J1+3+7, J1+3+7+14 dans la fenêtre.
+    dates = [d for d, _ in proj]
+    niveaux = [n for _, n in proj]
+
+    assert dates[0] == today + timedelta(days=1)        # J1 (niveau passe 0 → 1)
+    assert niveaux[0] == 1
+    assert dates[1] == today + timedelta(days=1 + 3)    # J+3 (niveau 2)
+    assert niveaux[1] == 2
+    assert dates[2] == today + timedelta(days=1 + 3 + 7)   # J+7 (niveau 3)
+    assert dates[3] == today + timedelta(days=1 + 3 + 7 + 14)  # J+14 (niveau 4)
+
+
+def test_projeter_chapitre_respecte_horizon():
+    """Les dates au-delà de l'horizon ne sont pas incluses."""
+    today = date.today()
+    proj = projeter_chapitre(
+        niveau_actuel=0,
+        date_prochaine=today + timedelta(days=1),
+        horizon=today + timedelta(days=5),
+    )
+    # J+1 (OK) + J+4 (= 1+3, OK) + J+11 (> 5 → exclus).
+    assert len(proj) == 2
+    assert proj[0][0] == today + timedelta(days=1)
+    assert proj[1][0] == today + timedelta(days=4)
+
+
+def test_projeter_chapitre_capte_le_niveau_max():
+    """Une fois MAX_NIVEAU atteint, on arrête la projection."""
+    today = date.today()
+    proj = projeter_chapitre(
+        niveau_actuel=MAX_NIVEAU - 1,
+        date_prochaine=today + timedelta(days=1),
+        horizon=today + timedelta(days=99999),  # horizon volontairement énorme
+    )
+    # Le chapitre atteint MAX_NIVEAU à sa prochaine révision → exactement 1 entrée.
+    assert len(proj) == 1
+    assert proj[0][1] == MAX_NIVEAU
+
+
+# ---------------------------------------------------------------------------
+# 6. projeter_tous_chapitres (agrégation + filtre matière)
+# ---------------------------------------------------------------------------
+def test_projeter_tous_chapitres_agrege_par_date(session):
+    """Deux chapitres avec la même date_prochaine doivent atterrir
+    ensemble sur cette clé dans la projection agrégée."""
+    today = date.today()
+    m = _make_matiere(session, "Maths")
+    _make_chap(session, m, 1, niveau=0, date_prochaine=today + timedelta(days=1))
+    _make_chap(session, m, 2, niveau=0, date_prochaine=today + timedelta(days=1))
+
+    proj = projeter_tous_chapitres(
+        session, horizon_jours=2, today=today,
+    )
+    items_demain = proj.get(today + timedelta(days=1), [])
+    assert len(items_demain) == 2
+    assert all(it["niveau_avant"] == 0 for it in items_demain)
+    assert all(it["niveau_apres"] == 1 for it in items_demain)
+
+
+def test_projeter_tous_chapitres_rapatrie_les_retards_sur_today(session):
+    """Un chapitre en retard reprend la projection à partir d'aujourd'hui,
+    pas à partir de sa date_prochaine passée."""
+    today = date.today()
+    m = _make_matiere(session, "Maths")
+    _make_chap(
+        session, m, 1, niveau=0,
+        date_prochaine=today - timedelta(days=5),
+    )
+    proj = projeter_tous_chapitres(session, horizon_jours=30, today=today)
+    # La première occurrence doit être today (pas today-5).
+    dates = sorted(proj.keys())
+    assert dates[0] == today
+
+
+# ---------------------------------------------------------------------------
+# 7. detecter_conflits_jour
+# ---------------------------------------------------------------------------
+def test_detecter_conflits_charge_horaire_depassee():
+    """Si la charge cumulée dépasse le plafond, ``charge_ok`` est False."""
+    # 5 révisions de 30 min = 150 min, plafond = 60 min → dépassement.
+    projs = [
+        {"matiere": f"M{i}", "niveau_avant": 1, "niveau_apres": 2, "duree_min": 30}
+        for i in range(5)
+    ]
+    c = detecter_conflits_jour(projs, plafond_minutes=60)
+    assert c["nb_total"] == 5
+    assert c["charge_min"] == 150
+    assert c["charge_ok"] is False
+
+
+def test_detecter_conflits_doublon_nouveau_par_matiere():
+    """Deux chapitres « nouveaux » (niveau_avant=0) sur la même matière
+    le même jour doivent être signalés."""
+    projs = [
+        {"matiere": "Maths", "niveau_avant": 0, "niveau_apres": 1, "duree_min": 30},
+        {"matiere": "Maths", "niveau_avant": 0, "niveau_apres": 1, "duree_min": 30},
+        {"matiere": "Physique", "niveau_avant": 0, "niveau_apres": 1, "duree_min": 30},
+        {"matiere": "Maths", "niveau_avant": 2, "niveau_apres": 3, "duree_min": 30},  # révision, pas nouveau
+    ]
+    c = detecter_conflits_jour(projs, plafond_minutes=300)
+    assert c["matieres_doublons_nouveaux"] == ["Maths"]
+    # Physique n'a qu'un nouveau → pas dans la liste.
+    # La révision Maths (niveau_avant=2) ne compte pas comme « nouveau ».
