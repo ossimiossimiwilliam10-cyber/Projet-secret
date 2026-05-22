@@ -169,15 +169,156 @@ def render() -> None:
                         f"⏰ {j.jour.capitalize()} de **{j.heure_debut.strftime('%H:%M')}** à **{j.heure_fin.strftime('%H:%M')}**"
                     )
                 with c3:
-                    if st.button(
-                        "🗑️ Supprimer", key=f"del_job_{j.id}", width='stretch'
-                    ):
-                        with session_scope() as delete_session:
-                            job_to_del = delete_session.get(Job, j.id)
-                            if job_to_del:
-                                delete_session.delete(job_to_del)
-                        st.toast("Activité supprimée", icon="🗑️")
-                        st.rerun()
+                    col_edit, col_del = st.columns(2)
+                    with col_edit:
+                        if st.button(
+                            "✏️", key=f"edit_job_{j.id}", width="stretch",
+                            help="Modifier ce job",
+                        ):
+                            st.session_state["editing_job_id"] = j.id
+                            st.rerun()
+                    with col_del:
+                        if st.button(
+                            "🗑️", key=f"del_job_{j.id}", width="stretch",
+                            help="Supprimer ce job",
+                        ):
+                            with session_scope() as delete_session:
+                                job_to_del = delete_session.get(Job, j.id)
+                                if job_to_del:
+                                    delete_session.delete(job_to_del)
+                            st.toast("Activité supprimée", icon="🗑️")
+                            st.rerun()
+
+                # === Formulaire d'édition (déplié au clic sur ✏️) ===
+                if st.session_state.get("editing_job_id") == j.id:
+                    _render_edit_form_job(j, trajets_habituels, semaine)
+
+
+def _render_edit_form_job(j: Job, trajets_habituels: dict, semaine) -> None:
+    """Formulaire d'édition d'un job existant, prérempli avec ses valeurs.
+
+    Apparaît sous la carte du job quand l'utilisateur a cliqué sur ✏️.
+    On garde la même logique que la création (long-terme vs semaine
+    unique, sélection de lieu via trajets habituels ou saisie libre).
+    """
+    st.markdown("---")
+    st.markdown(f"**✏️ Modifier : {j.titre}**")
+
+    with st.form(f"edit_form_job_{j.id}"):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_titre = st.text_input("Intitulé*", value=j.titre)
+            new_jour = st.selectbox(
+                "Jour de la semaine*",
+                options=JOURS,
+                index=JOURS.index(j.jour) if j.jour in JOURS else 0,
+                format_func=lambda x: x.capitalize(),
+            )
+        with col2:
+            new_debut = st.time_input("Heure de début*", value=j.heure_debut)
+            new_fin = st.time_input("Heure de fin*", value=j.heure_fin)
+
+        # Sélecteur de lieu : si le lieu actuel est dans les trajets,
+        # le présélectionner ; sinon proposer la saisie libre.
+        lieu_options = ["(aucun)"] + list(trajets_habituels.keys()) + ["✏️ Saisir un autre lieu…"]
+        if not j.lieu:
+            default_lieu_idx = 0
+        elif j.lieu in trajets_habituels:
+            default_lieu_idx = 1 + list(trajets_habituels.keys()).index(j.lieu)
+        else:
+            default_lieu_idx = len(lieu_options) - 1
+        new_lieu_choisi = st.selectbox(
+            "📍 Lieu du job",
+            options=lieu_options,
+            index=default_lieu_idx,
+        )
+        if new_lieu_choisi == "✏️ Saisir un autre lieu…":
+            new_lieu_libre = st.text_input(
+                "Lieu (saisie libre)",
+                value=j.lieu if j.lieu and j.lieu not in trajets_habituels else "",
+            )
+        else:
+            new_lieu_libre = ""
+
+        st.divider()
+        # Détermine le type courant depuis la donnée
+        if j.semaine_id is not None:
+            type_courant = "semaine_unique"
+        else:
+            type_courant = "long_terme"
+        new_type = st.radio(
+            "Type de planification",
+            options=["long_terme", "semaine_unique"],
+            index=0 if type_courant == "long_terme" else 1,
+            format_func=lambda x: (
+                "🗓️ Long terme (plusieurs mois)" if x == "long_terme"
+                else "🎯 Semaine en cours uniquement"
+            ),
+        )
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            new_d_debut = st.date_input(
+                "Date de début",
+                value=j.date_debut or datetime.date.today(),
+                disabled=(new_type == "semaine_unique"),
+            )
+        with col_d2:
+            new_d_fin = st.date_input(
+                "Date de fin",
+                value=j.date_fin or (datetime.date.today() + datetime.timedelta(days=90)),
+                disabled=(new_type == "semaine_unique"),
+            )
+
+        col_save, col_cancel = st.columns(2)
+        with col_save:
+            save = st.form_submit_button("💾 Enregistrer", type="primary", width="stretch")
+        with col_cancel:
+            cancel = st.form_submit_button("✕ Annuler", width="stretch")
+
+    if cancel:
+        st.session_state.pop("editing_job_id", None)
+        st.rerun()
+
+    if save:
+        if not new_titre.strip():
+            st.error("L'intitulé est obligatoire.")
+            return
+        if new_debut >= new_fin:
+            st.error("L'heure de fin doit être postérieure à l'heure de début.")
+            return
+
+        # Résolution du lieu (même logique que la création).
+        if new_lieu_choisi == "(aucun)":
+            lieu_final = ""
+        elif new_lieu_choisi == "✏️ Saisir un autre lieu…":
+            lieu_final = (new_lieu_libre or "").strip()
+        else:
+            lieu_final = new_lieu_choisi
+
+        try:
+            with session_scope() as write_session:
+                job_to_update = write_session.get(Job, j.id)
+                if job_to_update is None:
+                    st.error("Job introuvable (peut-être supprimé entre-temps).")
+                    return
+                job_to_update.titre = new_titre.strip()
+                job_to_update.jour = new_jour
+                job_to_update.heure_debut = new_debut
+                job_to_update.heure_fin = new_fin
+                job_to_update.lieu = lieu_final
+                if new_type == "long_terme":
+                    job_to_update.date_debut = new_d_debut
+                    job_to_update.date_fin = new_d_fin
+                    job_to_update.semaine_id = None
+                else:
+                    job_to_update.date_debut = None
+                    job_to_update.date_fin = None
+                    job_to_update.semaine_id = semaine.id
+            st.session_state.pop("editing_job_id", None)
+            st.toast("Job mis à jour", icon="✅")
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Erreur lors de la mise à jour : {exc}")
 
 
 __all__ = ["render"]
