@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from database.db import get_session, session_scope
 from database.models import CheckInQuotidien, Profil, Semaine, Tache
-from services.ai_planner import generate_schedule_from_ai
+from services.ai_planner import (
+    detecter_chapitres_manquants,
+    generate_schedule_from_ai,
+    integrer_nouveautes_a_semaine,
+)
 from services.scheduler_engine import (
     calculer_cible_hebdo_minutes,
     calculer_quota_etude_minutes,
@@ -462,6 +466,48 @@ def render() -> None:
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"❌ Erreur lors de la génération : {exc}")
+
+        # === Bouton incrémental : intégrer les nouveautés sans tout casser ===
+        # Visible uniquement si un planning existe ET qu'on détecte au moins un
+        # chapitre manquant (ajouté en biblio après génération OU révision
+        # Leitner dont la date est tombée dans la semaine après coup).
+        if is_generee:
+            try:
+                ids_manquants = detecter_chapitres_manquants(session, semaine)
+            except Exception:  # noqa: BLE001
+                ids_manquants = []
+
+            if ids_manquants:
+                st.info(
+                    f"➕ **{len(ids_manquants)} nouveauté(s) détectée(s)** : "
+                    "chapitres ajoutés ou révisions Leitner nouvellement dues, "
+                    "qui ne sont pas encore dans ton planning."
+                )
+                if st.button(
+                    "🔁 Intégrer mes nouveautés (sans perdre ma progression)",
+                    type="secondary",
+                    width="stretch",
+                    help="Préserve toutes tes tâches validées (fait/partiel/non fait) "
+                         "et tes tâches obligatoires. Ajoute juste les nouveaux "
+                         "chapitres dans les créneaux libres restants.",
+                ):
+                    with st.spinner("🧠 Gemini intègre tes nouveautés…"):
+                        try:
+                            resultat_inc = integrer_nouveautes_a_semaine(
+                                session, semaine.id,
+                            )
+                            nb_int = resultat_inc.get("nb_taches_ajoutees", 0)
+                            st.success(
+                                f"✅ **{nb_int} tâche(s) ajoutée(s)** sans toucher à "
+                                "ton avancement."
+                            )
+                            st.session_state["dernier_resultat_ia"] = resultat_inc
+                            st.toast("Nouveautés intégrées !", icon="🔁")
+                            st.rerun()
+                        except ValueError as exc:
+                            st.warning(f"ℹ️ {exc}")
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"❌ Erreur lors de l'intégration : {exc}")
 
         # Insights de la dernière génération (consignes / alertes / suggestions /
         # tâches écartées). On les garde en session_state pour qu'ils survivent

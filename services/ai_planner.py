@@ -454,6 +454,275 @@ def _parse_gemini_json(text: str) -> dict[str, Any]:
 # ===========================================================================
 # 3. Recalcul adaptatif — redistribuer les jours restants
 # ===========================================================================
+def detecter_chapitres_manquants(session: Session, semaine: Semaine) -> list[int]:
+    """Liste les chapitre_ids qui DEVRAIENT être planifiés dans la semaine
+    mais qui ne le sont pas encore (= aucune Tache existante ne les référence).
+
+    Source de vérité « ce qui devrait être là » :
+      - ``SaisieHebdo.matieres_selectionnees[*].chapitre_ids`` : les chapitres
+        explicitement choisis par l'étudiant.
+      - ``_get_chapitres_dus_pour_semaine`` : les chapitres dus pour révision
+        espacée d'ici la fin de la semaine (Leitner).
+
+    Sont considérés « déjà planifiés » tous les chapitre_ids présents dans
+    ``Tache.chapitre_ids`` (n'importe quelle Tâche de la semaine, n'importe
+    quel statut).
+    """
+    from database.models import Tache
+
+    cibles: set[int] = set()
+
+    saisie = session.query(SaisieHebdo).filter_by(semaine_id=semaine.id).first()
+    if saisie and saisie.matieres_selectionnees:
+        for m in saisie.matieres_selectionnees:
+            for ch_id in m.get("chapitre_ids") or []:
+                try:
+                    cibles.add(int(ch_id))
+                except (TypeError, ValueError):
+                    pass
+
+    for chap in _get_chapitres_dus_pour_semaine(session, semaine):
+        try:
+            cibles.add(int(chap["chapitre_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    deja: set[int] = set()
+    taches = session.query(Tache).filter_by(semaine_id=semaine.id).all()
+    for t in taches:
+        for ch_id in t.chapitre_ids or []:
+            try:
+                deja.add(int(ch_id))
+            except (TypeError, ValueError):
+                pass
+
+    return sorted(cibles - deja)
+
+
+def integrer_nouveautes_a_semaine(session: Session, semaine_id: int) -> dict[str, Any]:
+    """Intègre les nouveaux chapitres / révisions au planning existant
+    SANS perdre l'avancement (tâches validées, XP, statuts Leitner).
+
+    Stratégie de préservation (identique à ``replan_remaining_week``) :
+
+    Intouchable :
+      - Toutes les tâches dont le statut est ``fait`` / ``partiellement`` /
+        ``non_fait`` (l'utilisateur a déjà tranché).
+      - Toutes les tâches **obligatoires** (sommeil, repas, contraintes
+        fixes, sport, transport, jobs) — mêmes jours, mêmes heures.
+
+    Réorganisable :
+      - Les tâches ``a_faire`` non obligatoires des jours restants
+        (aujourd'hui inclus). Elles peuvent être déplacées, redistribuées,
+        ou écartées par Gemini pour faire de la place aux nouveautés.
+
+    Ajouté :
+      - Les chapitres manquants détectés par ``detecter_chapitres_manquants``
+        — placés dans les créneaux libres des jours restants, en respectant
+        le chronotype et le plafond horaire.
+
+    Si aucune nouveauté n'est détectée, lève ``ValueError`` (à l'appelant
+    d'afficher un message clair à l'utilisateur).
+    """
+    import datetime
+    from database.models import Chapitre, Tache
+
+    semaine = session.get(Semaine, semaine_id)
+    if not semaine:
+        raise ValueError("Semaine introuvable.")
+
+    profil = session.query(Profil).first()
+    if not profil or not profil.gemini_api_key:
+        raise ValueError("Clé API Gemini absente du profil.")
+
+    today = datetime.date.today()
+    if today < semaine.date_debut or today > semaine.date_fin:
+        raise ValueError(
+            f"Aujourd'hui ({today}) n'est pas dans la semaine ciblée "
+            f"({semaine.date_debut} → {semaine.date_fin})."
+        )
+
+    jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+    jour_idx_today = today.weekday()
+    jours_restants = jours[jour_idx_today:]
+
+    # 1. Détection des nouveautés
+    chapitre_ids_manquants = detecter_chapitres_manquants(session, semaine)
+    if not chapitre_ids_manquants:
+        raise ValueError(
+            "Aucune nouveauté à intégrer — toutes tes matières sélectionnées "
+            "et toutes les révisions dues sont déjà au planning."
+        )
+
+    # 2. Hydratation des chapitres manquants (titre, matière, niveau Leitner)
+    chapitres_manquants = (
+        session.query(Chapitre).filter(Chapitre.id.in_(chapitre_ids_manquants)).all()
+    )
+    nouveautes_data: list[dict[str, Any]] = []
+    for ch in chapitres_manquants:
+        matiere_nom = ch.matiere_obj.nom if ch.matiere_obj else "Sans matière"
+        niveau = int(ch.niveau_actuel or 0)
+        duree_min = int(round(float(ch.temps_estime_h or 1.0) * 60))
+        nouveautes_data.append({
+            "chapitre_id": ch.id,
+            "matiere": matiere_nom,
+            "titre": ch.titre,
+            "niveau_leitner": niveau,
+            "duree_estimee_min": duree_min,
+        })
+
+    # 3. Classement des tâches existantes (cf. replan_remaining_week)
+    all_tasks = session.query(Tache).filter_by(semaine_id=semaine_id).all()
+
+    taches_finies = [t for t in all_tasks if t.statut in ("fait", "partiellement", "non_fait")]
+    taches_obligatoires_futures = [
+        t for t in all_tasks
+        if t.jour in jours_restants and t.obligatoire
+    ]
+    taches_a_reorganiser = [
+        t for t in all_tasks
+        if t.jour in jours_restants and not t.obligatoire and t.statut == "a_faire"
+    ]
+
+    def _t_to_dict(t: Tache, with_status: bool = False) -> dict[str, Any]:
+        d = {
+            "titre": t.titre,
+            "type": t.type,
+            "duree_min": int(t.duree_min or 0),
+            "jour_initial": t.jour,
+            "heure_debut": t.heure_debut.strftime("%H:%M"),
+            "heure_fin": t.heure_fin.strftime("%H:%M"),
+            "chapitre_ids": t.chapitre_ids or [],
+        }
+        if with_status:
+            d["statut"] = t.statut
+        return d
+
+    # 4. Prompt Gemini — ciblé sur l'intégration
+    prompt = f"""Tu es un planificateur expert. L'étudiant a généré son planning hebdo,
+puis a ajouté de nouveaux chapitres dans sa bibliothèque (ou de nouvelles révisions
+Leitner sont dues). Ta mission : INTÉGRER ces nouveautés au planning existant SANS
+toucher à ce qui est déjà validé ou obligatoire.
+
+PROFIL :
+- Heure de lever : {profil.heure_lever}
+- Heure de coucher : {profil.heure_coucher}
+- Pic de concentration : {profil.pic_concentration}
+- Durée max d'une session : {profil.duree_max_session_min} min
+- Pause entre sessions : {profil.pause_entre_sessions_min} min
+- Plafond d'étude / jour : {profil.heures_etude_plafond_par_jour or 6.0} h
+
+CONTEXTE :
+- Date du jour : {today.strftime('%A %d/%m/%Y')} ({jours[jour_idx_today]})
+- Jours restants dans la semaine : {jours_restants}
+
+⛔ INTOUCHABLES — tâches validées (historique) :
+{json.dumps([_t_to_dict(t, with_status=True) for t in taches_finies], indent=2, ensure_ascii=False)}
+
+⛔ INTOUCHABLES — tâches obligatoires (sommeil, repas, contraintes fixes, sport, etc.) :
+{json.dumps([_t_to_dict(t) for t in taches_obligatoires_futures], indent=2, ensure_ascii=False)}
+
+🔄 RÉORGANISABLES — tâches « à faire » non obligatoires (tu peux les bouger, les
+fusionner, ou les écarter avec une justification pour faire de la place) :
+{json.dumps([_t_to_dict(t) for t in taches_a_reorganiser], indent=2, ensure_ascii=False)}
+
+➕ NOUVEAUTÉS À INTÉGRER (chapitres qui DOIVENT apparaître dans le planning final) :
+{json.dumps(nouveautes_data, indent=2, ensure_ascii=False)}
+
+RÈGLES :
+1. Tu ne génères QUE les jours restants ({jours_restants}). Les jours passés ne te
+   concernent pas.
+2. Tu ne dois pas dépasser {profil.heures_etude_plafond_par_jour or 6.0} h d'étude sur
+   un même jour.
+3. Pour chaque tâche d'étude, inclus "chapitre_ids": [id, ...] avec les IDs réels.
+4. Si tu ne peux pas placer toutes les nouveautés, mentionne dans "taches_ecartees"
+   celles qui débordent avec une raison.
+5. Garde les tâches obligatoires aux mêmes jours/heures qu'elles avaient.
+6. Le résultat doit produire un planning complet et cohérent pour les jours restants
+   (tâches obligatoires + tâches réorganisées + nouveautés).
+
+Retourne UNIQUEMENT un JSON :
+{{
+  "score_realisme": 0-100,
+  "alertes": ["..."],
+  "justification_globale": "Explication courte de ce que tu as fait.",
+  "taches_ecartees": [{{"titre": "...", "raison": "..."}}],
+  "nb_nouveautes_integrees": 0,
+  "planning_jours_restants": {{
+    {", ".join([f'"{j}": []' for j in jours_restants])}
+  }}
+}}
+
+Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titre": "...", "type": "...", "chapitre_ids": [], "obligatoire": false, "justification": "..."}}.
+"""
+
+    # 5. Appel Gemini
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as exc:
+        raise RuntimeError("Package `google-genai` non installé.") from exc
+
+    client = genai.Client(api_key=profil.gemini_api_key.strip())
+    response = client.models.generate_content(
+        model=profil.gemini_model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.3,
+        ),
+    )
+    text = getattr(response, "text", "") or ""
+    if not text.strip():
+        raise ValueError("Gemini a renvoyé une réponse vide.")
+
+    result = _parse_gemini_json(text)
+    # On renvoie la liste détectée dans le résultat pour que l'UI puisse
+    # afficher ce qui a été tenté d'intégrer.
+    result["chapitre_ids_manquants_detectes"] = chapitre_ids_manquants
+
+    # 6. Application en base : suppression des tâches réorganisables + insertion
+    ids_a_supprimer = [t.id for t in taches_a_reorganiser]
+    if ids_a_supprimer:
+        session.query(Tache).filter(Tache.id.in_(ids_a_supprimer)).delete(
+            synchronize_session=False,
+        )
+        session.flush()
+
+    def _str_to_time_local(s: str) -> datetime.time:
+        h, m = map(int, s.split(":"))
+        return datetime.time(h, m)
+
+    planning = result.get("planning_jours_restants", {}) or {}
+    nb_ajoutees = 0
+    for jour, taches in planning.items():
+        if jour not in jours_restants:
+            continue
+        for t_data in taches or []:
+            # On ne re-crée pas les obligatoires (déjà en base, immuables).
+            if bool(t_data.get("obligatoire", False)):
+                continue
+            try:
+                session.add(Tache(
+                    semaine_id=semaine_id,
+                    type=str(t_data.get("type", "autre")).lower(),
+                    titre=t_data.get("titre", "Tâche sans nom"),
+                    jour=jour,
+                    heure_debut=_str_to_time_local(t_data["heure_debut"]),
+                    heure_fin=_str_to_time_local(t_data["heure_fin"]),
+                    obligatoire=False,
+                    justification_ia=t_data.get("justification", ""),
+                    statut="a_faire",
+                    chapitre_ids=t_data.get("chapitre_ids", []),
+                ))
+                nb_ajoutees += 1
+            except (KeyError, ValueError) as exc:
+                print(f"[integrer_nouveautes] Tâche ignorée ({jour}) : {exc}")
+
+    result["nb_taches_ajoutees"] = nb_ajoutees
+    return result
+
+
 def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
     """Demande à Gemini de redistribuer les tâches restantes sur les jours qui
     restent dans la semaine, en tenant compte du retard accumulé.
