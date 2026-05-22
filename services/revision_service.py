@@ -340,6 +340,166 @@ def chapitres_jamais_initialises(
 
 
 # ===========================================================================
+# 4 ter. Projection long terme (anticipation été / vacances)
+# ===========================================================================
+# Durée présumée d'une révision Leitner (en minutes), partagée avec
+# scheduler_engine. Sert au calcul de la charge horaire projetée.
+DUREE_REVISION_MIN: int = 30
+
+
+def projeter_chapitre(
+    niveau_actuel: int,
+    date_prochaine: date,
+    horizon: date,
+) -> list[tuple[date, int]]:
+    """Projette toutes les futures dates de révision d'un chapitre.
+
+    Trajectoire **optimiste** : suppose que l'étudiant réussit chaque
+    quiz et monte donc d'un niveau à chaque révision. C'est la
+    projection théorique « si tout se passe bien ».
+
+    À partir de l'état actuel (``niveau_actuel``, ``date_prochaine``),
+    on déroule la séquence en utilisant ``INTERVALLES_J`` :
+
+      - Au moment du quiz courant (date = ``date_prochaine``), niveau
+        passe à ``niveau_actuel + 1``.
+      - Prochaine date = date courante + ``INTERVALLES_J[nouveau_niveau]``.
+      - On répète tant que la date ne dépasse pas ``horizon`` et que
+        le niveau n'a pas atteint ``MAX_NIVEAU``.
+
+    Args:
+        niveau_actuel: niveau Leitner actuel du chapitre (0-13).
+        date_prochaine: première date future de révision en DB.
+        horizon: dernière date à considérer (inclus).
+
+    Returns:
+        Liste ``[(date, niveau_apres_quiz), ...]`` triée par date
+        croissante. Vide si ``date_prochaine > horizon``.
+    """
+    projections: list[tuple[date, int]] = []
+    courante = date_prochaine
+    niveau = int(niveau_actuel or 0)
+
+    while courante <= horizon:
+        niveau_apres = min(niveau + 1, MAX_NIVEAU)
+        projections.append((courante, niveau_apres))
+        if niveau_apres >= MAX_NIVEAU:
+            break  # plus de quiz nécessaires
+        courante = courante + timedelta(days=INTERVALLES_J[niveau_apres])
+        niveau = niveau_apres
+
+    return projections
+
+
+def projeter_tous_chapitres(
+    session: Session,
+    horizon_jours: int,
+    today: date | None = None,
+    matiere_ids: list[int] | None = None,
+) -> dict[date, list[dict[str, Any]]]:
+    """Pour chaque jour des ``horizon_jours`` à venir, liste les
+    révisions projetées (théoriques) de tous les chapitres actifs.
+
+    Combine la date actuelle déjà en DB + toutes les dates futures
+    calculées par :func:`projeter_chapitre`.
+
+    Chaque entrée du dict est un ``{chapitre_id, matiere_id, matiere,
+    titre, niveau_avant, niveau_apres, niveau_actuel_db, duree_min}``
+    pour permettre la détection de conflits côté UI.
+
+    Args:
+        horizon_jours: profondeur de la projection (en jours).
+        today: référence (par défaut ``date.today()``).
+        matiere_ids: filtre matière. Si None, toutes.
+
+    Returns:
+        Dict trié par date croissante.
+    """
+    today = today or date.today()
+    horizon = today + timedelta(days=horizon_jours)
+
+    query = session.query(Chapitre).filter(Chapitre.date_prochaine.isnot(None))
+    if matiere_ids is not None:
+        if not matiere_ids:
+            return {}
+        query = query.filter(Chapitre.matiere_id.in_(matiere_ids))
+    chapitres = query.all()
+
+    result: dict[date, list[dict[str, Any]]] = {}
+    for chap in chapitres:
+        date_depart = chap.date_prochaine
+        if date_depart is None:
+            continue
+
+        # Rapatriement des retards sur today.
+        if date_depart < today:
+            date_depart = today
+
+        projections = projeter_chapitre(
+            int(chap.niveau_actuel or 0),
+            date_depart,
+            horizon,
+        )
+
+        matiere_nom = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
+
+        for date_proj, niveau_apres in projections:
+            niveau_avant = max(0, niveau_apres - 1)
+            result.setdefault(date_proj, []).append({
+                "chapitre_id": chap.id,
+                "matiere_id": chap.matiere_id,
+                "matiere": matiere_nom,
+                "titre": chap.titre,
+                "niveau_avant": niveau_avant,
+                "niveau_apres": niveau_apres,
+                "niveau_actuel_db": int(chap.niveau_actuel or 0),
+                "duree_min": DUREE_REVISION_MIN,
+            })
+
+    return dict(sorted(result.items()))
+
+
+def detecter_conflits_jour(
+    projections_jour: list[dict[str, Any]],
+    plafond_minutes: int,
+) -> dict[str, Any]:
+    """Détecte les conflits sur un jour donné de la projection.
+
+    Deux règles métier vérifiées :
+      1. **Max 1 nouveau chapitre par matière par jour** — un chapitre
+         est considéré « nouveau » si la projection le fait passer du
+         niveau 0 au niveau 1 (toute première révision, J1).
+      2. **Plafond horaire journalier** — somme des ``duree_min`` de
+         toutes les révisions projetées vs ``plafond_minutes``.
+
+    Returns:
+        ``{
+            "nb_total": int,
+            "charge_min": int,
+            "charge_ok": bool,
+            "matieres_doublons_nouveaux": list[str],
+        }``
+    """
+    nb_total = len(projections_jour)
+    charge_min = sum(int(p.get("duree_min") or 0) for p in projections_jour)
+    charge_ok = plafond_minutes <= 0 or charge_min <= plafond_minutes
+
+    # Doublons sur les "nouveaux" (niveau_avant == 0).
+    par_matiere_nouveaux: dict[str, int] = {}
+    for p in projections_jour:
+        if p["niveau_avant"] == 0:
+            par_matiere_nouveaux[p["matiere"]] = par_matiere_nouveaux.get(p["matiere"], 0) + 1
+    matieres_doublons_nouveaux = [m for m, n in par_matiere_nouveaux.items() if n > 1]
+
+    return {
+        "nb_total": nb_total,
+        "charge_min": charge_min,
+        "charge_ok": charge_ok,
+        "matieres_doublons_nouveaux": matieres_doublons_nouveaux,
+    }
+
+
+# ===========================================================================
 # 5. Extraction de texte avec cache
 # ===========================================================================
 def get_or_extract_chapter_text(session: Session, chapitre_id: int) -> str:
@@ -871,6 +1031,10 @@ __all__ = [
     "chapitres_par_jour_futur",
     "dette_revision",
     "chapitres_jamais_initialises",
+    "projeter_chapitre",
+    "projeter_tous_chapitres",
+    "detecter_conflits_jour",
+    "DUREE_REVISION_MIN",
     "initialiser_chapitre_pour_revision",
     "get_or_extract_chapter_text",
     "generer_fiche_ia",

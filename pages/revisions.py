@@ -32,9 +32,12 @@ try:
         MAX_NIVEAU,
         chapitres_jamais_initialises,
         chapitres_par_jour_futur,
+        detecter_conflits_jour,
         dette_revision,
+        projeter_tous_chapitres,
         repartition_par_niveau,
     )
+    from services.scheduler_engine import calculer_quota_etude_minutes
 except ImportError as _exc:
     import streamlit as _st_err
     _st_err.error(
@@ -273,6 +276,181 @@ def _render_calendrier_28j(session, matiere_ids: list[int] | None) -> None:
                 )
 
 
+def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> None:
+    """Projection théorique des futures révisions sur 30 / 90 / 180 jours.
+
+    Suppose une trajectoire optimiste (chaque quiz réussi → niveau monte).
+    Détecte deux types de conflits :
+    - **Sur-charge** : un jour où la charge horaire prévue dépasse le
+      plafond du profil.
+    - **Doublons matière nouveaux** : un jour où plusieurs chapitres
+      différents d'une même matière ont leur toute première révision (J1).
+    """
+    st.subheader("📈 Projection long terme (Méthode des J)")
+    st.caption(
+        "Vue **théorique** des futures révisions en supposant que chaque "
+        "quiz est réussi (J1 → J3 → J7 → J14 → J30 → J60 → J90 → J180 → …). "
+        "Idéal pour anticiper les périodes chargées (vacances, été, examens). "
+        "Cette projection est recalculée à chaque ouverture de la page — "
+        "elle reflète l'état Leitner actuel, pas une décision figée."
+    )
+
+    today = date.today()
+    horizon_choix = st.radio(
+        "Horizon",
+        options=[30, 90, 180, 365],
+        format_func=lambda d: f"{d} jours" if d < 365 else "1 an",
+        index=1,
+        horizontal=True,
+    )
+    horizon_jours = int(horizon_choix)
+
+    projections = projeter_tous_chapitres(
+        session, horizon_jours=horizon_jours, today=today, matiere_ids=matiere_ids,
+    )
+
+    if not projections:
+        st.info("Aucune projection disponible — initialise des chapitres dans la file Leitner d'abord.")
+        return
+
+    # Récupération du plafond journalier pour détecter les sur-charges.
+    from database.models import Profil
+    profil = session.query(Profil).first()
+    plafond_min = calculer_quota_etude_minutes(profil, checkin=None) if profil else 0
+
+    # --- Détection des conflits jour par jour -------------------------
+    conflits_par_jour: dict[date, dict] = {}
+    for d, projs in projections.items():
+        conflits_par_jour[d] = detecter_conflits_jour(projs, plafond_min)
+
+    # --- KPIs synthétiques de la projection ---------------------------
+    nb_jours_sur_charge = sum(1 for c in conflits_par_jour.values() if not c["charge_ok"])
+    nb_jours_doublons = sum(1 for c in conflits_par_jour.values() if c["matieres_doublons_nouveaux"])
+    total_revisions = sum(c["nb_total"] for c in conflits_par_jour.values())
+    charge_totale_h = sum(c["charge_min"] for c in conflits_par_jour.values()) / 60
+
+    cols = st.columns(4)
+    cols[0].metric("📚 Révisions projetées", total_revisions)
+    cols[1].metric("⏱️ Charge cumulée", f"{charge_totale_h:.1f} h")
+    cols[2].metric(
+        "🚨 Jours sur-chargés", nb_jours_sur_charge,
+        delta="vs plafond /jour" if plafond_min > 0 else "(plafond non défini)",
+        delta_color="inverse" if nb_jours_sur_charge else "off",
+    )
+    cols[3].metric(
+        "⚠️ Jours avec doublons matière", nb_jours_doublons,
+        delta="même matière, 2+ nouveaux" if nb_jours_doublons else "ok",
+        delta_color="inverse" if nb_jours_doublons else "off",
+    )
+
+    # --- Graph principal sur tout l'horizon ---------------------------
+    data = []
+    for i in range(horizon_jours):
+        d = today + timedelta(days=i)
+        c = conflits_par_jour.get(d, {"nb_total": 0, "charge_ok": True, "matieres_doublons_nouveaux": []})
+        nb = c["nb_total"]
+        if nb == 0:
+            etat = "Aucun"
+        elif not c["charge_ok"]:
+            etat = "🚨 Sur-charge"
+        elif c["matieres_doublons_nouveaux"]:
+            etat = "⚠️ Doublon matière"
+        else:
+            etat = "✅ OK"
+        data.append({
+            "Date": d.isoformat(),
+            "Jour": d.strftime("%d/%m"),
+            "Révisions": nb,
+            "État": etat,
+        })
+
+    df = pd.DataFrame(data)
+    etat_colors = {
+        "Aucun": "#e5e7eb",
+        "✅ OK": "#10b981",
+        "⚠️ Doublon matière": "#f59e0b",
+        "🚨 Sur-charge": "#ef4444",
+    }
+    fig = px.bar(
+        df, x="Date", y="Révisions", color="État",
+        color_discrete_map=etat_colors,
+        hover_data={"Jour": True, "Date": False},
+    )
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=320,
+        xaxis_title="",
+        legend_title_text="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    # Ligne de plafond horaire référence (en révisions, sachant 30 min/rev).
+    if plafond_min > 0:
+        ref_revisions = plafond_min / 30  # nb max théorique de révisions/jour
+        fig.add_hline(
+            y=ref_revisions,
+            line_dash="dash",
+            line_color="#9ca3af",
+            annotation_text=f"Plafond ≈ {ref_revisions:.1f} révisions/jour",
+            annotation_position="top right",
+            annotation_font_size=10,
+            annotation_font_color="#6b7280",
+        )
+    st.plotly_chart(fig, width="stretch")
+
+    # --- Détail des jours à problème -----------------------------------
+    jours_problematiques = [
+        (d, c) for d, c in conflits_par_jour.items()
+        if not c["charge_ok"] or c["matieres_doublons_nouveaux"]
+    ]
+    if jours_problematiques:
+        with st.expander(
+            f"🔎 Détail des {len(jours_problematiques)} jour(s) à anticiper",
+            expanded=False,
+        ):
+            st.caption(
+                "Si ces jours te paraissent trop chargés, deux solutions : "
+                "(a) initialise tes chapitres à des dates différentes ; "
+                "(b) lance une **Génération IA** la semaine concernée — le "
+                "scheduler répartira en respectant tes limites."
+            )
+            for d, c in sorted(jours_problematiques):
+                jour_lbl = JOURS_FR[d.weekday()].capitalize()
+                tags = []
+                if not c["charge_ok"]:
+                    tags.append(f"🚨 charge {c['charge_min']} min > plafond {plafond_min} min")
+                if c["matieres_doublons_nouveaux"]:
+                    mats = ", ".join(c["matieres_doublons_nouveaux"])
+                    tags.append(f"⚠️ doublons nouveaux : {mats}")
+                st.markdown(
+                    f"**{jour_lbl} {d.strftime('%d/%m/%Y')}** — {c['nb_total']} révision(s)  \n"
+                    + "  \n".join(f"&nbsp;&nbsp;{t}" for t in tags),
+                    unsafe_allow_html=True,
+                )
+
+    # --- Détail répartition par semaine sur l'horizon ------------------
+    with st.expander("📆 Vue semaine par semaine", expanded=False):
+        # Agréger par numéro de semaine ISO.
+        par_semaine: dict[tuple[int, int], int] = {}
+        par_semaine_charge: dict[tuple[int, int], int] = {}
+        for d, projs in projections.items():
+            iso = d.isocalendar()
+            key = (iso.year, iso.week)
+            par_semaine[key] = par_semaine.get(key, 0) + len(projs)
+            par_semaine_charge[key] = par_semaine_charge.get(key, 0) + sum(
+                int(p.get("duree_min") or 0) for p in projs
+            )
+
+        if not par_semaine:
+            st.caption("Aucune semaine à afficher.")
+        else:
+            for (yr, wk), nb in sorted(par_semaine.items()):
+                charge_h = par_semaine_charge[(yr, wk)] / 60
+                st.markdown(
+                    f"- **Semaine {wk}** ({yr}) : {nb} révision(s), "
+                    f"environ **{charge_h:.1f} h** d'étude projetée."
+                )
+
+
 def _render_liste_detaillee(session, matiere_ids: list[int] | None) -> None:
     """Liste cliquable des chapitres dus dans la fenêtre (urgent en haut)."""
     st.subheader("🎯 À traiter en priorité")
@@ -399,6 +577,11 @@ def render() -> None:
 
         # === Calendrier 28 jours ===
         _render_calendrier_28j(session, matiere_ids)
+
+        st.divider()
+
+        # === Projection long terme (30 / 90 / 180 / 365 jours) ===
+        _render_projection_long_terme(session, matiere_ids)
 
         st.divider()
 
