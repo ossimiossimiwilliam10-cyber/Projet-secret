@@ -79,6 +79,7 @@ def main() -> None:
         ],
         "Bilan": [
             st.Page(dashboard.render, title="Tableau de bord", icon="📈", url_path="dashboard"),
+            st.Page("pages/revisions.py", title="Révisions (Méthode des J)", icon="🧠", url_path="revisions"),
         ],
     }
     nav = st.navigation(pages, position="sidebar")
