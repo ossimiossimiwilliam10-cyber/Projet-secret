@@ -37,7 +37,7 @@ from services.scheduler_engine import (
     calculer_cible_hebdo_minutes,
     calculer_quota_etude_minutes,
 )
-from utils.helpers import get_or_create_current_week
+from utils.helpers import get_or_create_current_week, get_or_create_week_for_offset
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -89,8 +89,30 @@ def render() -> None:
     st.title("📚 Études de la semaine")
     st.caption("Sélectionne tes matières et tes chapitres. L'IA s'occupera ensuite de la répartition.")
 
+    # Sélecteur partagé avec Génération IA via st.session_state.
+    # Permet de planifier en avance la semaine prochaine (cas typique :
+    # le dimanche soir pour la semaine qui commence le lendemain).
+    offset_courant = int(st.session_state.get("semaine_target_offset", 0))
+    options = {
+        0: "📅 Cette semaine (en cours)",
+        1: "📆 Semaine prochaine",
+    }
+    nouveau_offset = st.radio(
+        "Semaine à préparer",
+        options=list(options.keys()),
+        format_func=lambda k: options[k],
+        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
+        horizontal=True,
+        key="etudes_semaine_target",
+    )
+    if nouveau_offset != offset_courant:
+        st.session_state["semaine_target_offset"] = nouveau_offset
+        st.rerun()
+
     with get_session() as session:
-        semaine, saisie, nb_reportees = get_or_create_current_week(session)
+        semaine, saisie, nb_reportees = get_or_create_week_for_offset(
+            session, offset_weeks=offset_courant,
+        )
 
         st.info(
             f"📅 **Semaine {semaine.numero_semaine}** : "
