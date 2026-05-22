@@ -392,8 +392,35 @@ def render() -> None:
         "Elle s'appuie sur ton profil, ta sélection d'études et le check-in du jour."
     )
 
+    # === Sélecteur de semaine cible ===
+    # Permet de planifier la semaine prochaine le dimanche soir (cas
+    # d'usage classique). Le choix est partagé avec l'onglet Études via
+    # st.session_state["semaine_target_offset"] pour rester cohérent.
+    offset_courant = int(st.session_state.get("semaine_target_offset", 0))
+    options = {
+        0: "📅 Cette semaine (en cours)",
+        1: "📆 Semaine prochaine",
+    }
+    nouveau_offset = st.radio(
+        "Semaine à planifier",
+        options=list(options.keys()),
+        format_func=lambda k: options[k],
+        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
+        horizontal=True,
+        key="generation_semaine_target",
+    )
+    if nouveau_offset != offset_courant:
+        st.session_state["semaine_target_offset"] = nouveau_offset
+        st.rerun()
+
     with get_session() as session:
-        semaine = _get_current_week(session)
+        # On crée la semaine cible si elle n'existe pas encore — l'utilisateur
+        # peut basculer en avance sur la semaine prochaine sans devoir d'abord
+        # passer par Études.
+        from utils.helpers import get_or_create_week_for_offset
+        semaine, _saisie_target, _ = get_or_create_week_for_offset(
+            session, offset_weeks=offset_courant,
+        )
         if not semaine:
             st.warning(
                 "⚠️ Aucune semaine en cours. Ouvre d'abord l'onglet **Études** "

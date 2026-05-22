@@ -77,6 +77,70 @@ def get_or_create_current_week(
     return semaine, saisie, nb_reportees
 
 
+def get_or_create_week_for_offset(
+    session: Session,
+    offset_weeks: int = 0,
+    transfer_reported: bool = True,
+) -> tuple[Semaine, SaisieHebdo, int]:
+    """Récupère (ou crée) la Semaine + SaisieHebdo à un offset donné par
+    rapport à la semaine ISO courante.
+
+    Permet à l'utilisateur de planifier en avance (ex. dimanche soir pour
+    la semaine suivante : ``offset_weeks=1``).
+
+    Args:
+        offset_weeks: 0 = semaine en cours (= ``get_or_create_current_week``),
+            +1 = semaine prochaine, +2 = dans 2 semaines, etc. Les valeurs
+            négatives sont acceptées (semaines passées).
+        transfer_reported: pareil que pour la semaine courante — déclenche le
+            transfert des tâches non finies depuis la semaine précédente
+            UNIQUEMENT lors de la première création de la SaisieHebdo cible.
+
+    Returns:
+        ``(semaine, saisie, nb_reportees)``.
+    """
+    today = datetime.date.today()
+    cible_date = today + datetime.timedelta(weeks=offset_weeks)
+    iso_year, iso_week, _ = cible_date.isocalendar()
+
+    semaine = session.query(Semaine).filter_by(
+        annee=iso_year, numero_semaine=iso_week,
+    ).first()
+
+    if semaine is None:
+        lundi = cible_date - datetime.timedelta(days=cible_date.weekday())
+        dimanche = lundi + datetime.timedelta(days=6)
+        semaine = Semaine(
+            numero_semaine=iso_week,
+            annee=iso_year,
+            date_debut=lundi,
+            date_fin=dimanche,
+            statut="en_cours",
+        )
+        session.add(semaine)
+        session.flush()
+
+    saisie = session.query(SaisieHebdo).filter_by(semaine_id=semaine.id).first()
+    nb_reportees = 0
+
+    if saisie is None:
+        saisie = SaisieHebdo(semaine_id=semaine.id)
+        session.add(saisie)
+        session.flush()
+
+        if transfer_reported:
+            previous_week = _find_previous_week(session, semaine)
+            if previous_week is not None:
+                from services.report_service import transfer_reported_items_to_new_week
+                nb_reportees = transfer_reported_items_to_new_week(
+                    session, previous_week.id, saisie,
+                )
+
+        session.commit()
+
+    return semaine, saisie, nb_reportees
+
+
 def _find_previous_week(session: Session, current: Semaine) -> Semaine | None:
     """Trouve la semaine la plus récente strictement antérieure à ``current``."""
     return (
@@ -93,4 +157,7 @@ def _find_previous_week(session: Session, current: Semaine) -> Semaine | None:
     )
 
 
-__all__ = ["get_or_create_current_week"]
+__all__ = [
+    "get_or_create_current_week",
+    "get_or_create_week_for_offset",
+]

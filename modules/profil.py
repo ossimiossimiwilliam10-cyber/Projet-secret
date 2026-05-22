@@ -480,6 +480,72 @@ def render() -> None:
             type="primary", width="stretch",
         )
 
+    # === Sauvegarde & Restauration =========================================
+    st.divider()
+    with st.expander("💾 Sauvegarde & Restauration", expanded=False):
+        st.caption(
+            "Streamlit Cloud peut perdre les fichiers locaux en cas de "
+            "redéploiement d'instance. **Télécharge ta sauvegarde régulièrement** "
+            "(une fois par semaine suffit) pour protéger ton avancement Leitner, "
+            "ton XP, tes chapitres et tes PDFs analysés."
+        )
+
+        col_dl, col_restore = st.columns(2)
+
+        with col_dl:
+            st.markdown("##### 📤 Télécharger une sauvegarde")
+            try:
+                from services.backup_service import create_backup_zip, make_backup_filename
+                backup_bytes = create_backup_zip()
+                st.download_button(
+                    label=f"💾 Télécharger ({len(backup_bytes) / 1024:.0f} Ko)",
+                    data=backup_bytes,
+                    file_name=make_backup_filename(),
+                    mime="application/zip",
+                    type="primary",
+                    width="stretch",
+                    help="Zip contenant planning.db + tous les PDFs + un MANIFEST.",
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"❌ Erreur lors de la préparation : {exc}")
+
+        with col_restore:
+            st.markdown("##### 📥 Restaurer une sauvegarde")
+            uploaded = st.file_uploader(
+                "Fichier .zip de sauvegarde",
+                type=["zip"],
+                key="backup_restore_uploader",
+                help="Doit être un zip produit par cette même app.",
+            )
+            if uploaded is not None:
+                st.warning(
+                    "⚠️ **Action destructive** : ta base actuelle et tes PDFs "
+                    "seront ÉCRASÉS par le contenu de la sauvegarde."
+                )
+                confirm = st.checkbox(
+                    "Je confirme vouloir tout remplacer",
+                    key="backup_restore_confirm",
+                )
+                if confirm and st.button(
+                    "📥 Restaurer maintenant",
+                    type="primary", width="stretch",
+                    key="backup_restore_btn",
+                ):
+                    try:
+                        from services.backup_service import restore_from_zip
+                        resultat = restore_from_zip(uploaded.getvalue())
+                        st.success(
+                            f"✅ Sauvegarde restaurée — DB rétablie, "
+                            f"{resultat['nb_pdfs']} PDF(s) restauré(s). "
+                            "L'app va se recharger."
+                        )
+                        st.toast("Restauration réussie", icon="✅")
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(f"❌ Fichier invalide : {exc}")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"❌ Erreur lors de la restauration : {exc}")
+
     # === Zone de danger (Phase de test) ===================================
     st.divider()
     with st.expander("🧨 Zone de danger (Réinitialisation)"):
