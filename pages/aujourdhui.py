@@ -202,6 +202,8 @@ def _proposer_action(
 # ---------------------------------------------------------------------------
 def _render_bouton_magique(action: dict[str, Any]) -> None:
     """Affiche la suggestion contextuelle dans un gros bandeau coloré."""
+    import html as _html
+
     couleurs_par_type: dict[str, str] = {
         "tache_en_cours":       "#10b981",  # vert
         "prochaine_imminente":  "#f59e0b",  # orange
@@ -213,13 +215,24 @@ def _render_bouton_magique(action: dict[str, Any]) -> None:
     }
     couleur = couleurs_par_type.get(action["type"], "#6b7280")
 
+    # On échappe le titre et le détail car ils contiennent des chaînes
+    # construites depuis chap.titre / Tache.titre — données utilisateur
+    # ou Gemini, jamais à injecter telles quelles dans du HTML. Le
+    # markdown bold (**...**) n'était de toute façon pas rendu dans ce
+    # contexte HTML — on remplace par <strong> pour conserver l'intention
+    # visuelle d'avant.
+    titre_safe = _html.escape(str(action.get("titre", "")))
+    detail_safe = _html.escape(str(action.get("detail", "")))
+    titre_html = titre_safe.replace("**", "<strong>", 1).replace("**", "</strong>", 1)
+    detail_html = detail_safe.replace("**", "<strong>", 1).replace("**", "</strong>", 1)
+
     st.markdown(
         f"<div style='background:{couleur}15;border-left:6px solid {couleur};"
         f"padding:18px 22px;border-radius:8px;margin:8px 0;'>"
         f"<div style='font-size:1.15rem;color:{couleur};font-weight:700;'>"
-        f"{action['titre']}</div>"
+        f"{titre_html}</div>"
         f"<div style='color:#374151;margin-top:6px;font-size:0.95rem;'>"
-        f"{action['detail']}</div>"
+        f"{detail_html}</div>"
         f"</div>",
         unsafe_allow_html=True,
     )

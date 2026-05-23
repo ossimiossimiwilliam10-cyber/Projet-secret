@@ -275,6 +275,7 @@ def _render_form_creation() -> None:
             "Description (motivations, contraintes, contexte)",
             placeholder="Ex: Examen mi-juin. Je suis faible sur diagonalisation. J'ai 2h/jour dispo.",
             height=80,
+            max_chars=2000,  # borne pour éviter d'envoyer un mur de texte à Gemini
         )
         c1, c2, c3 = st.columns(3)
         with c1:

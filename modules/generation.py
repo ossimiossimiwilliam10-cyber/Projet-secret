@@ -520,6 +520,7 @@ def render() -> None:
             placeholder="Ex : Jeudi je dois finir avant 18h. Pas de sport mardi car genou. "
                         "Priorise les maths cette semaine.",
             help="L'IA appliquera ces consignes en plus des règles habituelles.",
+            max_chars=2000,  # borne pour éviter d'envoyer un mur de texte à Gemini
         )
 
         label_btn = "🔄 Régénérer le planning" if is_generee else "🚀 Générer le planning avec Gemini"

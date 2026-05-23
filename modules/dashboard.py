@@ -887,6 +887,8 @@ def _render_quota_etude_banner(session: Session) -> None:
     total_fait = int(etude_min_fait + etude_min_partiel * 0.5)
 
     profil = session.query(Utilisateur).first()
+    if profil is None:
+        return  # DB sans utilisateur (rare) : on n'affiche pas le bandeau.
     cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
     if cible_hebdo_min <= 0:
         return
