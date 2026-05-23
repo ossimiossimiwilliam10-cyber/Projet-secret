@@ -12,6 +12,7 @@ from services.planner_validator import (
     JOURS_VALIDES,
     PlanningValidationError,
     TYPES_VALIDES,
+    validate_partial_planning,
     validate_planning,
 )
 
@@ -212,3 +213,71 @@ def test_constants_exportees():
     assert "etude" in TYPES_VALIDES
     assert "lundi" in JOURS_VALIDES
     assert len(JOURS_VALIDES) == 7
+
+
+# ===========================================================================
+# validate_partial_planning (replan + intégration nouveautés)
+# ===========================================================================
+def _partial_planning_valide() -> dict:
+    return {
+        "score_realisme": 80,
+        "justification_globale": "Replan suite quiz raté.",
+        "planning_jours_restants": {
+            "jeudi": [_tache_valide()],
+            "vendredi": [],
+        },
+    }
+
+
+def test_partial_planning_valide():
+    out = validate_partial_planning(
+        _partial_planning_valide(),
+        allowed_jours=["jeudi", "vendredi", "samedi", "dimanche"],
+    )
+    assert len(out["planning_jours_restants"]["jeudi"]) == 1
+    assert out["planning_jours_restants"]["vendredi"] == []
+
+
+def test_partial_planning_tolere_0_tache_valide():
+    """Un replan peut légitimement ne rien recommander (pas d'erreur)."""
+    raw = {
+        "planning_jours_restants": {"jeudi": [], "vendredi": []},
+    }
+    out = validate_partial_planning(
+        raw, allowed_jours=["jeudi", "vendredi"]
+    )
+    assert out["planning_jours_restants"]["jeudi"] == []
+    assert out["planning_jours_restants"]["vendredi"] == []
+
+
+def test_partial_planning_filtre_jours_non_autorises():
+    """Si l'IA renvoie des jours passés alors qu'on n'en voulait pas."""
+    raw = {
+        "planning_jours_restants": {
+            "lundi": [_tache_valide()],  # jour passé, non autorisé
+            "vendredi": [_tache_valide()],  # autorisé
+        },
+    }
+    out = validate_partial_planning(
+        raw, allowed_jours=["jeudi", "vendredi"]
+    )
+    assert "lundi" not in out["planning_jours_restants"]
+    assert len(out["planning_jours_restants"]["vendredi"]) == 1
+
+
+def test_partial_planning_cle_par_defaut():
+    """La clé par défaut est `planning_jours_restants`."""
+    out = validate_partial_planning(_partial_planning_valide())
+    assert "planning_jours_restants" in out
+
+
+def test_partial_planning_cle_custom():
+    raw = {"mon_planning": {"lundi": [_tache_valide()]}}
+    out = validate_partial_planning(raw, key="mon_planning")
+    assert "mon_planning" in out
+    assert len(out["mon_planning"]["lundi"]) == 1
+
+
+def test_partial_planning_cle_absente_rejette():
+    with pytest.raises(PlanningValidationError, match="planning_jours_restants"):
+        validate_partial_planning({"score_realisme": 50})

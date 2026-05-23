@@ -123,6 +123,50 @@ def validate_planning(raw: Any) -> dict:
         PlanningValidationError: si la structure top-level ou les tâches
             sont invalides au point de ne pas pouvoir être réparées.
     """
+    return _validate_planning_dict(raw, key="planning", allowed_jours=JOURS_VALIDES)
+
+
+def validate_partial_planning(
+    raw: Any,
+    key: str = "planning_jours_restants",
+    allowed_jours: tuple[str, ...] | list[str] | None = None,
+) -> dict:
+    """Valide un planning partiel (replanning, intégration nouveautés).
+
+    Schéma identique à :func:`validate_planning` mais :
+      - clé top-level configurable (par défaut ``planning_jours_restants``)
+      - jours autorisés restreignables (ex : seuls les jours futurs de la semaine)
+      - 0 tâche valide est toléré (un replan peut ne rien recommander)
+
+    Args:
+        raw: dict parsé.
+        key: nom de la clé du planning dans ``raw``.
+        allowed_jours: jours acceptables. ``None`` → tous les jours.
+
+    Returns:
+        Dict normalisé : ``{key: {jour: [taches]}}`` + métadonnées libres.
+
+    Raises:
+        PlanningValidationError: si la structure est irrécupérable.
+    """
+    allowed = tuple(allowed_jours) if allowed_jours else JOURS_VALIDES
+    return _validate_planning_dict(
+        raw, key=key, allowed_jours=allowed, allow_empty=True
+    )
+
+
+def _validate_planning_dict(
+    raw: Any,
+    key: str,
+    allowed_jours: tuple[str, ...] | list[str],
+    allow_empty: bool = False,
+) -> dict:
+    """Implémentation commune des deux validateurs.
+
+    Si ``allow_empty=False`` (planning complet), au moins une tâche valide
+    doit ressortir, sinon erreur. Sinon (planning partiel/incrémental),
+    on tolère 0 tâche.
+    """
     if not isinstance(raw, dict):
         raise PlanningValidationError(
             f"Réponse Gemini doit être un objet, reçu {type(raw).__name__}."
@@ -136,19 +180,20 @@ def validate_planning(raw: Any) -> dict:
 
     justification = str(raw.get("justification_globale") or "").strip()
 
-    planning_raw = raw.get("planning")
+    planning_raw = raw.get(key)
     if not isinstance(planning_raw, dict):
         raise PlanningValidationError(
-            f"Clé `planning` absente ou non-objet (reçu "
+            f"Clé `{key}` absente ou non-objet (reçu "
             f"{type(planning_raw).__name__}). Gemini a probablement répondu "
             f"hors-schéma."
         )
 
-    cleaned_planning: dict[str, list[dict]] = {j: [] for j in JOURS_VALIDES}
+    allowed_set = set(allowed_jours)
+    cleaned_planning: dict[str, list[dict]] = {j: [] for j in allowed_jours}
     for jour, taches in planning_raw.items():
         jour_norm = str(jour).strip().lower()
-        if jour_norm not in JOURS_VALIDES:
-            continue  # On ignore les jours fantaisistes sans tout casser.
+        if jour_norm not in allowed_set:
+            continue
         if not isinstance(taches, list):
             continue
         for idx, tache in enumerate(taches):
@@ -157,11 +202,10 @@ def validate_planning(raw: Any) -> dict:
                     _validate_tache(tache, jour_norm, idx)
                 )
             except PlanningValidationError:
-                # Une tâche invalide est ignorée sans tuer la semaine entière.
                 continue
 
     nb_taches_total = sum(len(v) for v in cleaned_planning.values())
-    if nb_taches_total == 0:
+    if nb_taches_total == 0 and not allow_empty:
         raise PlanningValidationError(
             "Le planning ne contient aucune tâche valide après nettoyage."
         )
@@ -169,7 +213,7 @@ def validate_planning(raw: Any) -> dict:
     return {
         "score_realisme": score,
         "justification_globale": justification,
-        "planning": cleaned_planning,
+        key: cleaned_planning,
     }
 
 
@@ -180,4 +224,5 @@ __all__ = [
     "MAX_JUSTIFICATION_CHARS",
     "PlanningValidationError",
     "validate_planning",
+    "validate_partial_planning",
 ]
