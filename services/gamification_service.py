@@ -96,7 +96,7 @@ RARETE_COULEURS: dict[str, str] = {
 
 
 def _check_first_quiz(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-    return event_type == "quiz" and utilisateur.nb_quiz_total >= 1
+    return event_type == "quiz" and utilisateur.gamification.nb_quiz_total >= 1
 
 
 def _check_perfect_quiz(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
@@ -105,37 +105,37 @@ def _check_perfect_quiz(utilisateur: Utilisateur, event_type: str, data: dict) -
 
 def _check_streak(seuil: int):
     def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-        return utilisateur.streak_jours >= seuil
+        return utilisateur.gamification.streak_jours >= seuil
     return _f
 
 
 def _check_chapitres_maitrise(seuil: int):
     def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-        return utilisateur.nb_chapitres_maitrise >= seuil
+        return utilisateur.gamification.nb_chapitres_maitrise >= seuil
     return _f
 
 
 def _check_niveau(seuil: int):
     def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-        return utilisateur.niveau >= seuil
+        return utilisateur.gamification.niveau >= seuil
     return _f
 
 
 def _check_nb_quiz(seuil: int):
     def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-        return utilisateur.nb_quiz_total >= seuil
+        return utilisateur.gamification.nb_quiz_total >= seuil
     return _f
 
 
 def _check_xp(seuil: int):
     def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-        return utilisateur.xp >= seuil
+        return utilisateur.gamification.xp >= seuil
     return _f
 
 
 def _check_nb_sport(seuil: int):
     def _f(utilisateur: Utilisateur, event_type: str, data: dict) -> bool:
-        return (utilisateur.nb_seances_sport_total or 0) >= seuil
+        return (utilisateur.gamification.nb_seances_sport_total or 0) >= seuil
     return _f
 
 
@@ -336,24 +336,24 @@ def update_streak(utilisateur: Utilisateur, today: datetime.date | None = None) 
     derniere = utilisateur.gamification.derniere_activite_xp
 
     if derniere == today:
-        return {"streak": utilisateur.streak_jours, "change": "noop", "record_battu": False}
+        return {"streak": utilisateur.gamification.streak_jours, "change": "noop", "record_battu": False}
 
     if derniere is None:
         nouveau_streak = 1
         change = "init"
     elif (today - derniere).days == 1:
-        nouveau_streak = (utilisateur.streak_jours or 0) + 1
+        nouveau_streak = (utilisateur.gamification.streak_jours or 0) + 1
         change = "cont"
     else:
         nouveau_streak = 1
         change = "reset"
 
-    record_battu = nouveau_streak > (utilisateur.streak_record or 0)
+    record_battu = nouveau_streak > (utilisateur.gamification.streak_record or 0)
 
-    utilisateur.streak_jours = nouveau_streak
+    utilisateur.gamification.streak_jours = nouveau_streak
     utilisateur.gamification.derniere_activite_xp = today
     if record_battu:
-        utilisateur.streak_record = nouveau_streak
+        utilisateur.gamification.streak_record = nouveau_streak
 
     return {
         "streak": nouveau_streak,
@@ -441,17 +441,17 @@ def _appliquer_gain(
     """Logique commune : applique multiplicateur streak, met à jour utilisateur,
     check level-up, check achievements. Retourne le GainXP complet pour
     affichage."""
-    streak_info = {"streak": utilisateur.streak_jours, "change": "noop"}
+    streak_info = {"streak": utilisateur.gamification.streak_jours, "change": "noop"}
     if update_streak_aussi:
         streak_info = update_streak(utilisateur)
 
-    mult = calcul_multiplicateur_streak(utilisateur.streak_jours or 1)
+    mult = calcul_multiplicateur_streak(utilisateur.gamification.streak_jours or 1)
     xp_final = int(round(xp_brut * mult))
 
-    niveau_avant = utilisateur.niveau or 1
-    utilisateur.xp = (utilisateur.xp or 0) + xp_final
-    utilisateur.niveau = calculer_niveau_pour_xp(utilisateur.xp)
-    niveau_apres = utilisateur.niveau
+    niveau_avant = utilisateur.gamification.niveau or 1
+    utilisateur.gamification.xp = (utilisateur.gamification.xp or 0) + xp_final
+    utilisateur.gamification.niveau = calculer_niveau_pour_xp(utilisateur.gamification.xp)
+    niveau_apres = utilisateur.gamification.niveau
 
     nouveaux = check_nouveaux_achievements(session, utilisateur, event_type, event_data)
 
@@ -461,7 +461,7 @@ def _appliquer_gain(
         niveau_avant=niveau_avant,
         niveau_apres=niveau_apres,
         nouveaux_achievements=nouveaux,
-        streak_actuel=utilisateur.streak_jours or 0,
+        streak_actuel=utilisateur.gamification.streak_jours or 0,
         streak_continue=streak_info["change"] in ("init", "cont"),
     )
 
@@ -480,7 +480,7 @@ def attribuer_xp_quiz(
     - +30 si score ≥ 0.9 (cumulé)
     - × multiplicateur streak
     """
-    utilisateur.nb_quiz_total = (utilisateur.nb_quiz_total or 0) + 1
+    utilisateur.gamification.nb_quiz_total = (utilisateur.gamification.nb_quiz_total or 0) + 1
 
     xp = XP_QUIZ_BASE
     raison = f"Quiz fait (score {int(score * 100)}%)"
@@ -516,7 +516,7 @@ def attribuer_xp_promotion_leitner(
 
     if niveau_apres >= niveau_max_leitner and niveau_avant < niveau_max_leitner:
         xp += XP_CHAPITRE_MAITRISE
-        utilisateur.nb_chapitres_maitrise = (utilisateur.nb_chapitres_maitrise or 0) + 1
+        utilisateur.gamification.nb_chapitres_maitrise = (utilisateur.gamification.nb_chapitres_maitrise or 0) + 1
         raison += " · 🌟 Chapitre maîtrisé !"
 
     event_data = {
@@ -555,7 +555,7 @@ def attribuer_xp_sport(
     titre: str = "",
 ) -> GainXP:
     """À appeler quand une séance de sport est marquée terminée."""
-    utilisateur.nb_seances_sport_total = (utilisateur.nb_seances_sport_total or 0) + 1
+    utilisateur.gamification.nb_seances_sport_total = (utilisateur.gamification.nb_seances_sport_total or 0) + 1
     
     xp = XP_SPORT_BASE
     if "Intense" in intensite:
