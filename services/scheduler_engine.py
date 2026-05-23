@@ -407,19 +407,47 @@ __all__ = [
     "lisser_revisions_leitner",
     "calculer_courbe_energie",
     "calculer_velocite_historique",
+    "VelociteResult",
 ]
 
 # ---------------------------------------------------------------------------
 # Vélocité historique (Anti-Burnout)
 # ---------------------------------------------------------------------------
-def calculer_velocite_historique(session: Session, utilisateur_id: int) -> tuple[float, str]:
+from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass(frozen=True)
+class VelociteResult:
+    """Résultat structuré du calcul de vélocité historique.
+
+    Permet à l'appelant (UI ou IA) de distinguer une vélocité réellement
+    fondée sur des données d'une valeur par défaut quand l'échantillon est
+    trop faible.
+    """
+    multiplicateur: float
+    message: str
+    confiance: Literal["elevee", "faible", "aucune"]
+    echantillon_taches: int
+    temps_prevu_min: int
+    temps_fait_min: int
+
+    # --- Rétro-compatibilité : permet l'unpacking `mult, msg = result` ---
+    def __iter__(self):  # pragma: no cover
+        yield self.multiplicateur
+        yield self.message
+
+
+def calculer_velocite_historique(session: Session, utilisateur_id: int) -> VelociteResult:
     """Analyse les 3 dernières semaines échues pour calculer un multiplicateur de réalisme.
 
     Si l'étudiant prévoit systématiquement 20h mais n'en fait que 10h,
     la vélocité baissera, permettant au moteur de lisser ses objectifs.
 
-    Returns:
-        Un tuple (multiplicateur_lissé, explication_textuelle).
+    Retourne un :class:`VelociteResult` :
+    - ``confiance="aucune"`` : pas d'historique → multiplicateur 1.0 (neutre)
+    - ``confiance="faible"`` : <5 tâches → multiplicateur calculé mais à prendre avec recul
+    - ``confiance="elevee"`` : ≥5 tâches → multiplicateur fiable
     """
     from datetime import date
     from database.models import Semaine, Tache
@@ -436,7 +464,14 @@ def calculer_velocite_historique(session: Session, utilisateur_id: int) -> tuple
     )
 
     if not semaines_passees:
-        return 1.0, "Aucune donnée historique. Vélocité standard (100%)."
+        return VelociteResult(
+            multiplicateur=1.0,
+            message="Aucune semaine passée — la vélocité s'affichera dès la 2ᵉ semaine.",
+            confiance="aucune",
+            echantillon_taches=0,
+            temps_prevu_min=0,
+            temps_fait_min=0,
+        )
 
     semaine_ids = [s.id for s in semaines_passees]
 
@@ -451,7 +486,14 @@ def calculer_velocite_historique(session: Session, utilisateur_id: int) -> tuple
     )
 
     if not taches_etude:
-        return 1.0, "Pas assez de recul sur les tâches d'étude. Vélocité standard (100%)."
+        return VelociteResult(
+            multiplicateur=1.0,
+            message="Pas de tâches d'étude dans les semaines passées — vélocité neutre.",
+            confiance="aucune",
+            echantillon_taches=0,
+            temps_prevu_min=0,
+            temps_fait_min=0,
+        )
 
     temps_prevu = 0
     temps_fait = 0
@@ -465,19 +507,43 @@ def calculer_velocite_historique(session: Session, utilisateur_id: int) -> tuple
             temps_fait += int(duree * 0.5)
 
     if temps_prevu == 0:
-        return 1.0, "Vélocité standard (100%)."
+        return VelociteResult(
+            multiplicateur=1.0,
+            message="Aucun temps prévu dans les semaines passées — vélocité neutre.",
+            confiance="aucune",
+            echantillon_taches=len(taches_etude),
+            temps_prevu_min=0,
+            temps_fait_min=0,
+        )
 
     ratio_brut = temps_fait / temps_prevu
-    # Lissage pour éviter les punitions trop brutales : on fait la moyenne avec 1.0
+    # Lissage pour éviter les punitions trop brutales : moyenne avec 1.0
     multiplicateur = (ratio_brut + 1.0) / 2.0
-    
-    # Plancher à 0.5 (on ne divise jamais par plus de 2) et plafond à 1.1 (léger bonus si très efficace)
+    # Plancher à 0.5 et plafond à 1.1 (léger bonus si très efficace)
     multiplicateur = max(0.5, min(1.1, multiplicateur))
+
+    confiance: Literal["elevee", "faible", "aucune"]
+    confiance = "elevee" if len(taches_etude) >= 5 else "faible"
 
     pct = int(multiplicateur * 100)
     real_pct = int(ratio_brut * 100)
-    
-    msg = (f"Sur les 3 dernières semaines, tu as complété {real_pct}% de ce que tu avais prévu. "
-           f"Le moteur a ajusté ta capacité à {pct}% pour te préserver.")
 
-    return multiplicateur, msg
+    if confiance == "faible":
+        msg = (
+            f"Sur {len(taches_etude)} tâche(s) seulement, tu as complété {real_pct}% "
+            f"du prévu. Estimation à confirmer (ajusté à {pct}%)."
+        )
+    else:
+        msg = (
+            f"Sur les 3 dernières semaines, tu as complété {real_pct}% du prévu "
+            f"({len(taches_etude)} tâches analysées). Capacité ajustée à {pct}%."
+        )
+
+    return VelociteResult(
+        multiplicateur=multiplicateur,
+        message=msg,
+        confiance=confiance,
+        echantillon_taches=len(taches_etude),
+        temps_prevu_min=temps_prevu,
+        temps_fait_min=temps_fait,
+    )

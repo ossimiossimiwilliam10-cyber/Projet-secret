@@ -17,14 +17,23 @@ est stockée localement dans la base SQLite.
 
 from __future__ import annotations
 
+import time as _time_mod
 from datetime import time
 from typing import Any
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.orm import selectinload
 
 from database import Utilisateur, get_session, session_scope
+from services.crypto import (
+    decrypt_api_key,
+    encrypt_api_key,
+    is_encrypted,
+    mask_for_display,
+)
 from services.gamification_service import progression_niveau
+from services.profil_validator import validate_biometrie
 
 
 # ---------------------------------------------------------------------------
@@ -79,11 +88,29 @@ def load_profil() -> dict[str, Any]:
 
     Retourne ``{}`` s'il n'existe pas encore — c'est le marqueur "première
     utilisation".
+
+    Optimisations :
+    - Eager loading des 4 sous-configs (1 requête au lieu de 5).
+    - Déchiffrement automatique de la clé API Gemini.
     """
     with get_session() as session:
-        p = session.query(Utilisateur).first()
+        p = (
+            session.query(Utilisateur)
+            .options(
+                selectinload(Utilisateur.biometrie),
+                selectinload(Utilisateur.logistique),
+                selectinload(Utilisateur.systeme),
+                selectinload(Utilisateur.gamification),
+            )
+            .first()
+        )
         if p is None:
             return {}
+
+        # Déchiffrement transparent de la clé API (legacy en clair géré)
+        gemini_key_stored = p.systeme.gemini_api_key or ""
+        gemini_key_clear = decrypt_api_key(gemini_key_stored)
+
         return {
             "id": p.id,
             "nom": p.nom or "",
@@ -107,40 +134,73 @@ def load_profil() -> dict[str, Any]:
             "besoin_sieste": bool(p.biometrie.besoin_sieste),
             "duree_sieste_min": int(p.biometrie.duree_sieste_min or 20),
             "contraintes_fixes": list(p.logistique.contraintes_fixes or []),
-            "gemini_api_key": p.systeme.gemini_api_key or "",
+            "gemini_api_key": gemini_key_clear,
+            "gemini_api_key_encrypted_was_legacy": (
+                bool(gemini_key_stored) and not is_encrypted(gemini_key_stored)
+            ),
             "gemini_model": p.systeme.gemini_model or "gemini-2.5-flash",
         }
 
 
+_GAMIFICATION_ATTRS = frozenset([
+    "xp", "niveau", "streak_jours", "streak_record", "derniere_activite_xp",
+    "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total",
+])
+_SYSTEME_ATTRS = frozenset([
+    "gemini_api_key", "gemini_model", "replanning_auto_actif",
+])
+_BIOMETRIE_ATTRS = frozenset([
+    "heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype",
+    "pic_concentration", "duree_max_session_min", "pause_entre_sessions_min",
+    "methode_travail", "capacite_weekend", "tolerance_fatigue",
+    "heures_etude_cible_par_semaine", "heures_etude_plafond_par_jour",
+    "besoin_sieste", "duree_sieste_min",
+])
+_LOGISTIQUE_ATTRS = frozenset([
+    "temps_transport_min", "trajets_habituels", "nb_repas_par_jour",
+    "duree_repas_min", "duree_prep_repas_min", "contraintes_fixes",
+])
+# Champs internes qui ne doivent jamais être écrits en base.
+_TRANSIENT_KEYS = frozenset(["id", "gemini_api_key_encrypted_was_legacy"])
+
+
 def save_profil(data: dict[str, Any]) -> None:
-    """Upsert du profil (singleton)."""
+    """Upsert du profil (singleton).
+
+    - Chiffre la clé API Gemini avant écriture.
+    - Flush après ``add()`` pour synchroniser les FK des sous-configs.
+    """
     with session_scope() as session:
-        from database.models import GamificationState, SystemeConfig, LogistiqueConfig, BiometrieConfig
+        from database.models import (
+            BiometrieConfig,
+            GamificationState,
+            LogistiqueConfig,
+            SystemeConfig,
+        )
         p = session.query(Utilisateur).first()
         if p is None:
             p = Utilisateur(
                 gamification=GamificationState(),
                 systeme=SystemeConfig(),
                 logistique=LogistiqueConfig(),
-                biometrie=BiometrieConfig()
+                biometrie=BiometrieConfig(),
             )
             session.add(p)
-            
-        gamification_attrs = ["xp", "niveau", "streak_jours", "streak_record", "derniere_activite_xp", "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total"]
-        systeme_attrs = ["gemini_api_key", "gemini_model", "replanning_auto_actif"]
-        biometrie_attrs = ["heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype", "pic_concentration", "duree_max_session_min", "pause_entre_sessions_min", "methode_travail", "capacite_weekend", "tolerance_fatigue", "heures_etude_cible_par_semaine", "heures_etude_plafond_par_jour", "besoin_sieste", "duree_sieste_min"]
-        logistique_attrs = ["temps_transport_min", "trajets_habituels", "nb_repas_par_jour", "duree_repas_min", "duree_prep_repas_min", "contraintes_fixes"]
+            session.flush()  # garantit p.id pour les FK des sous-configs
 
         for key, value in data.items():
-            if key == "id":
+            if key in _TRANSIENT_KEYS:
                 continue
-            if key in gamification_attrs:
+            # Chiffrement transparent de la clé Gemini avant persistance.
+            if key == "gemini_api_key":
+                value = encrypt_api_key(value)
+            if key in _GAMIFICATION_ATTRS:
                 setattr(p.gamification, key, value)
-            elif key in systeme_attrs:
+            elif key in _SYSTEME_ATTRS:
                 setattr(p.systeme, key, value)
-            elif key in biometrie_attrs:
+            elif key in _BIOMETRIE_ATTRS:
                 setattr(p.biometrie, key, value)
-            elif key in logistique_attrs:
+            elif key in _LOGISTIQUE_ATTRS:
                 setattr(p.logistique, key, value)
             else:
                 setattr(p, key, value)
@@ -149,8 +209,22 @@ def save_profil(data: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # Test de connexion Gemini
 # ---------------------------------------------------------------------------
-def test_gemini_connection(api_key: str, model: str) -> tuple[bool, str]:
-    """Effectue un appel minimal à l'API Gemini pour valider la clé."""
+# Erreurs réseau pour lesquelles un retry a du sens (timeout, 5xx, etc.).
+# Pas d'AttributeError : on filtre via le contenu du message dans le code.
+_RETRYABLE_HINTS = ("timeout", "timed out", "503", "502", "504", "connection reset")
+
+
+def _is_retryable_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(h in msg for h in _RETRYABLE_HINTS)
+
+
+def test_gemini_connection(api_key: str, model: str, max_retries: int = 3) -> tuple[bool, str]:
+    """Effectue un appel minimal à l'API Gemini pour valider la clé.
+
+    Retry exponentiel (1s, 2s, 4s) sur erreurs réseau transitoires uniquement
+    — une clé invalide ou un modèle inconnu ne sont **pas** retryés.
+    """
     if not api_key.strip():
         return False, "Clé API vide."
 
@@ -160,53 +234,65 @@ def test_gemini_connection(api_key: str, model: str) -> tuple[bool, str]:
     except ImportError:
         return False, "Package `google-genai` non installé."
 
-    try:
-        client = genai.Client(api_key=api_key.strip())
-        response = client.models.generate_content(
-            model=model,
-            contents="Réponds uniquement avec le mot : OK",
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-            ),
-        )
-        text = (getattr(response, "text", "") or "").strip()
-        if text:
-            return True, f"Connexion réussie. Réponse du modèle : « {text[:80]} »"
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            client = genai.Client(api_key=api_key.strip())
+            response = client.models.generate_content(
+                model=model,
+                contents="Réponds uniquement avec le mot : OK",
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                ),
+            )
+            break  # succès — on sort de la boucle
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < max_retries - 1 and _is_retryable_error(exc):
+                _time_mod.sleep(2 ** attempt)  # 1s, 2s, 4s
+                continue
+            # Erreur non-retryable OU dernier essai : on traite ci-dessous
+            response = None
+            break
+    else:
+        response = None
 
-        # Traduction des codes finish_reason Gemini en messages
-        # humains. Sans ça, l'utilisateur voit "PROHIBITED_CONTENT"
-        # ou "MAX_TOKENS" sans contexte.
-        raisons_fr: dict[str, str] = {
-            "STOP":                "✅ Réponse terminée normalement (mais texte vide — étrange).",
-            "MAX_TOKENS":          "📏 Réponse coupée car trop longue.",
-            "SAFETY":              "🛡️ Filtré par les règles de sécurité Gemini.",
-            "RECITATION":          "📚 Le modèle a refusé pour cause de récitation (contenu copyrighté).",
-            "PROHIBITED_CONTENT":  "🚫 Contenu interdit détecté par Gemini.",
-            "LANGUAGE":            "🌐 Langue non supportée par ce modèle.",
-            "OTHER":               "❓ Raison inconnue du côté Gemini.",
-            "BLOCKLIST":           "⛔ Mot interdit détecté.",
-        }
-        raison_brute = "Inconnue"
-        if hasattr(response, "candidates") and response.candidates:
-            raison_brute = str(response.candidates[0].finish_reason or "Inconnue")
-        # Le finish_reason peut être un Enum ou une string — on extrait le nom.
-        raison_key = raison_brute.split(".")[-1].upper()
-        raison_fr = raisons_fr.get(raison_key, f"Code Gemini inconnu : {raison_brute}")
-        return False, f"Le modèle a refusé de répondre. {raison_fr}"
-
-    except Exception as exc:  # noqa: BLE001
-        # Messages contextuels selon le type d'erreur pour aider à diagnostiquer.
-        nom = type(exc).__name__
-        msg = str(exc)[:300]
-        if "401" in msg or "403" in msg or "Unauthor" in msg.lower():
+    if response is None and last_exc is not None:
+        # Diagnostic contextuel
+        nom = type(last_exc).__name__
+        msg = str(last_exc)[:300]
+        if "401" in msg or "403" in msg or "unauthor" in msg.lower():
             return False, f"🔐 Clé API refusée par Gemini. Vérifie qu'elle est correcte et active.\n\nDétail : {msg}"
         if "404" in msg:
             return False, f"❓ Modèle introuvable. Vérifie le nom (`{model}`).\n\nDétail : {msg}"
         if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
             return False, f"⏱️ Quota Gemini dépassé pour le moment. Réessaie dans quelques minutes.\n\nDétail : {msg}"
-        if "timeout" in msg.lower() or "timed out" in msg.lower():
-            return False, f"⏰ Connexion à Gemini trop lente (timeout). Réessaie.\n\nDétail : {msg}"
+        if _is_retryable_error(last_exc):
+            return False, f"⏰ Connexion à Gemini impossible après {max_retries} tentatives.\n\nDétail : {msg}"
         return False, f"Échec : {nom} — {msg}"
+
+    # Analyse de la réponse — refus ou texte vide
+    text = (getattr(response, "text", "") or "").strip()
+    if text:
+        return True, f"Connexion réussie. Réponse du modèle : « {text[:80] } »"
+
+    # Traduction des codes finish_reason Gemini en messages humains.
+    raisons_fr: dict[str, str] = {
+        "STOP":                "✅ Réponse terminée normalement (mais texte vide — étrange).",
+        "MAX_TOKENS":          "📏 Réponse coupée car trop longue.",
+        "SAFETY":              "🛡️ Filtré par les règles de sécurité Gemini.",
+        "RECITATION":          "📚 Le modèle a refusé pour cause de récitation (contenu copyrighté).",
+        "PROHIBITED_CONTENT":  "🚫 Contenu interdit détecté par Gemini.",
+        "LANGUAGE":            "🌐 Langue non supportée par ce modèle.",
+        "OTHER":               "❓ Raison inconnue du côté Gemini.",
+        "BLOCKLIST":           "⛔ Mot interdit détecté.",
+    }
+    raison_brute = "Inconnue"
+    if hasattr(response, "candidates") and response.candidates:
+        raison_brute = str(response.candidates[0].finish_reason or "Inconnue")
+    raison_key = raison_brute.split(".")[-1].upper()
+    raison_fr = raisons_fr.get(raison_key, f"Code Gemini inconnu : {raison_brute}")
+    return False, f"Le modèle a refusé de répondre. {raison_fr}"
 
 
 # ---------------------------------------------------------------------------
@@ -220,18 +306,21 @@ def render() -> None:
     profil_existe = False
     xp_total = 0
     nb_seances_sport = 0
-    velocite_mult = 1.0
-    velocite_msg = ""
+    velocite_result = None
     with get_session() as session:
-        profil_db = session.query(Utilisateur).first()
+        profil_db = (
+            session.query(Utilisateur)
+            .options(selectinload(Utilisateur.gamification))
+            .first()
+        )
         if profil_db:
             profil_existe = True
-            velocite_mult, velocite_msg = calculer_velocite_historique(session, profil_db.id)
+            velocite_result = calculer_velocite_historique(session, profil_db.id)
             if profil_db.gamification:
                 xp_total = profil_db.gamification.xp or 0
                 nb_seances_sport = profil_db.gamification.nb_seances_sport_total or 0
 
-    if profil_existe and xp_total is not None:
+    if profil_existe:
         prog = progression_niveau(xp_total)
 
         col_lvl, col_xp, col_sport = st.columns([1, 2, 1])
@@ -251,10 +340,19 @@ def render() -> None:
         "Pas besoin de tout remplir d'un coup — tu peux y revenir."
     )
 
-    if profil_existe:
-        pct = int(velocite_mult * 100)
-        color = "green" if pct >= 100 else "orange" if pct >= 80 else "red"
-        st.info(f"**Vélocité historique : :{color}[{pct}%]** — {velocite_msg}")
+    # Bandeau vélocité — adapté à la confiance de l'échantillon.
+    if velocite_result is not None:
+        pct = int(velocite_result.multiplicateur * 100)
+        if velocite_result.confiance == "aucune":
+            st.caption(f"📊 {velocite_result.message}")
+        elif velocite_result.confiance == "faible":
+            st.warning(
+                f"📊 **Vélocité provisoire : {pct}%** (échantillon faible) — "
+                f"{velocite_result.message}"
+            )
+        else:
+            color = "green" if pct >= 100 else "orange" if pct >= 80 else "red"
+            st.info(f"**Vélocité historique : :{color}[{pct}%]** — {velocite_result.message}")
 
     data = load_profil()
     is_new = not data  # profil vide → première utilisation
@@ -496,17 +594,31 @@ def render() -> None:
     # === Section 6 — Paramètres IA (Gemini) ===============================
     with st.expander("🤖 Paramètres IA (Gemini)", expanded=is_new):
         st.caption(
-            "🔒 La clé API est stockée **uniquement** dans ta base SQLite locale. "
+            "🔒 La clé API est **chiffrée** (Fernet AES-128) avant stockage en base. "
             "Elle n'est utilisée que pour les appels à l'API Google Gemini "
             "(analyse de PDF et génération de planning)."
         )
-        api_key = st.text_input(
+
+        existing_key = data["gemini_api_key"]
+        if existing_key:
+            st.markdown(
+                f"🔐 Clé configurée : `{mask_for_display(existing_key)}` — "
+                "laisse vide pour conserver, ou colle une nouvelle clé pour la remplacer."
+            )
+            if data.get("gemini_api_key_encrypted_was_legacy"):
+                st.warning(
+                    "⚠️ Cette clé était stockée en clair (avant cette version). "
+                    "Elle sera **chiffrée automatiquement** au prochain « Enregistrer »."
+                )
+        api_key_input = st.text_input(
             "Clé API Gemini",
-            value=data["gemini_api_key"],
+            value="",  # toujours vide pour ne JAMAIS exposer la clé déchiffrée à l'UI
             type="password",
-            placeholder="AIza...",
+            placeholder="AIza..." if not existing_key else "•••••••• (laisser vide pour conserver)",
             help="Récupère ta clé sur https://aistudio.google.com/apikey",
         )
+        # Logique : champ vide = on garde l'existante (mais en re-chiffrant si legacy)
+        api_key = api_key_input.strip() if api_key_input.strip() else existing_key
 
         # Si le modèle stocké n'est plus dans la liste, on l'ajoute pour ne pas
         # perdre l'info — utile si Google publie un nouveau modèle.
@@ -658,8 +770,9 @@ def render() -> None:
                 st.error(e)
         return
 
-    # --- Validation des trajets habituels ---
+    # --- Validation des trajets habituels (avec déduplication explicite) ---
     trajets_valides: dict[str, int] = {}
+    doublons: list[str] = []
     for t in trajets_brutes:
         nom_trajet = (t.get("nom") or "").strip()
         duree = t.get("duree_min")
@@ -671,7 +784,16 @@ def render() -> None:
             continue
         if duree_int <= 0:
             continue
+        if nom_trajet in trajets_valides:
+            doublons.append(nom_trajet)
         trajets_valides[nom_trajet] = duree_int
+
+    if doublons:
+        with col_save_msg:
+            st.warning(
+                f"ℹ️ Trajets dupliqués (la dernière valeur a été gardée) : "
+                f"{', '.join(set(doublons))}"
+            )
 
     payload = {
         "nom": (nom or "").strip(),
@@ -698,6 +820,21 @@ def render() -> None:
         "gemini_api_key": (api_key or "").strip(),
         "gemini_model": gemini_model,
     }
+
+    # --- Validation biométrique stricte (6 invariants) ---
+    bio_errors = validate_biometrie(payload)
+    bio_blocking = [e for e in bio_errors if e.severite == "error"]
+    bio_warnings = [e for e in bio_errors if e.severite == "warning"]
+    if bio_blocking:
+        with col_save_msg:
+            for err in bio_blocking:
+                st.error(f"**{err.champ}** — {err.message}")
+        return
+    if bio_warnings:
+        with col_save_msg:
+            for warn in bio_warnings:
+                st.warning(f"**{warn.champ}** — {warn.message}")
+
     try:
         save_profil(payload)
     except Exception as exc:

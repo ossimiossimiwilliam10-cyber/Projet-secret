@@ -568,7 +568,11 @@ class CheckInQuotidien(Base):
 
 
 __all__ = [
-    "Profil",
+    "Utilisateur",
+    "BiometrieConfig",
+    "LogistiqueConfig",
+    "SystemeConfig",
+    "GamificationState",
     "Achievement",
     "UE",
     "Matiere",
