@@ -200,7 +200,47 @@ def migrate_schema(verbose: bool = True) -> dict[str, list[str]]:
 
     if verbose and not ajouts:
         print("[migrate_schema] Schéma déjà à jour, rien à faire.")
+
+    _backfill_duree_min(verbose=verbose)
     return ajouts
+
+
+def _backfill_duree_min(verbose: bool = True) -> int:
+    """Backfill ``Tache.duree_min`` pour les lignes legacy où il vaut 0.
+
+    Bug historique : `_save_planning_to_db` ne renseignait pas `duree_min`
+    à l'insert, du coup toutes les agrégations SQL `sum(duree_min)` côté
+    Dashboard renvoyaient 0. Le fix d'insert est en place mais les tâches
+    déjà en base avant le fix ont besoin d'être backfillées.
+
+    Calcule `duree_min = (heure_fin - heure_debut)` en minutes pour toutes
+    les lignes où `duree_min IS NULL OR duree_min = 0` ET les heures sont
+    présentes.
+
+    Idempotent : une 2e exécution ne touche rien (les lignes ont déjà été
+    backfillées). Retourne le nombre de lignes affectées.
+    """
+    with engine.begin() as conn:
+        # Vérifier que la table existe (peut ne pas exister sur une DB fraîche)
+        inspector = inspect(engine)
+        if "taches" not in inspector.get_table_names():
+            return 0
+
+        result = conn.execute(text("""
+            UPDATE taches
+            SET duree_min = CAST(
+                (strftime('%s', '2000-01-01 ' || heure_fin)
+                 - strftime('%s', '2000-01-01 ' || heure_debut)) / 60
+                AS INTEGER
+            )
+            WHERE (duree_min IS NULL OR duree_min = 0)
+              AND heure_debut IS NOT NULL
+              AND heure_fin IS NOT NULL
+        """))
+        nb = result.rowcount or 0
+        if verbose and nb > 0:
+            print(f"[backfill] ✓ Tache.duree_min : {nb} ligne(s) recalculée(s)")
+        return nb
 
 
 __all__ = [
