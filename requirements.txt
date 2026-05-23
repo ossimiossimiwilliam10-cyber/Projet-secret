@@ -5,6 +5,9 @@ SQLAlchemy>=2.0
 # --- IA ---
 google-genai>=1.0  # SDK unifié, remplace l'ancien google-generativeai déprécié
 
+# --- Sécurité ---
+cryptography>=42.0  # Fernet pour le chiffrement de la clé API Gemini
+
 # --- Étapes ultérieures (déjà déclarées pour limiter les surprises d'install) ---
 pdfplumber>=0.11
 PyMuPDF>=1.24
