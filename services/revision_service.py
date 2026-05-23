@@ -42,6 +42,7 @@ from services.cache_versioning import (
 )
 from services.gemini_utils import gemini_call_with_retry
 from services.profil_service import get_gemini_credentials
+from services.qcm_validator import validate_qcm_questions, validate_quiz_questions
 
 
 # ===========================================================================
@@ -972,27 +973,7 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
         raise ValueError("Gemini a renvoyé un QCM vide.")
 
     qcm_list = _parse_json_array(text)
-
-    # Validation + nettoyage
-    cleaned: list[dict[str, Any]] = []
-    for q in qcm_list:
-        if not isinstance(q, dict):
-            continue
-        question = str(q.get("question", "")).strip()
-        options = q.get("options") or []
-        correct = str(q.get("correct", "A")).strip().upper()[:1]
-        explication = str(q.get("explication", "")).strip()
-        if not question or not isinstance(options, list) or len(options) < 2:
-            continue
-        cleaned.append({
-            "question": question,
-            "options": [str(o) for o in options[:4]],
-            "correct": correct if correct in {"A", "B", "C", "D"} else "A",
-            "explication": explication,
-        })
-
-    if not cleaned:
-        raise ValueError("Aucune question valide n'a été extraite du JSON Gemini.")
+    cleaned = validate_qcm_questions(qcm_list)
 
     chap.qcm_cache = cleaned
     chap.qcm_cache_model = model
@@ -1062,19 +1043,7 @@ RÈGLES DE SORTIE :
     if not text:
         raise ValueError("Gemini a renvoyé un quiz vide.")
 
-    questions: list[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        # Strip "1.", "1)", "1 -", "Q1.", "Q1)" prefixes
-        line = re.sub(r"^(Q?\d+)\s*[\.\)\-:]\s*", "", line).strip()
-        if line:
-            questions.append(line)
-    questions = questions[:nb]
-
-    if not questions:
-        raise ValueError("Aucune question extraite du texte renvoyé par Gemini.")
+    questions = validate_quiz_questions(text, max_questions=nb)
 
     chap.quiz_cache = questions
     chap.quiz_cache_model = model
