@@ -117,8 +117,15 @@ _EXPECTED_COLUMNS = {
         "qcm_cache":       "JSON",
         "quiz_cache":      "JSON",
         "texte_cache":     "TEXT",
+        # Versioning du cache IA — invalidation auto si modèle/prompt/contenu change.
+        "fiche_ia_model":           "VARCHAR(100)",
+        "fiche_ia_prompt_version":  "INTEGER",
+        "fiche_ia_texte_sha":       "VARCHAR(64)",
+        "fiche_ia_generated_at":    "DATETIME",
         # Notes perso
         "notes":           "TEXT DEFAULT ''",
+        # Versioning optimiste pour éviter les écrasements multi-onglets.
+        "version":         "INTEGER DEFAULT 1",
         # Horodatages (ajoutés en Phase A — restaient à migrer)
         "created_at":      "DATETIME",
         "updated_at":      "DATETIME",

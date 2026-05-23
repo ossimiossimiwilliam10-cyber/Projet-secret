@@ -293,9 +293,21 @@ class Chapitre(Base):
     qcm_cache = Column(JSON, nullable=True)
     quiz_cache = Column(JSON, nullable=True)
     texte_cache = Column(Text, nullable=True)
+    # Métadonnées de cache versionné — voir services.cache_versioning.
+    # Permettent d'invalider automatiquement la fiche quand le modèle
+    # Gemini, le prompt, ou le contenu PDF change.
+    fiche_ia_model = Column(String(100), nullable=True)
+    fiche_ia_prompt_version = Column(Integer, nullable=True)
+    fiche_ia_texte_sha = Column(String(64), nullable=True)
+    fiche_ia_generated_at = Column(DateTime, nullable=True)
 
     # --- Notes personnelles ----------------------------------------------
     notes = Column(Text, default="")
+
+    # --- Versioning optimiste (ETag) -------------------------------------
+    # Incrémenté à chaque mutation côté UI via `update_chapitre_safe`.
+    # Permet de détecter les écrasements concurrents (deux onglets ouverts).
+    version = Column(Integer, default=1, nullable=False)
 
     # --- Horodatages -----------------------------------------------------
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -309,6 +321,39 @@ class Chapitre(Base):
             f"<Chapitre id={self.id} matiere_id={self.matiere_id} "
             f"titre={self.titre!r}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# PdfUpload — idempotence des uploads (SHA-256)
+# ---------------------------------------------------------------------------
+class PdfUpload(Base):
+    """Trace chaque PDF uploadé par son empreinte SHA-256.
+
+    Sert deux objectifs :
+      1. **Idempotence** : si l'utilisateur re-dépose deux fois le même PDF
+         (même contenu binaire), on évite de relancer une analyse Gemini.
+      2. **Audit** : on garde la trace de quel fichier a été ingéré quand,
+         pour quelle matière, et combien de chapitres en ont été extraits.
+    """
+
+    __tablename__ = "pdf_uploads"
+    __table_args__ = (
+        UniqueConstraint("sha256", "matiere_id", name="uq_pdfupload_sha_matiere"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sha256 = Column(String(64), nullable=False, index=True)
+    matiere_id = Column(
+        Integer, ForeignKey("matieres.id", ondelete="CASCADE"), nullable=False
+    )
+    filename_original = Column(String(255), default="")
+    filename_stored = Column(String(255), default="")
+    label = Column(String(200), default="")
+    nb_chapitres_crees = Column(Integer, default=0)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<PdfUpload id={self.id} sha={self.sha256[:8]}... matiere={self.matiere_id}>"
 
 
 # ---------------------------------------------------------------------------

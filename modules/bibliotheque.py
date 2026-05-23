@@ -18,9 +18,20 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session
 
+from sqlalchemy.orm import selectinload
+
 from database import Chapitre, Matiere, Utilisateur, UE, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
+from services.pdf_storage import (
+    PdfValidationError,
+    compute_sha256,
+    find_existing_upload,
+    record_upload,
+    safe_pdf_filename,
+    validate_pdf_upload,
+)
+from services.profil_service import get_gemini_credentials
 from services.revision_service import (
     initialiser_chapitre_pour_revision,
     label_couleur_status,
@@ -56,18 +67,24 @@ UE_COLORS_DEFAULT = [
 # Helpers d'accès BD
 # ---------------------------------------------------------------------------
 def _get_api_config() -> tuple[str, str]:
-    """Récupère la clé API et le modèle depuis le profil."""
+    """Récupère la clé API (déchiffrée) et le modèle depuis le profil."""
     with get_session() as session:
-        p = session.query(Utilisateur).first()
-        if not p or not p.systeme.gemini_api_key:
-            return "", "gemini-2.5-flash"
-        return p.systeme.gemini_api_key, p.systeme.gemini_model
+        return get_gemini_credentials(session)
 
 
 def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
     """Récupère toutes les UE actives en snapshot dict (survit à la fermeture
-    de session)."""
-    ues = session.query(UE).filter_by(actif=True).order_by(UE.nom).all()
+    de session).
+
+    Eager loading : 1 requête au lieu de 1+N+N×M (UE → matières → chapitres).
+    """
+    ues = (
+        session.query(UE)
+        .options(selectinload(UE.matieres).selectinload(Matiere.chapitres))
+        .filter_by(actif=True)
+        .order_by(UE.nom)
+        .all()
+    )
     return [
         {
             "id": ue.id,
@@ -84,8 +101,17 @@ def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
 
 
 def _get_matieres_snapshot(session: Session) -> list[dict[str, Any]]:
-    """Snapshot dict des matières actives (survit à la fermeture de session)."""
-    matieres = session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
+    """Snapshot dict des matières actives (survit à la fermeture de session).
+
+    Eager loading : 1 requête au lieu de 1+N (Matière → UE → chapitres).
+    """
+    matieres = (
+        session.query(Matiere)
+        .options(selectinload(Matiere.ue), selectinload(Matiere.chapitres))
+        .filter_by(actif=True)
+        .order_by(Matiere.nom)
+        .all()
+    )
     return [
         {
             "id": m.id,
@@ -569,35 +595,77 @@ def _process_import_unifie(
         )
 
         try:
-            # 1. Écriture du PDF sur disque, sous un nom unique horodaté.
-            pdf_filename = f"m{matiere_id}-{int(_time.time())}-{i}.pdf"
+            # 1. Validation + empreinte SHA-256.
+            pdf_bytes = pdf_file.getvalue()
+            validate_pdf_upload(pdf_bytes, pdf_file.name)
+            sha = compute_sha256(pdf_bytes)
+
+            # 2. Idempotence : si ce PDF a déjà été ingéré sur cette matière,
+            # on saute l'analyse Gemini (économie d'argent).
+            with session_scope() as session:
+                existing = find_existing_upload(session, sha, matiere_id)
+                already_imported = existing is not None
+                existing_nb_chap = existing.nb_chapitres_crees if existing else 0
+
+            if already_imported:
+                erreurs.append((
+                    pdf_file.name,
+                    f"Déjà importé sur cette matière "
+                    f"({existing_nb_chap} chapitres existants) — ignoré.",
+                ))
+                continue
+
+            # 3. Écriture sur disque (nom déterministe, pas de path traversal).
+            pdf_filename = safe_pdf_filename(matiere_id, int(_time.time()), i)
             pdf_path = PDF_DIR / pdf_filename
-            pdf_path.write_bytes(pdf_file.getvalue())
+            pdf_path.write_bytes(pdf_bytes)
             pdf_rel = str(pdf_path.relative_to(PDF_DIR.parent.parent))
 
-            # 2. Analyse Gemini du PDF.
-            analyse = analyze_pdf(
-                pdf_path=pdf_path,
-                cours_nom=label_clean,
-                matiere=matiere_nom,
-                api_key=api_key,
-                model=model,
-            )
-
-            # 3. Création des chapitres directement rattachés à la Matière.
-            with session_scope() as session:
-                new_ids = apply_analysis_to_matiere(
-                    session=session,
-                    matiere_id=matiere_id,
-                    analysis=analyse,
-                    pdf_path=pdf_rel,
-                    pdf_label=label_clean,
+            # 4. Analyse Gemini du PDF. Si ça échoue (après retry), on
+            # supprime le PDF qu'on vient d'écrire pour ne pas laisser
+            # d'orphelin sur disque (atomicité).
+            try:
+                analyse = analyze_pdf(
+                    pdf_path=pdf_path,
+                    cours_nom=label_clean,
+                    matiere=matiere_nom,
+                    api_key=api_key,
+                    model=model,
                 )
-                for chap_id in new_ids:
-                    initialiser_chapitre_pour_revision(session, chap_id)
+            except Exception:
+                pdf_path.unlink(missing_ok=True)
+                raise
+
+            # 5. Création des chapitres + trace de l'upload (atomique côté DB).
+            # Si la transaction échoue, on supprime aussi le PDF.
+            try:
+                with session_scope() as session:
+                    new_ids = apply_analysis_to_matiere(
+                        session=session,
+                        matiere_id=matiere_id,
+                        analysis=analyse,
+                        pdf_path=pdf_rel,
+                        pdf_label=label_clean,
+                    )
+                    for chap_id in new_ids:
+                        initialiser_chapitre_pour_revision(session, chap_id)
+                    record_upload(
+                        session,
+                        sha=sha,
+                        matiere_id=matiere_id,
+                        filename_original=pdf_file.name,
+                        filename_stored=pdf_filename,
+                        label=label_clean,
+                        nb_chapitres=len(new_ids),
+                    )
+            except Exception:
+                pdf_path.unlink(missing_ok=True)
+                raise
 
             pdfs_ok += 1
             chapitres_total += len(new_ids)
+        except PdfValidationError as exc:
+            erreurs.append((pdf_file.name, f"Validation : {exc}"))
         except Exception as exc:
             erreurs.append((pdf_file.name, str(exc)))
 
@@ -898,29 +966,44 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
 # ---------------------------------------------------------------------------
 # Rendu principal — avec regroupement par UE
 # ---------------------------------------------------------------------------
-def render() -> None:
-    """Point d'entrée appelé par st.Page."""
-    st.title("📚 Bibliothèque")
-    st.caption(
-        "Organise ton programme selon la hiérarchie **🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, "
-        "importe les PDFs, et active la révision espacée."
-    )
-
-    # 1. Sections UE et Matières (CRUD)
-    _render_ues_section()
-    st.divider()
-    _render_matieres_section()
-    st.divider()
-
-    # 2. Import unifié — 1 ou N PDFs → 1 ou N chapitres rattachés à une Matière
-    _render_import_unifie()
-
-    st.divider()
-    st.subheader("Mon Programme")
-
+def _render_kpis() -> None:
+    """En-tête : 4 chiffres-clés (UE, Matières, Chapitres, Maîtrise moyenne)."""
     with get_session() as session:
-        ues = session.query(UE).filter_by(actif=True).order_by(UE.nom).all()
-        matieres = session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
+        nb_ues = session.query(UE).filter_by(actif=True).count()
+        nb_matieres = session.query(Matiere).filter_by(actif=True).count()
+        chapitres = session.query(Chapitre).all()
+        nb_chapitres = len(chapitres)
+        if nb_chapitres > 0:
+            maitrise_moy = sum(float(c.maitrise_pct or 0) for c in chapitres) / nb_chapitres
+        else:
+            maitrise_moy = 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🎓 UE", nb_ues)
+    c2.metric("📘 Matières", nb_matieres)
+    c3.metric("📑 Chapitres", nb_chapitres)
+    c4.metric("📈 Maîtrise moyenne", f"{maitrise_moy:.0f} %")
+
+
+def _render_programme_section() -> None:
+    """Section « Mon Programme » — affichage hiérarchique UE → Matière → Chapitre."""
+    with get_session() as session:
+        # Eager loading complet : 3 requêtes au lieu de potentiellement
+        # 1 + N(matières) + N×M(chapitres) sur l'affichage hiérarchique.
+        ues = (
+            session.query(UE)
+            .options(selectinload(UE.matieres))
+            .filter_by(actif=True)
+            .order_by(UE.nom)
+            .all()
+        )
+        matieres = (
+            session.query(Matiere)
+            .options(selectinload(Matiere.ue), selectinload(Matiere.chapitres))
+            .filter_by(actif=True)
+            .order_by(Matiere.nom)
+            .all()
+        )
         chapitres = session.query(Chapitre).all()
 
         if not chapitres:
@@ -1026,3 +1109,44 @@ def render() -> None:
             )
             for ch in chaps_autonomes:
                 _render_carte_chapitre(ch, session)
+
+
+# ---------------------------------------------------------------------------
+# Point d'entrée — orchestration en onglets
+# ---------------------------------------------------------------------------
+def render() -> None:
+    """Point d'entrée appelé par st.Page.
+
+    Structure UI :
+      - en-tête : titre + 4 KPIs
+      - tabs : 📥 Importer | 📚 Programme | ⚙️ Gérer UE & Matières
+
+    L'ancien layout linéaire (CRUD UE → CRUD Matières → Import → Programme)
+    forçait l'utilisateur à scroller pour atteindre l'arborescence. Les
+    tabs séparent les contextes : import (action ponctuelle), consultation
+    (l'usage principal), et administration (action rare).
+    """
+    st.title("📚 Bibliothèque")
+    st.caption(
+        "Organise ton programme selon la hiérarchie "
+        "**🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, importe les PDFs, "
+        "et active la révision espacée."
+    )
+
+    _render_kpis()
+    st.divider()
+
+    tab_import, tab_programme, tab_admin = st.tabs(
+        ["📥 Importer", "📚 Mon Programme", "⚙️ Gérer UE & Matières"]
+    )
+
+    with tab_import:
+        _render_import_unifie()
+
+    with tab_programme:
+        _render_programme_section()
+
+    with tab_admin:
+        _render_ues_section()
+        st.divider()
+        _render_matieres_section()
