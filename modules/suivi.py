@@ -364,9 +364,17 @@ def _render_replan_section(session: Session, semaine: Semaine) -> None:
 
             status.update(label="✅ Planning mis à jour", state="complete")
             st.toast("Recalcul réussi", icon="🎉")
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, RuntimeError) as exc:
             status.update(label=f"❌ Erreur : {exc}", state="error")
             st.error(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger("gemini").exception("replan_remaining_week failed")
+            status.update(label="❌ Erreur inattendue", state="error")
+            st.error(
+                f"Erreur inattendue lors du recalcul : {exc}. "
+                "Consulte les logs pour le détail."
+            )
 
 
 # ---------------------------------------------------------------------------
