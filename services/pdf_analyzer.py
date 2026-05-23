@@ -321,7 +321,8 @@ def analyze_pdf(
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
-        )
+        ),
+        context="pdf_analyze",
     )
 
     text = getattr(response, "text", "") or ""

@@ -52,6 +52,27 @@ SEUIL_FATIGUE: int = 7
 
 
 # ---------------------------------------------------------------------------
+# Helper de lecture résiliente
+# ---------------------------------------------------------------------------
+def _profil_attr(profil: Any, attr: str, default: Any = None) -> Any:
+    """Lit ``attr`` sur ``profil``, en routant via la sous-config DDD si présente.
+
+    Après la refonte DDD, plusieurs champs migrés depuis l'ancien ``Profil``
+    monolithique sont désormais sur ``profil.biometrie`` ou
+    ``profil.logistique``. Cette fonction essaie d'abord ces sous-configs
+    puis retombe sur l'attribut direct (utile pour les tests qui passent
+    un ``SimpleNamespace`` aplati).
+    """
+    for sous_config in ("biometrie", "logistique"):
+        sub = getattr(profil, sous_config, None)
+        if sub is not None:
+            val = getattr(sub, attr, None)
+            if val is not None:
+                return val
+    return getattr(profil, attr, default)
+
+
+# ---------------------------------------------------------------------------
 # Moteur Circadien
 # ---------------------------------------------------------------------------
 import math
@@ -70,34 +91,40 @@ def calculer_courbe_energie(
     Args:
         heure_lever: Heure de lever de l'étudiant.
         heure_coucher: Heure de coucher de l'étudiant.
-        chronotype: "matin", "soir", ou "intermediaire".
+        chronotype: "leve_tot", "intermediaire" ou "couche_tard"
+            (cohérent avec ``modules.profil.CHRONOTYPES``). Toute autre
+            valeur est traitée comme "leve_tot" (pic le matin).
         checkin: Dictionnaire optionnel contenant "fatigue_physique".
 
     Returns:
         Dict avec deux clés : "haute_energie" et "basse_energie",
         contenant des listes de chaînes horaires (ex: "09:00-11:30").
     """
-    from datetime import datetime, time, timedelta
+    from datetime import time
 
     hl = heure_lever or time(7, 0)
     hc = heure_coucher or time(23, 0)
-    
+
     # Conversion en minutes depuis minuit
     hl_min = hl.hour * 60 + hl.minute
     hc_min = hc.hour * 60 + hc.minute
     if hc_min <= hl_min:
-        hc_min += 24 * 60 # Coucher le lendemain
+        hc_min += 24 * 60  # Coucher le lendemain
 
     duree_journee_min = hc_min - hl_min
     if duree_journee_min <= 0:
         return {"haute_energie": [], "basse_energie": []}
 
-    # Modulateur de Biorhythme selon le chronotype
-    offset_pic_pct = 0.25 # Matin par défaut (quart de la journée)
+    # Modulateur de biorythme selon le chronotype.
+    # Lève-tôt → pic au 1er quart de la journée.
+    # Intermédiaire → pic au milieu (40 %).
+    # Couche-tard → pic dans la seconde moitié (65 %).
     if chronotype == "couche_tard":
         offset_pic_pct = 0.65
     elif chronotype == "intermediaire":
         offset_pic_pct = 0.40
+    else:  # "leve_tot" ou valeur inconnue (default safe).
+        offset_pic_pct = 0.25
 
     pic_absolu_min = hl_min + int(duree_journee_min * offset_pic_pct)
 
@@ -198,11 +225,11 @@ def calculer_quota_etude_minutes(
     ou charge mentale > ``SEUIL_FATIGUE`` (7/10), on applique
     ``COEF_REDUCTION_QUOTA_FATIGUE`` (-30 % par défaut).
     """
-    plafond = float(getattr(profil, "heures_etude_plafond_par_jour", None) or 0)
+    plafond = float(_profil_attr(profil, "heures_etude_plafond_par_jour", 0) or 0)
     if plafond > 0:
         base = int(round(plafond * 60))
     else:
-        duree_session = int(getattr(profil, "duree_max_session_min", None) or 50)
+        duree_session = int(_profil_attr(profil, "duree_max_session_min", 50) or 50)
         base = duree_session * SESSIONS_PAR_JOUR
 
     if not checkin:
@@ -229,7 +256,7 @@ def calculer_cible_hebdo_minutes(profil: Any) -> int:
     Aucune modulation check-in ici : c'est un objectif de référence
     stable, pas un plafond instantané.
     """
-    cible = float(getattr(profil, "heures_etude_cible_par_semaine", None) or 0)
+    cible = float(_profil_attr(profil, "heures_etude_cible_par_semaine", 0) or 0)
     if cible > 0:
         return int(round(cible * 60))
     plafond_min = calculer_quota_etude_minutes(profil, checkin=None)

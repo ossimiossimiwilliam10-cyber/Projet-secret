@@ -56,7 +56,8 @@ RETOURNE UNIQUEMENT UN JSON AU FORMAT SUIVANT :
                 response_mime_type="application/json",
                 temperature=0.1,
             ),
-        )
+        ),
+        context="import_planning",
     )
 
     text = getattr(response, "text", "") or ""

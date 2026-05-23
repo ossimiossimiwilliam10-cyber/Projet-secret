@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
 from services.gemini_utils import gemini_call_with_retry
-from services.planner_validator import validate_planning
+from services.planner_validator import validate_partial_planning, validate_planning
 from services.profil_service import get_gemini_credentials
 from services.scheduler_engine import (
     JOURS,
@@ -214,7 +214,10 @@ def build_planner_prompt(
     consignes_txt = (consignes_manuelles or "").strip() or "(Aucune consigne exceptionnelle cette semaine.)"
 
     # -- 2 quinquies. Trajets habituels (Chantier 3) --
-    trajets_habituels = dict(getattr(profil, "trajets_habituels", None) or {})
+    # Champ sur LogistiqueConfig depuis la refonte DDD.
+    trajets_habituels = dict(
+        getattr(profil.logistique, "trajets_habituels", None) or {}
+    )
 
     # -- 2 sexies. Check-in biomécanique du jour (Chantier 4) --
     from database.models import CheckInQuotidien
@@ -458,7 +461,8 @@ def generate_schedule_from_ai(
                 response_mime_type="application/json",
                 temperature=0.2,
             ),
-        )
+        ),
+        context="planner_generate",
     )
 
     text_response = getattr(response, "text", "") or ""
@@ -720,13 +724,20 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
-        )
+        ),
+        context="planner_integrer_nouveautes",
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
         raise ValueError("Gemini a renvoyé une réponse vide.")
 
-    result = _parse_gemini_json(text)
+    parsed = _parse_gemini_json(text)
+    # Validation stricte du schéma partiel (jours restants uniquement).
+    result = validate_partial_planning(
+        parsed,
+        key="planning_jours_restants",
+        allowed_jours=jours_restants,
+    )
     # On renvoie la liste détectée dans le résultat pour que l'UI puisse
     # afficher ce qui a été tenté d'intégrer.
     result["chapitre_ids_manquants_detectes"] = chapitre_ids_manquants
@@ -908,13 +919,20 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
-        )
+        ),
+        context="planner_replan",
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
         raise ValueError("Gemini a renvoyé une réponse vide.")
 
-    result = _parse_gemini_json(text)
+    parsed = _parse_gemini_json(text)
+    # Validation stricte (replan = planning partiel sur jours restants).
+    result = validate_partial_planning(
+        parsed,
+        key="planning_jours_restants",
+        allowed_jours=jours_restants,
+    )
 
     # Application en base : supprime les tâches à redistribuer, puis re-crée
     ids_a_supprimer = [t.id for t in taches_a_redistribuer]
