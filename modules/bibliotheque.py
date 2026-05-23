@@ -621,35 +621,46 @@ def _process_import_unifie(
             pdf_path.write_bytes(pdf_bytes)
             pdf_rel = str(pdf_path.relative_to(PDF_DIR.parent.parent))
 
-            # 4. Analyse Gemini du PDF.
-            analyse = analyze_pdf(
-                pdf_path=pdf_path,
-                cours_nom=label_clean,
-                matiere=matiere_nom,
-                api_key=api_key,
-                model=model,
-            )
+            # 4. Analyse Gemini du PDF. Si ça échoue (après retry), on
+            # supprime le PDF qu'on vient d'écrire pour ne pas laisser
+            # d'orphelin sur disque (atomicité).
+            try:
+                analyse = analyze_pdf(
+                    pdf_path=pdf_path,
+                    cours_nom=label_clean,
+                    matiere=matiere_nom,
+                    api_key=api_key,
+                    model=model,
+                )
+            except Exception:
+                pdf_path.unlink(missing_ok=True)
+                raise
 
-            # 5. Création des chapitres + trace de l'upload (atomique).
-            with session_scope() as session:
-                new_ids = apply_analysis_to_matiere(
-                    session=session,
-                    matiere_id=matiere_id,
-                    analysis=analyse,
-                    pdf_path=pdf_rel,
-                    pdf_label=label_clean,
-                )
-                for chap_id in new_ids:
-                    initialiser_chapitre_pour_revision(session, chap_id)
-                record_upload(
-                    session,
-                    sha=sha,
-                    matiere_id=matiere_id,
-                    filename_original=pdf_file.name,
-                    filename_stored=pdf_filename,
-                    label=label_clean,
-                    nb_chapitres=len(new_ids),
-                )
+            # 5. Création des chapitres + trace de l'upload (atomique côté DB).
+            # Si la transaction échoue, on supprime aussi le PDF.
+            try:
+                with session_scope() as session:
+                    new_ids = apply_analysis_to_matiere(
+                        session=session,
+                        matiere_id=matiere_id,
+                        analysis=analyse,
+                        pdf_path=pdf_rel,
+                        pdf_label=label_clean,
+                    )
+                    for chap_id in new_ids:
+                        initialiser_chapitre_pour_revision(session, chap_id)
+                    record_upload(
+                        session,
+                        sha=sha,
+                        matiere_id=matiere_id,
+                        filename_original=pdf_file.name,
+                        filename_stored=pdf_filename,
+                        label=label_clean,
+                        nb_chapitres=len(new_ids),
+                    )
+            except Exception:
+                pdf_path.unlink(missing_ok=True)
+                raise
 
             pdfs_ok += 1
             chapitres_total += len(new_ids)

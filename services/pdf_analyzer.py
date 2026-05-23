@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,55 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from database import Chapitre, Matiere
+
+
+# ---------------------------------------------------------------------------
+# Configuration retry Gemini
+# ---------------------------------------------------------------------------
+# Backoff exponentiel : 2s, 4s, 8s — total max ~14s d'attente cumulée
+# avant abandon. Suffisant pour absorber les 503/timeouts transitoires
+# côté Gemini sans bloquer l'UI trop longtemps.
+GEMINI_MAX_RETRIES = 3
+GEMINI_BACKOFF_BASE_S = 2.0
+
+
+def _is_transient_gemini_error(exc: BaseException) -> bool:
+    """Vrai si l'erreur Gemini est probablement transitoire (à retry).
+
+    On considère transitoires : 429 (rate limit), 503 (overloaded),
+    504 (gateway timeout), erreurs réseau (``ConnectionError``,
+    ``TimeoutError``). Les erreurs 400/401/403 (auth, requête invalide,
+    contenu refusé) ne sont PAS retry-ables.
+    """
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    msg = str(exc).lower()
+    transient_markers = ("429", "503", "504", "overloaded", "timeout", "deadline")
+    permanent_markers = ("400", "401", "403", "api key", "invalid", "permission")
+    if any(m in msg for m in permanent_markers):
+        return False
+    return any(m in msg for m in transient_markers)
+
+
+def _gemini_call_with_retry(call_fn):
+    """Exécute ``call_fn()`` avec retry exponentiel sur erreurs transitoires.
+
+    ``call_fn`` doit être une fonction sans arguments retournant la réponse
+    Gemini. Lève l'exception finale si tous les retries échouent, ou
+    immédiatement si l'erreur est non transitoire.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(GEMINI_MAX_RETRIES):
+        try:
+            return call_fn()
+        except Exception as exc:
+            last_exc = exc
+            if not _is_transient_gemini_error(exc):
+                raise
+            if attempt < GEMINI_MAX_RETRIES - 1:
+                time.sleep(GEMINI_BACKOFF_BASE_S * (2 ** attempt))
+    assert last_exc is not None
+    raise last_exc
 
 # ---------------------------------------------------------------------------
 # Imports optionnels — l'app reste importable même si ces paquets manquent.
@@ -312,13 +362,15 @@ def analyze_pdf(
     prompt = build_analysis_prompt(extraction, cours_nom, matiere)
 
     client = genai.Client(api_key=api_key.strip())
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
+    response = _gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
+        )
     )
 
     text = getattr(response, "text", "") or ""
