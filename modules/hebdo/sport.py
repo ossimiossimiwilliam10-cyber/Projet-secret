@@ -239,7 +239,7 @@ def render() -> None:
     edited_sport = st.data_editor(
         df_sport,
         num_rows="dynamic",
-        use_container_width=True,
+        width='stretch',
         column_config={
             "type": st.column_config.SelectboxColumn(
                 "Discipline", options=list(TYPES_SPORT.keys()), required=True,
@@ -262,7 +262,7 @@ def render() -> None:
 
     col_save, col_info = st.columns([1, 2])
     with col_save:
-        if st.button("💾 Enregistrer mes séances", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer mes séances", type="primary", width='stretch'):
             sport_propre = []
             for _, row in edited_sport.iterrows():
                 if pd.notna(row.get("type")):

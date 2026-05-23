@@ -95,7 +95,7 @@ def render() -> None:
                     st.caption(f"{type_icon} {s.get('duree_min', 0)}min")
 
     edited_social = st.data_editor(
-        df_social, num_rows="dynamic", use_container_width=True,
+        df_social, num_rows="dynamic", width='stretch',
         column_config={
             "activite": st.column_config.TextColumn("Événement / Détail"),
             "type": st.column_config.SelectboxColumn("Type d'activité", options=TYPES_SOCIAL, default=TYPES_SOCIAL[1]),
@@ -109,7 +109,7 @@ def render() -> None:
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
-        if st.button("💾 Enregistrer mes loisirs", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer mes loisirs", type="primary", width='stretch'):
             social_propre = []
             for _, row in edited_social.iterrows():
                 if pd.notna(row.get("type")):

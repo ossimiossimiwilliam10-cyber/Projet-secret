@@ -20,8 +20,7 @@ import datetime
 import streamlit as st
 from sqlalchemy.orm import Session
 
-from database.db import get_session, session_scope
-from database.models import Chapitre, Utilisateur, Semaine, Tache
+from database import Chapitre, Utilisateur, Semaine, Tache, get_session, session_scope
 from services.ai_planner import replan_remaining_week
 from services.scheduler_engine import calculer_cible_hebdo_minutes
 from services import gamification_service
@@ -220,6 +219,26 @@ def render() -> None:
             st.info(f"Aucune tâche planifiée le {jour_select}.")
         else:
             _render_day_metrics(taches_jour)
+
+            # 📋 Vue Kanban rapide
+            st.caption("**📋 Vue par statut** :")
+            kanban_cols = st.columns(4)
+            kanban_fait = [t for t in taches_jour if t.statut == "fait"]
+            kanban_afaire = [t for t in taches_jour if t.statut == "a_faire"]
+            kanban_partiel = [t for t in taches_jour if t.statut == "partiellement"]
+            kanban_nonfait = [t for t in taches_jour if t.statut == "non_fait"]
+
+            for col, tasks, label, icon in [
+                (kanban_cols[0], kanban_afaire, "⏳ À faire", "#3b82f6"),
+                (kanban_cols[1], kanban_fait, "✅ Fait", "#22c55e"),
+                (kanban_cols[2], kanban_partiel, "⚠️ Partiel", "#f59e0b"),
+                (kanban_cols[3], kanban_nonfait, "❌ Non fait", "#ef4444"),
+            ]:
+                with col:
+                    st.markdown(f"<div style='background:{icon}15;padding:6px;border-radius:4px;text-align:center;font-weight:600;font-size:0.85rem;'>{label} ({len(tasks)})</div>", unsafe_allow_html=True)
+                    for t in tasks[:5]:
+                        st.caption(f"{t.heure_debut.strftime('%H:%M')} {t.titre[:30]}")
+
             st.divider()
             for t in taches_jour:
                 _render_task_row(t)

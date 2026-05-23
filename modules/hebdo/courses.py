@@ -125,7 +125,7 @@ def render() -> None:
 
     col_btn, col_xp = st.columns([1, 2])
     with col_btn:
-        if st.button("💾 Enregistrer l'intendance", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer l'intendance", type="primary", width='stretch'):
             nouvelle_config = {
                 "menu_hebdo": menu_hebdo.strip(),
                 "frequence": frequence,

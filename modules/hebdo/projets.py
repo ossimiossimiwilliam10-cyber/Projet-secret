@@ -99,7 +99,7 @@ def render() -> None:
 
     st.subheader("Liste de tes projets de la semaine")
     edited_projets = st.data_editor(
-        df_projets, num_rows="dynamic", use_container_width=True,
+        df_projets, num_rows="dynamic", width='stretch',
         column_config={
             "titre": st.column_config.TextColumn("Nom de la tâche / Projet", required=True),
             "type": st.column_config.SelectboxColumn("Catégorie", options=TYPES_PROJET, default=TYPES_PROJET[0]),
@@ -113,7 +113,7 @@ def render() -> None:
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
-        if st.button("💾 Enregistrer mes projets", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer mes projets", type="primary", width='stretch'):
             projets_propre = []
             for _, row in edited_projets.iterrows():
                 if pd.notna(row.get("titre")) and str(row.get("titre")).strip():

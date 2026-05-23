@@ -128,6 +128,16 @@ def render() -> None:
         # 3. Répartition globale par type (cumul sur tout le semestre)
         _render_repartition_globale(session)
 
+        st.divider()
+
+        # 4. Sparkline d'évolution (4 dernières semaines)
+        _render_sparkline_4_semaines(session)
+
+        st.divider()
+
+        # 5. Heatmap de productivité
+        _render_heatmap_productivite(session)
+
 
 # ===========================================================================
 # Chantier 4 — Check-in biomécanique quotidien
@@ -970,6 +980,76 @@ def _render_repartition_globale(session: Session) -> None:
         legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.05),
     )
     st.plotly_chart(fig, width="stretch")
+
+
+def _render_sparkline_4_semaines(session: Session) -> None:
+    """Mini-graphe de l'évolution des heures d'étude sur les 4 dernières semaines."""
+    import datetime as _dt
+    st.subheader("📈 Évolution des heures d'étude (4 semaines)")
+    today = _dt.date.today()
+    weeks_data = []
+    for offset in range(-3, 1):
+        try:
+            from utils.helpers import get_or_create_week_for_offset
+            sem, _, _ = get_or_create_week_for_offset(session, offset_weeks=offset)
+            if sem:
+                taches = session.query(Tache).filter_by(semaine_id=sem.id).all()
+                etude_min = sum(t.duree_min or 0 for t in taches if (t.type or "").lower() == "etude")
+                weeks_data.append((f"S{sem.numero_semaine}", etude_min / 60))
+            else:
+                weeks_data.append(("?", 0))
+        except Exception:
+            weeks_data.append(("?", 0))
+
+    if weeks_data:
+        labels = [w[0] for w in weeks_data]
+        values = [w[1] for w in weeks_data]
+        import plotly.express as px
+        fig = px.line(x=labels, y=values, markers=True, height=200)
+        fig.update_traces(line=dict(color="#6366f1", width=2), marker=dict(size=8))
+        fig.update_layout(
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis_title=None, yaxis_title="Heures",
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.caption("Pas assez de données.")
+
+
+def _render_heatmap_productivite(session: Session) -> None:
+    """Heatmap simplifiée : complétion par jour de la semaine."""
+    st.subheader("🔥 Productivité par jour (cette semaine)")
+    try:
+        from utils.helpers import get_or_create_week_for_offset
+        offset = int(st.session_state.get("semaine_target_offset", 0))
+        sem, _, _ = get_or_create_week_for_offset(session, offset_weeks=offset)
+        if not sem:
+            st.caption("Aucune semaine.")
+            return
+        taches = session.query(Tache).filter_by(semaine_id=sem.id).all()
+        jours_fr = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        jours_abbr = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"]
+        data = []
+        for jour_fr, jour_abbr in zip(jours_fr, jours_abbr):
+            taches_jour = [t for t in taches if t.jour == jour_fr]
+            total = len(taches_jour)
+            fait = sum(1 for t in taches_jour if t.statut == "fait")
+            pct = fait / total * 100 if total > 0 else 0
+            color = "#22c55e" if pct >= 80 else "#f59e0b" if pct >= 40 else "#ef4444" if total > 0 else "#e5e7eb"
+            data.append((jour_abbr, pct, color))
+
+        cols = st.columns(7)
+        for col, (jour, pct, color) in zip(cols, data):
+            with col:
+                st.markdown(
+                    f"<div style='text-align:center;font-size:0.8rem;'>{jour}</div>"
+                    f"<div style='background:{color};height:40px;border-radius:4px;margin:2px;position:relative;'>"
+                    f"<div style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:0.7rem;font-weight:700;color:white;'>{int(pct)}%</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+    except Exception:
+        st.caption("Données indisponibles.")
 
 
 __all__ = ["render"]

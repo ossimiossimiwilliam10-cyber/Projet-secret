@@ -80,7 +80,7 @@ def render() -> None:
         st.caption(f"⏱️ **{len(config_db)} corvée(s) · ~{total_min // 60}h{total_min % 60:02d}** — bien organisé !")
 
     edited_int = st.data_editor(
-        df_int, num_rows="dynamic", use_container_width=True,
+        df_int, num_rows="dynamic", width='stretch',
         column_config={
             "activite": st.column_config.SelectboxColumn("Type de tâche", options=TYPES_INTENDANCE, required=True),
             "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=30),
@@ -92,7 +92,7 @@ def render() -> None:
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
-        if st.button("💾 Enregistrer corvées", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer corvées", type="primary", width='stretch'):
             int_propre = []
             for _, row in edited_int.iterrows():
                 if pd.notna(row.get("activite")):

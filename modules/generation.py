@@ -520,8 +520,31 @@ def render() -> None:
             placeholder="Ex : Jeudi je dois finir avant 18h. Pas de sport mardi car genou. "
                         "Priorise les maths cette semaine.",
             help="L'IA appliquera ces consignes en plus des règles habituelles.",
-            max_chars=2000,  # borne pour éviter d'envoyer un mur de texte à Gemini
+            max_chars=2000,
         )
+
+        # 🎛️ Curseur d'équilibre de vie
+        st.caption("**🎛️ Équilibre de vie** — ajuste la priorité donnée aux études vs vie perso :")
+        balance = st.select_slider(
+            "Priorité",
+            options=["📚 Max études", "⚖️ Équilibré", "🌴 Semaine light"],
+            value="⚖️ Équilibré",
+            key="gen_balance",
+            help="L'IA adaptera la densité du planning selon ton choix.",
+        )
+
+        # 🔮 Simulation "Et si..."
+        with st.expander("🔮 Simulation : impact de ma fatigue sur le planning", expanded=False):
+            sim_fatigue = st.slider("Si ma fatigue est de...", 1, 10, 5, key="sim_fatigue")
+            reduc = 30 if sim_fatigue > 7 else 0
+            sim_plafond = quota_etude_jour_min
+            if reduc:
+                sim_plafond = int(sim_plafond * 0.7)
+            st.caption(
+                f"Plafond estimé : **{sim_plafond / 60:.1f}h/jour** "
+                f"{'(−30% fatigue)' if reduc else '(inchangé)'} "
+                f"→ ~{sim_plafond * 7 / 60:.0f}h max cette semaine"
+            )
 
         label_btn = "🔄 Régénérer le planning" if is_generee else "🚀 Générer le planning avec Gemini"
         if st.button(label_btn, type="primary", width="stretch"):
@@ -691,6 +714,27 @@ def render() -> None:
         stats = _compute_planning_stats(taches)
         _render_planning_stats(stats, cible_hebdo_min)
         _render_repartition_par_type(stats)
+
+        # 📊 Comparaison S-1
+        try:
+            from utils.helpers import get_or_create_week_for_offset
+            _, s1_saisie, _ = get_or_create_week_for_offset(session, offset_weeks=offset_courant - 1)
+            s1_taches = session.query(Tache).filter_by(semaine_id=s1_saisie.semaine_id).all() if s1_saisie else []
+            if s1_taches:
+                s1_stats = _compute_planning_stats(s1_taches)
+                delta_etude = stats["etude_min"] - s1_stats["etude_min"]
+                delta_sport = stats.get("by_type_min", {}).get("sport", 0) - s1_stats.get("by_type_min", {}).get("sport", 0)
+                st.markdown(
+                    f"<div style='margin-top:12px; padding:10px 16px; background:#f8fafc; "
+                    f"border-radius:8px; font-size:0.9rem;'>"
+                    f"📊 <b>vs S-1</b> : "
+                    f"Étude {'📈 +' if delta_etude > 0 else '📉 ' if delta_etude < 0 else '='}{abs(delta_etude)}min · "
+                    f"Sport {'📈 +' if delta_sport > 0 else '📉 ' if delta_sport < 0 else '='}{abs(delta_sport)}min"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        except Exception:
+            pass
 
         st.markdown("---")
 

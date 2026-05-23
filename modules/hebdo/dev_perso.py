@@ -82,7 +82,7 @@ def render() -> None:
         st.caption(f"⏱️ **{len(config_db)} habitude(s) · ~{total_min // 60}h{total_min % 60:02d}** investies sur toi cette semaine. 👏")
 
     edited_dev = st.data_editor(
-        df_dev, num_rows="dynamic", use_container_width=True,
+        df_dev, num_rows="dynamic", width='stretch',
         column_config={
             "activite": st.column_config.SelectboxColumn("Activité", options=CATEGORIES, required=True),
             "frequence": st.column_config.TextColumn("Objectif (ex: Tous les jours, 2x...)"),
@@ -95,7 +95,7 @@ def render() -> None:
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
-        if st.button("💾 Enregistrer mes habitudes", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer mes habitudes", type="primary", width='stretch'):
             dev_propre = []
             for _, row in edited_dev.iterrows():
                 if pd.notna(row.get("activite")):

@@ -20,8 +20,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy.orm import selectinload
 
-from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, session_scope
-from database.db import PDF_DIR
+from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, session_scope, PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
 from services.pdf_storage import (
     PdfValidationError,
