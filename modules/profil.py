@@ -114,6 +114,7 @@ def load_profil() -> dict[str, Any]:
         return {
             "id": p.id,
             "nom": p.nom or "",
+            "prenom": p.prenom or "",
             "heure_lever": p.biometrie.heure_lever or time(7, 0),
             "heure_coucher": p.biometrie.heure_coucher or time(23, 30),
             "heures_sommeil_cible": float(p.biometrie.heures_sommeil_cible or 8.0),
@@ -591,11 +592,11 @@ def render() -> None:
                 disabled=not besoin_sieste,
             )
 
-    # === Section 6 — Paramètres IA (Gemini) ===============================
-    with st.expander("🤖 Paramètres IA (Gemini)", expanded=is_new):
+    # === Section 6 — Paramètres IA (Gemini & DeepSeek) ===============================
+    with st.expander("🤖 Paramètres IA (Gemini & DeepSeek)", expanded=is_new):
         st.caption(
             "🔒 La clé API est **chiffrée** (Fernet AES-128) avant stockage en base. "
-            "Elle n'est utilisée que pour les appels à l'API Google Gemini "
+            "Elle n'est utilisée que pour les appels à l'API Google Gemini ou DeepSeek "
             "(analyse de PDF et génération de planning)."
         )
 
@@ -611,26 +612,25 @@ def render() -> None:
                     "Elle sera **chiffrée automatiquement** au prochain « Enregistrer »."
                 )
         api_key_input = st.text_input(
-            "Clé API Gemini",
-            value="",  # toujours vide pour ne JAMAIS exposer la clé déchiffrée à l'UI
+            "Clé API LLM (Google ou DeepSeek)",
+            value="",
             type="password",
-            placeholder="AIza..." if not existing_key else "•••••••• (laisser vide pour conserver)",
-            help="Récupère ta clé sur https://aistudio.google.com/apikey",
+            placeholder="AIza... ou sk-..." if not existing_key else "•••••••• (laisser vide pour conserver)",
+            help="Récupère ta clé sur https://aistudio.google.com/apikey ou https://platform.deepseek.com",
         )
         # Logique : champ vide = on garde l'existante (mais en re-chiffrant si legacy)
         api_key = api_key_input.strip() if api_key_input.strip() else existing_key
 
-        # Si le modèle stocké n'est plus dans la liste, on l'ajoute pour ne pas
-        # perdre l'info — utile si Google publie un nouveau modèle.
-        models_options = list(MODELES_GEMINI)
+        # Si le modèle stocké n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
+        models_options = list(MODELES_IA)
         if data["gemini_model"] not in models_options:
             models_options.insert(0, data["gemini_model"])
 
         gemini_model = st.selectbox(
-            "Modèle Gemini",
+            "Modèle IA",
             options=models_options,
             index=models_options.index(data["gemini_model"]),
-            help="**Flash** = rapide & économique. **Pro** = plus précis mais plus lent.",
+            help="**Gemini Flash** = ultra-rapide. **DeepSeek-V4-Pro** = raisonnement très profond.",
         )
 
         col_btn, col_msg = st.columns([1, 3])
@@ -641,7 +641,7 @@ def render() -> None:
         if test_clicked:
             with col_msg:
                 with st.spinner("Test en cours…"):
-                    ok, msg = test_gemini_connection(api_key, gemini_model)
+                    ok, msg = test_llm_connection(api_key, gemini_model)
                 if ok:
                     st.success(msg)
                 else:
@@ -771,7 +771,7 @@ def render() -> None:
         return
 
     # --- Validation des trajets habituels (avec déduplication explicite) ---
-    trajets_valides: dict[str, int] = {}
+    trajets_valides: dict[str, Any] = {}
     doublons: list[str] = []
     for t in trajets_brutes:
         nom_trajet = (t.get("nom") or "").strip()
@@ -786,7 +786,12 @@ def render() -> None:
             continue
         if nom_trajet in trajets_valides:
             doublons.append(nom_trajet)
-        trajets_valides[nom_trajet] = duree_int
+        trajets_valides[nom_trajet] = {
+            "duree_min": duree_int,
+            "mode": str(t.get("mode", "Transport en commun")),
+            "fatigue": str(t.get("fatigue", "Modérée")),
+            "etude_possible": bool(t.get("etude_possible", False)),
+        }
 
     if doublons:
         with col_save_msg:
@@ -797,6 +802,7 @@ def render() -> None:
 
     payload = {
         "nom": (nom or "").strip(),
+        "prenom": (prenom or "").strip(),
         "heure_lever": heure_lever,
         "heure_coucher": heure_coucher,
         "heures_sommeil_cible": float(heures_sommeil),

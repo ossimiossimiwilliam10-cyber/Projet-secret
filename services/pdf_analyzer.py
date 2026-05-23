@@ -301,14 +301,6 @@ def analyze_pdf(
     if not api_key or not api_key.strip():
         raise ValueError("Clé API Gemini manquante.")
 
-    try:
-        from google import genai  # type: ignore
-        from google.genai import types  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "Package `google-genai` non installé. Lance `pip install google-genai`."
-        ) from exc
-
     extraction = extract_text(pdf_path)
     prompt = build_analysis_prompt(extraction, cours_nom, matiere)
 

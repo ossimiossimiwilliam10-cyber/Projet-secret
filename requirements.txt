@@ -4,6 +4,7 @@ SQLAlchemy>=2.0
 
 # --- IA ---
 google-genai>=1.0  # SDK unifié, remplace l'ancien google-generativeai déprécié
+openai>=1.0        # SDK OpenAI pour DeepSeek-V4-Pro et hybride
 
 # --- Sécurité ---
 cryptography>=42.0  # Fernet pour le chiffrement de la clé API Gemini

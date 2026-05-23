@@ -23,6 +23,8 @@ def _parse_gemini_json(text: str) -> dict:
         return {}
     
 def _extraire_planning_image_ia(image: Image.Image, api_key: str, model: str) -> list[dict]:
+    if model.startswith("deepseek"):
+        raise ValueError("L'import par image n'est pas encore supporté par DeepSeek. Veuillez basculer sur un modèle Gemini dans votre profil.")
     try:
         from google import genai
         from google.genai import types

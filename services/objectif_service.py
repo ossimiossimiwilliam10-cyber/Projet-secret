@@ -206,31 +206,19 @@ def proposer_strategie(
     )
 
     # Appel Gemini
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError as exc:
-        raise RuntimeError("Package `google-genai` non installé.") from exc
+    from services.gemini_utils import call_llm
 
-    client = genai.Client(api_key=_gemini_key)
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=_gemini_model or "gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.3,
-            ),
-        ),
+    text = call_llm(
+        api_key=_gemini_key,
+        model=_gemini_model or "gemini-2.5-flash",
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.3,
         context="objectif_strategie",
     )
 
-    text = getattr(response, "text", "") or ""
     if not text.strip():
-        raison = "Inconnue"
-        if hasattr(response, "candidates") and response.candidates:
-            raison = response.candidates[0].finish_reason
-        raise ValueError(f"Gemini a refusé de répondre (raison : {raison}).")
+        raise ValueError("L'IA a refusé de répondre.")
 
     strategie = _parse_gemini_json(text)
 

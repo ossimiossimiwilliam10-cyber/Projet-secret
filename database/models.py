@@ -53,6 +53,7 @@ class Utilisateur(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     nom = Column(String(100), nullable=False, default="")
+    prenom = Column(String(100), nullable=True, default="")
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

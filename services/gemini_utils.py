@@ -94,9 +94,68 @@ def gemini_call_with_retry(
     raise last_exc
 
 
+def call_llm(
+    api_key: str,
+    model: str,
+    prompt: str,
+    json_mode: bool = False,
+    temperature: float = 0.2,
+    context: str = "llm_call",
+) -> str:
+    """Exécute un appel au LLM (Gemini ou OpenAI/DeepSeek) avec retry exponentiel.
+    
+    Retourne directement le texte généré.
+    """
+    is_openai = model.startswith("deepseek") or model.startswith("gpt") or model.startswith("o1") or model.startswith("o3")
+
+    def _do_call() -> str:
+        if is_openai:
+            import openai
+            client = openai.OpenAI(
+                api_key=api_key.strip(),
+                base_url="https://api.deepseek.com/v1" if model.startswith("deepseek") else None
+            )
+            kwargs = {}
+            if json_mode and not model.startswith("deepseek"):
+                # DeepSeek-V4-Pro supports json mode via response_format? If so, we can add it,
+                # but standard openai expects response_format={"type": "json_object"}.
+                kwargs["response_format"] = {"type": "json_object"}
+            
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                **kwargs
+            )
+            return resp.choices[0].message.content or ""
+        else:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=api_key.strip())
+            
+            config_kwargs = {"temperature": temperature}
+            if json_mode:
+                config_kwargs["response_mime_type"] = "application/json"
+                
+            resp = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
+            return getattr(resp, "text", "") or ""
+
+    # Mock an object with a 'text' property so the legacy retry logger works
+    class DummyResult:
+        def __init__(self, t: str):
+            self.text = t
+
+    return gemini_call_with_retry(lambda: DummyResult(_do_call()), context=context).text
+
+
 __all__ = [
     "GEMINI_MAX_RETRIES",
     "GEMINI_BACKOFF_BASE_S",
     "is_transient_gemini_error",
     "gemini_call_with_retry",
+    "call_llm",
 ]

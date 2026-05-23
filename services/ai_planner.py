@@ -296,23 +296,17 @@ Le temps de trajet DOIT être SOUSTRAIT de l'heure de début de l'événement.
 Si un événement commence à 16:00 et que le trajet fait 30 min, le départ
 du transport est OBLIGATOIREMENT à 15:30. Jamais d'empiètement.
 
-Dictionnaire des trajets habituels (durées en minutes) :
+Dictionnaire des trajets habituels (avec métadonnées intelligentes) :
 {_safe_json_str(trajets_habituels)}
 
-**Comment choisir la bonne durée de trajet pour un événement :**
-1. Si l'événement est un JOB (TRAVAIL) avec un champ ``lieu`` renseigné
-   (visible dans la contrainte), cherche dans le dict ci-dessus une clé
-   dont le nom CONTIENT le lieu (ex. job lieu = "Luxembourg" → trajet
-   "Strasbourg-Luxembourg"). Utilise cette durée.
-2. Sinon, déduis depuis le LIBELLÉ de la contrainte (ex. libellé contenant
-   « Luxembourg » → trajet vers le Luxembourg ; libellé « Fac » ou
-   « Université » → trajet "Appartement-Fac" si défini).
-3. En dernier recours : trajet par défaut = {profil.logistique.temps_transport_min} min.
+**Règles de gestion des trajets (Niveau NASA) :**
+1. Choix du trajet : cherche un lieu correspondant dans le dict ci-dessus. Sinon, libellé de l'événement. Sinon, défaut = {profil.logistique.temps_transport_min} min.
+2. Si le trajet a "etude_possible": true, tu PEUX y placer des révisions légères (ex: flashcards, écoute de cours) qui comptent dans le quota d'étude, sans empiéter sur le temps de transport lui-même (fusionne l'étude dans le trajet).
+3. Si le trajet a "fatigue": "Élevée" (ex: conduite longue, vélo intense), INTERDIT de placer une session d'étude dense ou des "nouveaux chapitres" dans l'heure qui suit l'arrivée. Préfère du repos ou de l'étude passive.
 
 Exemple concret : un job le samedi 09:00 → 17:00 avec lieu
-"Luxembourg" et un trajet habituel "Strasbourg-Luxembourg : 150 min"
-→ tu places un trajet aller de 06:30 → 09:00 et un trajet retour
-17:00 → 19:30. Tu NE traverses PAS les frontières du job lui-même.
+"Luxembourg" et un trajet "Strasbourg-Luxembourg : 150 min"
+→ tu places un trajet aller de 06:30 → 09:00 et un retour 17:00 → 19:30.
 </LOGISTIQUE_TRAJETS>
 
 <PEDAGOGIE_ET_RYTHME>
@@ -456,31 +450,19 @@ def generate_schedule_from_ai(
         )
 
     # Phase 2 (sans session, lente) : appel Gemini sur données pures
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError as exc:
-        raise RuntimeError("Package `google-genai` non installé.") from exc
+    from services.gemini_utils import call_llm
 
-    client = genai.Client(api_key=_gemini_key)
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=_gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
-            ),
-        ),
+    text_response = call_llm(
+        api_key=_gemini_key,
+        model=_gemini_model,
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.2,
         context="planner_generate",
     )
 
-    text_response = getattr(response, "text", "") or ""
     if not text_response.strip():
-        raison = "Inconnue"
-        if hasattr(response, "candidates") and response.candidates:
-            raison = response.candidates[0].finish_reason
-        raise ValueError(f"Gemini a refusé de répondre. Code d'arrêt (finish_reason) : {raison}")
+        raise ValueError("L'IA a renvoyé une réponse vide.")
 
     # 4. Parsing JSON + validation stricte du schéma de planning.
     parsed = _parse_gemini_json(text_response)

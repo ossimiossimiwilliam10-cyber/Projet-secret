@@ -936,7 +936,7 @@ def generer_qcm(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    client, model = _get_gemini_client_and_model(session)
+    api_key, model = _get_api_key_and_model(session)
 
     current_sha = texte_sha256(texte)
     cache_ok = chap.qcm_cache and cache_is_valid(
@@ -950,9 +950,8 @@ def generer_qcm(
     if cache_ok and not force_regenerate:
         return list(chap.qcm_cache)
 
-    from google.genai import types  # type: ignore
-
-    prompt = f"""Génère {nb} QCM sur le chapitre « {chap.titre} » ({matiere}).
+    prompt = f"""JSON valide uniquement, pas de markdown.
+Génère {nb} QCM sur le chapitre « {chap.titre} » ({matiere}).
 
 Varie les types : définition, mécanisme, application, comparaison, cause/effet.
 Niveaux : 2 rappel + 2 compréhension + 1 synthèse.
@@ -974,21 +973,18 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
 ]
 """
 
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction="JSON valide uniquement, pas de markdown.",
-                response_mime_type="application/json",
-                temperature=0.4,
-            ),
-        ),
+    from services.gemini_utils import call_llm
+    text = call_llm(
+        api_key=api_key.strip(),
+        model=model,
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.4,
         context="qcm",
     )
-    text = (getattr(response, "text", "") or "").strip()
-    if not text:
-        raise ValueError("Gemini a renvoyé un QCM vide.")
+    
+    if not text.strip():
+        raise ValueError("L'IA a renvoyé un QCM vide.")
 
     qcm_list = _parse_json_array(text)
     cleaned = validate_qcm_questions(qcm_list)
@@ -1103,15 +1099,15 @@ def evaluer_quiz_ouvert(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    client, model = _get_gemini_client_and_model(session)
-    from google.genai import types  # type: ignore
+    api_key, model = _get_api_key_and_model(session)
 
     paires = "\n\n".join([
         f"Q{i+1} : {q}\nRéponse de l'étudiant : {r or '(pas de réponse)'}"
         for i, (q, r) in enumerate(zip(questions, reponses))
     ])
 
-    prompt = f"""Évalue les réponses libres d'un étudiant sur « {chap.titre} » ({matiere}).
+    prompt = f"""Correcteur bienveillant et exigeant. JSON valide uniquement.
+Évalue les réponses libres d'un étudiant sur « {chap.titre} » ({matiere}).
 
 RÉFÉRENCE (extrait du cours, à utiliser pour ta correction) :
 {texte[:30000]}
@@ -1137,19 +1133,15 @@ RETOURNE UNIQUEMENT un JSON :
 }}
 """
 
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction="Correcteur bienveillant et exigeant. JSON valide uniquement.",
-                response_mime_type="application/json",
-                temperature=0.2,
-            ),
-        ),
+    from services.gemini_utils import call_llm
+    text = call_llm(
+        api_key=api_key.strip(),
+        model=model,
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.2,
         context="evaluation_quiz",
     )
-    text = (getattr(response, "text", "") or "").strip()
     if not text:
         raise ValueError("Gemini n'a pas renvoyé d'évaluation.")
 

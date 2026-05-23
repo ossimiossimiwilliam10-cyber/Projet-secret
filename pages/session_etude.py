@@ -899,6 +899,10 @@ def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
                 # Si elle n'existe pas, on prévient Gemini.
                 fiche_cours = chapitre.fiche_ia if (chapitre and chapitre.fiche_ia) else "(Aucune fiche IA générée. Base ton évaluation sur le titre du chapitre uniquement.)"
 
+            if model_name.startswith("deepseek"):
+                st.error("L'évaluation audio avec la technique de Feynman n'est pas encore supportée par DeepSeek. Veuillez utiliser un modèle Gemini.")
+                return
+
             client = genai.Client(api_key=api_key)
 
             # 2. Sauvegarde temporaire du fichier audio
