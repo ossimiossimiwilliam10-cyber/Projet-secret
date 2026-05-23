@@ -475,7 +475,12 @@ def _render_etudes_vs_quota(session: Session, all_tasks: list[Tache]) -> None:
     total_fait = int(etude_min_fait + etude_min_partiel)
 
     profil = session.query(Utilisateur).first()
-    cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+    if profil is None:
+        # DB fraîche sans utilisateur : on évite le crash en affichant
+        # un placeholder neutre. L'app suppose normalement un user singleton.
+        cible_hebdo_min = 0
+    else:
+        cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
     if cible_hebdo_min <= 0:
         return
 

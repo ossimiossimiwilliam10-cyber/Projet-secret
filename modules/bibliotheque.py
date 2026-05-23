@@ -903,10 +903,20 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
             if not pdfs:
                 st.info("Aucun document associé.")
             else:
+                import html as _html
                 for idx, pdf_info in enumerate(pdfs):
                     col_p1, col_p2 = st.columns([4, 1])
                     with col_p1:
-                        st.markdown(f"📎 **{pdf_info.get('label', 'Document')}**\n<small>{pdf_info.get('path')}</small>", unsafe_allow_html=True)
+                        # Echappement HTML : label vient de l'utilisateur,
+                        # path est généré par nous (safe) mais on échappe
+                        # par défense en profondeur.
+                        label_safe = _html.escape(str(pdf_info.get('label', 'Document')))
+                        path_safe = _html.escape(str(pdf_info.get('path', '')))
+                        st.markdown(
+                            f"📎 <strong>{label_safe}</strong><br>"
+                            f"<small>{path_safe}</small>",
+                            unsafe_allow_html=True,
+                        )
                     with col_p2:
                         if st.button("🗑️", key=f"del_pdf_{chap.id}_{idx}"):
                             try:
