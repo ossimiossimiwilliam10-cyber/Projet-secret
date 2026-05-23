@@ -21,8 +21,7 @@ from datetime import date
 
 import streamlit as st
 
-from database.db import session_scope
-from database.models import CheckInQuotidien
+from database import CheckInQuotidien, session_scope
 
 
 def render_checkin_quotidien_widget(

@@ -21,8 +21,7 @@ from typing import Any
 
 import streamlit as st
 
-from database.db import get_session
-from database.models import CheckInQuotidien, Semaine, Tache
+from database import CheckInQuotidien, Semaine, Tache, get_session
 from services.revision_service import (
     chapitres_par_jour_futur,
     dette_revision,

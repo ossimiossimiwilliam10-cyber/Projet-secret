@@ -13,8 +13,7 @@ from typing import Any
 import streamlit as st
 from sqlalchemy.orm import Session
 
-from database.db import get_session, session_scope
-from database.models import CheckInQuotidien, Utilisateur, Semaine, Tache
+from database import CheckInQuotidien, Utilisateur, Semaine, Tache, get_session, session_scope
 from services.ai_planner import (
     detecter_chapitres_manquants,
     generate_schedule_from_ai,
@@ -67,12 +66,6 @@ TYPE_ICONS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _get_current_week(session: Session) -> Semaine | None:
-    today = datetime.date.today()
-    iso_year, iso_week, _ = today.isocalendar()
-    return session.query(Semaine).filter_by(annee=iso_year, numero_semaine=iso_week).first()
-
-
 def _str_to_time(time_str: str) -> datetime.time:
     """Convertit 'HH:MM' en objet datetime.time."""
     h, m = map(int, time_str.split(":"))

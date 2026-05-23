@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import datetime
 import streamlit as st
-from database.db import get_session, session_scope
-from database.models import Job, Utilisateur
+from database import Job, Utilisateur, get_session, session_scope
 from utils.helpers import get_or_create_current_week
 
 JOURS = [

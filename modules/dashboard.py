@@ -17,8 +17,7 @@ from streamlit.components.v1 import html as st_html
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database.db import get_session
-from database.models import Chapitre, Matiere, Semaine, Tache, Utilisateur
+from database import Chapitre, Matiere, Semaine, Tache, Utilisateur, get_session
 from services.gamification_service import (
     progression_niveau,
     NIVEAU_MAX,

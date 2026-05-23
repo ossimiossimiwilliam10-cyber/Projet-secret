@@ -21,8 +21,7 @@ from datetime import date
 
 import streamlit as st
 
-from database.db import get_session, session_scope
-from database.models import Chapitre, Matiere
+from database import Chapitre, Matiere, get_session, session_scope
 from services import revision_service as rs
 from services.optimistic_lock import ConflictError, update_chapitre_safe
 from services.profil_service import get_gemini_credentials
