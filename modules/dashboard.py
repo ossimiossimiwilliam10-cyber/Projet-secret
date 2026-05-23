@@ -785,7 +785,16 @@ def _render_kpis(session: Session) -> None:
 # ===========================================================================
 def _render_progression_cours(session: Session) -> None:
     st.subheader("Maîtrise par matière")
-    matieres_actives = session.query(Matiere).filter_by(actif=True).all()
+    # Eager loading des chapitres : sans ça on aurait 1 query par matière
+    # pour itérer `m.chapitres` dans la boucle.
+    from sqlalchemy.orm import selectinload
+
+    matieres_actives = (
+        session.query(Matiere)
+        .options(selectinload(Matiere.chapitres))
+        .filter_by(actif=True)
+        .all()
+    )
 
     data = []
     for m in matieres_actives:

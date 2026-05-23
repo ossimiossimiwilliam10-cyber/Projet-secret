@@ -88,6 +88,9 @@ def test_save_cree_les_taches(setup_engine):
     assert taches[0].heure_debut == dt.time(8, 30)
     assert taches[0].heure_fin == dt.time(10, 0)
     assert taches[0].chapitre_ids == [12, 13]
+    # Anti-régression : duree_min DOIT être calculée à l'insert pour que
+    # les agrégations SQL (sum(Tache.duree_min)) fonctionnent côté Dashboard.
+    assert taches[0].duree_min == 90  # 08:30 → 10:00
     s.close()
 
 

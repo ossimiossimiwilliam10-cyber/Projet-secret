@@ -479,8 +479,15 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
                 st.toast(f"Lissage : {nb_d} décalage(s)", icon="🪄")
                 if nb_d > 0:
                     st.rerun()
-            except Exception as exc:  # noqa: BLE001
+            except (ValueError, KeyError) as exc:
                 st.error(f"❌ Erreur lors du lissage : {exc}")
+            except Exception as exc:  # noqa: BLE001
+                import logging
+                logging.getLogger("revisions").exception("lissage failed")
+                st.error(
+                    f"❌ Erreur inattendue lors du lissage : {exc}. "
+                    "Consulte les logs pour le détail."
+                )
 
         with st.expander(
             f"🔎 Détail des {len(jours_problematiques)} jour(s) à anticiper",

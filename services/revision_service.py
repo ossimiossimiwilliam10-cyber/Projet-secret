@@ -206,7 +206,15 @@ def chapitres_a_reviser(
     if date_max is None:
         date_max = date.today()
 
-    query = session.query(Chapitre)
+    from sqlalchemy.orm import selectinload
+
+    # Eager-load matiere_obj : les callers (ai_planner, UI revisions) lisent
+    # systématiquement `chap.matiere_obj.nom` dans la boucle → sans cet
+    # `selectinload`, on payerait 1 requête par chapitre dû.
+    query = (
+        session.query(Chapitre)
+        .options(selectinload(Chapitre.matiere_obj))
+    )
     if inclure_jamais_revises:
         query = query.filter(
             (Chapitre.date_prochaine.is_(None))
@@ -430,7 +438,15 @@ def projeter_tous_chapitres(
     today = today or date.today()
     horizon = today + timedelta(days=horizon_jours)
 
-    query = session.query(Chapitre).filter(Chapitre.date_prochaine.isnot(None))
+    # Eager-load la matière de chaque chapitre : sinon `chap.matiere_obj.nom`
+    # dans la boucle ci-dessous générerait 1 requête par chapitre (N+1).
+    from sqlalchemy.orm import selectinload
+
+    query = (
+        session.query(Chapitre)
+        .options(selectinload(Chapitre.matiere_obj))
+        .filter(Chapitre.date_prochaine.isnot(None))
+    )
     if matiere_ids is not None:
         if not matiere_ids:
             return {}
