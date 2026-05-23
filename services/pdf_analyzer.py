@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -487,7 +487,7 @@ def apply_analysis_to_matiere(
     pdf_entry = {
         "path": pdf_path,
         "label": pdf_label or "Document",
-        "uploaded_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
     new_ids: list[int] = []
