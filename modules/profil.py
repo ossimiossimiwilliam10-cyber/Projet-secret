@@ -217,15 +217,21 @@ def render() -> None:
 
     from services.scheduler_engine import calculer_velocite_historique
 
+    profil_existe = False
+    xp_total = 0
+    nb_seances_sport = 0
+    velocite_mult = 1.0
+    velocite_msg = ""
     with get_session() as session:
         profil_db = session.query(Utilisateur).first()
-        velocite_mult = 1.0
-        velocite_msg = ""
         if profil_db:
+            profil_existe = True
             velocite_mult, velocite_msg = calculer_velocite_historique(session, profil_db.id)
+            if profil_db.gamification:
+                xp_total = profil_db.gamification.xp or 0
+                nb_seances_sport = profil_db.gamification.nb_seances_sport_total or 0
 
-    if profil_db and profil_db.gamification:
-        xp_total = profil_db.gamification.xp or 0
+    if profil_existe and xp_total is not None:
         prog = progression_niveau(xp_total)
 
         col_lvl, col_xp, col_sport = st.columns([1, 2, 1])
@@ -236,7 +242,7 @@ def render() -> None:
             st.write(f"✨ {prog['xp_dans_palier']:,} / {prog['xp_palier_taille']:,} XP")
             st.progress(ratio)
         with col_sport:
-            st.metric("🏋️ Séances Sport", profil_db.gamification.nb_seances_sport_total or 0)
+            st.metric("🏋️ Séances Sport", nb_seances_sport)
         st.divider()
 
     st.title("👤 Utilisateur étudiant")
@@ -245,7 +251,7 @@ def render() -> None:
         "Pas besoin de tout remplir d'un coup — tu peux y revenir."
     )
 
-    if profil_db:
+    if profil_existe:
         pct = int(velocite_mult * 100)
         color = "green" if pct >= 100 else "orange" if pct >= 80 else "red"
         st.info(f"**Vélocité historique : :{color}[{pct}%]** — {velocite_msg}")
