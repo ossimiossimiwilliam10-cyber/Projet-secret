@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
 from services.gemini_utils import gemini_call_with_retry
+from services.planner_validator import validate_planning
 from services.profil_service import get_gemini_credentials
 from services.scheduler_engine import (
     JOURS,
@@ -467,8 +468,9 @@ def generate_schedule_from_ai(
             raison = response.candidates[0].finish_reason
         raise ValueError(f"Gemini a refusé de répondre. Code d'arrêt (finish_reason) : {raison}")
 
-    # 4. Nettoyage et Parsing robuste du JSON
-    return _parse_gemini_json(text_response)
+    # 4. Parsing JSON + validation stricte du schéma de planning.
+    parsed = _parse_gemini_json(text_response)
+    return validate_planning(parsed)
 
 
 def _parse_gemini_json(text: str) -> dict[str, Any]:
