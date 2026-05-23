@@ -304,6 +304,11 @@ class Chapitre(Base):
     # --- Notes personnelles ----------------------------------------------
     notes = Column(Text, default="")
 
+    # --- Versioning optimiste (ETag) -------------------------------------
+    # Incrémenté à chaque mutation côté UI via `update_chapitre_safe`.
+    # Permet de détecter les écrasements concurrents (deux onglets ouverts).
+    version = Column(Integer, default=1, nullable=False)
+
     # --- Horodatages -----------------------------------------------------
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
