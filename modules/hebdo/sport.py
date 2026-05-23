@@ -1,7 +1,7 @@
 """Onglet **Sport** de la saisie hebdomadaire.
 
-Permet de planifier les séances d'entraînement de la semaine (durée, intensité, créneau).
-Optimisé avec des icônes, des types de sport et un calculateur de charge.
+Planifie tes séances d'entraînement (discipline, durée, intensité, créneau).
+Désormais synchronisé avec le sélecteur de semaine partagé.
 """
 
 from __future__ import annotations
@@ -13,16 +13,16 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session
 
-from database.db import get_session, session_scope
-from database.models import SaisieHebdo, Semaine
+from database import SaisieHebdo, Semaine, get_session, session_scope
+from utils.helpers import get_or_create_week_for_offset
 
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
 INTENSITES = [
-    "🟢 Légère (Récupération active)", 
-    "🟡 Modérée (Entraînement classique)", 
-    "🔴 Intense (Sparring / Max PR)"
+    "🟢 Légère (Récupération active)",
+    "🟡 Modérée (Entraînement classique)",
+    "🔴 Intense (Sparring / Max PR)",
 ]
 
 TYPES_SPORT = {
@@ -35,88 +35,204 @@ TYPES_SPORT = {
     "🎾 Sport de raquette": "Mixte",
     "⚽ Sport collectif": "Mixte",
     "🤸‍♂️ Gymnastique": "Force/Souplesse",
-    "🎯 Autre": "Autre"
+    "🎯 Autre": "Autre",
 }
 
 CRENEAUX = ["Peu importe", "Matin", "Midi", "Après-midi", "Soir"]
+JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _get_current_saisie(session: Session) -> SaisieHebdo | None:
-    """Récupère la saisie de la semaine courante."""
-    today = datetime.date.today()
-    iso_year, iso_week, _ = today.isocalendar()
-    semaine = session.query(Semaine).filter_by(annee=iso_year, numero_semaine=iso_week).first()
-    if semaine:
-        return session.query(SaisieHebdo).filter_by(semaine_id=semaine.id).first()
-    return None
+def _get_saisie_for_offset(session: Session, offset: int) -> SaisieHebdo | None:
+    """Récupère la saisie pour l'offset de semaine donné (partagé avec Études)."""
+    _, saisie, _ = get_or_create_week_for_offset(session, offset_weeks=offset)
+    return saisie
 
-def _afficher_resume_charge(sport_config: list[dict[str, Any]]) -> None:
-    """Affiche un résumé visuel de la charge sportive prévue."""
+
+def _get_previous_week_sport(session, current_offset: int) -> list[dict[str, Any]]:
+    """Récupère le sport_config de la semaine précédente."""
+    try:
+        _, prev_saisie, _ = get_or_create_week_for_offset(session, offset_weeks=current_offset - 1)
+        return prev_saisie.sport_config or []
+    except Exception:
+        return []
+
+
+def _compute_stats(sport_config: list[dict[str, Any]]) -> dict:
+    """Calcule les stats de la semaine sportive."""
     if not sport_config:
-        st.info("Aucune séance prévue pour le moment.")
-        return
+        return {"total_min": 0, "nb_intense": 0, "nb_moderee": 0, "nb_legere": 0, "nb_seances": 0}
 
     total_min = sum(int(s.get("duree_min", 0)) for s in sport_config)
     nb_intense = sum(1 for s in sport_config if "🔴" in s.get("intensite", ""))
     nb_moderee = sum(1 for s in sport_config if "🟡" in s.get("intensite", ""))
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Temps total", f"{total_min // 60}h{total_min % 60:02d}")
-    col2.metric("Séances intenses", nb_intense)
-    col3.metric("Séances modérées", nb_moderee)
+    nb_legere = sum(1 for s in sport_config if "🟢" in s.get("intensite", ""))
+    return {
+        "total_min": total_min,
+        "nb_intense": nb_intense,
+        "nb_moderee": nb_moderee,
+        "nb_legere": nb_legere,
+        "nb_seances": len(sport_config),
+    }
+
+
+def _render_grille_hebdo(sport_config: list[dict[str, Any]]) -> None:
+    """Affiche une mini-grille Lundi→Dimanche avec les séances positionnées."""
+    if not sport_config:
+        st.caption("Aucune séance prévue cette semaine.")
+        return
+
+    # Regroupement par créneau préféré (approximation du jour)
+    # On affiche par créneau plutôt que par jour car on n'a pas de jour explicite
+    by_creneau: dict[str, list[dict]] = {}
+    for s in sport_config:
+        creneau = s.get("creneau_pref", "Peu importe")
+        by_creneau.setdefault(creneau, []).append(s)
+
+    cols = st.columns(len(JOURS))
+    jours_abbr = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"]
+
+    # Répartition simple : les séances sont distribuées sur les jours
+    # (l'IA les positionnera précisément lors de la génération)
+    all_sessions: list[dict] = []
+    for s in sport_config:
+        all_sessions.append(s)
+
+    for i, (col, jour) in enumerate(zip(cols, jours_abbr)):
+        with col:
+            st.markdown(f"**{jour}**")
+            # Affiche les séances dont le créneau correspond au moment de la journée
+            # Matin → plutôt Lu/Ma/Me, Soir → plutôt Je/Ve/Sa
+            # C'est une approximation visuelle
+            sessions_ce_jour = []
+            for s in all_sessions:
+                creneau = s.get("creneau_pref", "Peu importe")
+                if creneau == "Matin" and i < 2:
+                    sessions_ce_jour.append(s)
+                elif creneau == "Midi" and 1 <= i <= 3:
+                    sessions_ce_jour.append(s)
+                elif creneau == "Après-midi" and 2 <= i <= 5:
+                    sessions_ce_jour.append(s)
+                elif creneau == "Soir" and i >= 3:
+                    sessions_ce_jour.append(s)
+                elif creneau == "Peu importe":
+                    sessions_ce_jour.append(s)
+
+            if sessions_ce_jour:
+                # Dédupliquer
+                seen = set()
+                for s in sessions_ce_jour[:2]:  # max 2 par jour dans la grille
+                    key = s.get("type", "")
+                    if key not in seen:
+                        seen.add(key)
+                        duree = s.get("duree_min", 60)
+                        intensite_icon = "🔴" if "🔴" in s.get("intensite", "") else "🟡" if "🟡" in s.get("intensite", "") else "🟢"
+                        type_icon = s.get("type", "🎯").split(" ")[0] if s.get("type") else "🎯"
+                        st.caption(f"{type_icon} {intensite_icon} {duree//60}h{duree%60:02d}")
+            else:
+                st.caption("—")
+
 
 # ---------------------------------------------------------------------------
 # Rendu UI
 # ---------------------------------------------------------------------------
 def render() -> None:
     st.title("🥊 Sport & Entraînement")
-    st.caption("Planifie tes séances physiques. L'IA évitera de placer des révisions denses juste après une séance intense.")
+    st.caption(
+        "Planifie tes séances physiques. "
+        "L'IA évitera de placer des révisions denses après une séance intense."
+    )
+
+    # --- Sélecteur de semaine (synchronisé avec Études) ---
+    offset_courant = int(st.session_state.get("semaine_target_offset", 0))
+    options = {0: "📅 Cette semaine", 1: "📆 Semaine prochaine"}
+    nouveau_offset = st.radio(
+        "Semaine à préparer",
+        options=list(options.keys()),
+        format_func=lambda k: options[k],
+        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
+        horizontal=True,
+        key="sport_semaine_target",
+    )
+    if nouveau_offset != offset_courant:
+        st.session_state["semaine_target_offset"] = nouveau_offset
+        st.rerun()
 
     with get_session() as session:
-        saisie = _get_current_saisie(session)
-        
+        saisie = _get_saisie_for_offset(session, offset_courant)
         if not saisie:
-            st.warning("⚠️ Ouvre d'abord l'onglet 'Études' pour initialiser la semaine en cours.")
+            st.warning("⚠️ Ouvre d'abord l'onglet 'Études' pour initialiser la semaine.")
             return
 
-        # Récupération de la configuration existante
         sport_config_db: list[dict[str, Any]] = saisie.sport_config or []
         saisie_id = saisie.id
 
-    # UI
-    st.subheader("Résumé de la semaine")
-    _afficher_resume_charge(sport_config_db)
+        stats = _compute_stats(sport_config_db)
+
+    # --- Résumé + Grille ---
+    st.subheader("📊 Résumé de la semaine")
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("⏱️ Volume", f"{stats['total_min'] // 60}h{stats['total_min'] % 60:02d}")
+    col2.metric("🔴 Intenses", stats["nb_intense"])
+    col3.metric("🟡 Modérées", stats["nb_moderee"])
+    col4.metric("🟢 Légères", stats["nb_legere"])
+    col5.metric("📅 Séances", stats["nb_seances"])
+
+    # Alerte récupération
+    if stats["nb_intense"] >= 3:
+        st.warning(
+            f"⚠️ **{stats['nb_intense']} séances intenses** cette semaine. "
+            "L'IA évitera les révisions denses dans les 2h suivant ces créneaux. "
+            "Pense à bien dormir (≥ 8h) pour la récupération."
+        )
+    elif stats["nb_seances"] == 0:
+        st.info("💡 Aucune séance prévue. Même une séance légère aide à la concentration.")
+    elif stats["nb_seances"] >= 1:
+        st.success(
+            f"✅ {stats['nb_seances']} séance(s) prévue(s) — "
+            f"{'bon équilibre avec ' + str(stats['nb_legere']) + ' récup(s)' if stats['nb_legere'] > 0 else 'pense à inclure une récupération active.'}"
+        )
+
+    # Grille hebdo
+    st.caption("**📅 Aperçu quotidien** (indicatif — l'IA positionnera précisément) :")
+    _render_grille_hebdo(sport_config_db)
+
+    # --- Bouton reprendre semaine précédente ---
+    col_prev, _ = st.columns([1, 3])
+    with col_prev:
+        if st.button("📋 Reprendre mes séances de la semaine dernière", width="stretch"):
+            prev_config = _get_previous_week_sport(session, offset_courant)
+            if prev_config:
+                with session_scope() as ws:
+                    s = ws.get(SaisieHebdo, saisie_id)
+                    s.sport_config = prev_config
+                st.toast("Séances reprises !", icon="📋")
+                st.rerun()
+            else:
+                st.toast("Aucune séance la semaine dernière.", icon="ℹ️")
+
     st.divider()
 
+    # --- Éditeur de séances ---
     st.subheader("Séances prévues")
-    
-    # Préparation robuste du dataframe
+
     df_sport = pd.DataFrame(sport_config_db)
-    
     if df_sport.empty:
         df_sport = pd.DataFrame([{
             "type": "🏃‍♂️ Course / Cardio",
-            "nom": "", 
-            "duree_min": 60, 
-            "intensite": INTENSITES[1], 
-            "creneau_pref": "Soir"
+            "nom": "",
+            "duree_min": 60,
+            "intensite": INTENSITES[1],
+            "creneau_pref": "Soir",
         }])
     else:
-        # Migration : ajout des colonnes manquantes
-        if "type" not in df_sport.columns:
-            df_sport["type"] = "🎯 Autre"
-        if "nom" not in df_sport.columns:
-            df_sport["nom"] = ""
-        if "duree_min" not in df_sport.columns:
-            df_sport["duree_min"] = 60
-        if "intensite" not in df_sport.columns:
-            df_sport["intensite"] = INTENSITES[1]
-        if "creneau_pref" not in df_sport.columns:
-            df_sport["creneau_pref"] = "Peu importe"
+        for col_name in ["type", "nom", "duree_min", "intensite", "creneau_pref"]:
+            if col_name not in df_sport.columns:
+                df_sport[col_name] = "" if col_name in ("type", "nom", "intensite", "creneau_pref") else 60
 
-    # Ordre des colonnes
     cols = ["type", "nom", "duree_min", "intensite", "creneau_pref"]
     df_sport = df_sport[cols]
 
@@ -125,17 +241,25 @@ def render() -> None:
         num_rows="dynamic",
         use_container_width=True,
         column_config={
-            "type": st.column_config.SelectboxColumn("Discipline", options=list(TYPES_SPORT.keys()), required=True),
-            "nom": st.column_config.TextColumn("Détails (ex: Séance Jambes)", required=False),
-            "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=60),
-            "intensite": st.column_config.SelectboxColumn("Intensité", options=INTENSITES, default=INTENSITES[1]),
-            "creneau_pref": st.column_config.SelectboxColumn("Créneau préféré", options=CRENEAUX, default="Peu importe")
+            "type": st.column_config.SelectboxColumn(
+                "Discipline", options=list(TYPES_SPORT.keys()), required=True,
+            ),
+            "nom": st.column_config.TextColumn("Détails (ex: Séance Jambes)"),
+            "duree_min": st.column_config.NumberColumn(
+                "Durée (min)", min_value=15, step=15, default=60,
+            ),
+            "intensite": st.column_config.SelectboxColumn(
+                "Intensité", options=INTENSITES, default=INTENSITES[1],
+            ),
+            "creneau_pref": st.column_config.SelectboxColumn(
+                "Créneau préféré", options=CRENEAUX, default="Peu importe",
+            ),
         },
-        key="sport_editor_v4"
+        key="sport_editor_v5",
     )
 
     st.divider()
-    
+
     col_save, col_info = st.columns([1, 2])
     with col_save:
         if st.button("💾 Enregistrer mes séances", type="primary", use_container_width=True):
@@ -147,17 +271,20 @@ def render() -> None:
                         "nom": str(row.get("nom", "")).strip(),
                         "duree_min": int(row.get("duree_min", 60)),
                         "intensite": str(row.get("intensite", INTENSITES[1])),
-                        "creneau_pref": str(row.get("creneau_pref", "Peu importe"))
+                        "creneau_pref": str(row.get("creneau_pref", "Peu importe")),
                     })
-
             try:
                 with session_scope() as write_session:
-                    saisie_to_update = write_session.get(SaisieHebdo, saisie_id)
-                    saisie_to_update.sport_config = sport_propre
-                st.success("✅ Tes séances de sport sont enregistrées !")
+                    s = write_session.get(SaisieHebdo, saisie_id)
+                    s.sport_config = sport_propre
+                st.success("✅ Séances enregistrées !")
+                st.toast("Sport sauvegardé", icon="💾")
                 st.rerun()
             except Exception as e:
-                st.error(f"Erreur lors de la sauvegarde : {e}")
-    
+                st.error(f"Erreur : {e}")
+
     with col_info:
-        st.caption("💡 L'intensité influence la récupération : une séance 🔴 bloque les révisions théoriques intenses pendant 2h après le sport.")
+        st.caption(
+            "💡 L'intensité influence la récupération : "
+            "une séance 🔴 bloque les révisions théoriques intenses pendant 2h après le sport."
+        )

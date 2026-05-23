@@ -41,11 +41,12 @@ MAITRISE_BUMP_PARTIEL = 2
 # Helpers
 # ---------------------------------------------------------------------------
 def _get_current_week(session: Session) -> Semaine | None:
-    today = datetime.date.today()
-    iso_year, iso_week, _ = today.isocalendar()
-    return session.query(Semaine).filter_by(
-        annee=iso_year, numero_semaine=iso_week,
-    ).first()
+    """Récupère la semaine correspondant au ``semaine_target_offset`` (sync avec Études)."""
+    import streamlit as st
+    from utils.helpers import get_or_create_week_for_offset
+    offset = int(st.session_state.get("semaine_target_offset", 0))
+    semaine, _, _ = get_or_create_week_for_offset(session, offset_weeks=offset)
+    return semaine
 
 
 def _jour_from_date(d: datetime.date) -> str:
