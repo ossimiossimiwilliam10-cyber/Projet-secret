@@ -79,6 +79,11 @@ MODELES_GEMINI: list[str] = [
     "gemini-2.0-flash",
 ]
 
+# Liste unifiée utilisée dans l'UI (Gemini + DeepSeek).
+MODELES_IA: list[str] = MODELES_GEMINI + [
+    "deepseek-v4-pro",
+]
+
 
 # ---------------------------------------------------------------------------
 # Accès BD — détaché de la session pour éviter les soucis de lazy-load Streamlit
@@ -294,6 +299,10 @@ def test_gemini_connection(api_key: str, model: str, max_retries: int = 3) -> tu
     raison_key = raison_brute.split(".")[-1].upper()
     raison_fr = raisons_fr.get(raison_key, f"Code Gemini inconnu : {raison_brute}")
     return False, f"Le modèle a refusé de répondre. {raison_fr}"
+
+
+# Alias rétrocompatible — le code UI appelle `test_llm_connection`.
+test_llm_connection = test_gemini_connection
 
 
 # ---------------------------------------------------------------------------
@@ -802,7 +811,7 @@ def render() -> None:
 
     payload = {
         "nom": (nom or "").strip(),
-        "prenom": (prenom or "").strip(),
+        "prenom": (nom or "").strip(),
         "heure_lever": heure_lever,
         "heure_coucher": heure_coucher,
         "heures_sommeil_cible": float(heures_sommeil),
