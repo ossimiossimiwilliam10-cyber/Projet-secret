@@ -124,13 +124,24 @@ def _save_planning_to_db(semaine_id: int, planning_json: dict[str, Any]) -> int:
         for jour in JOURS_FR:
             for t_data in planning_jours.get(jour, []) or []:
                 try:
+                    h_debut = _str_to_time(t_data["heure_debut"])
+                    h_fin = _str_to_time(t_data["heure_fin"])
+                    # duree_min : calculée dès l'insert pour que les
+                    # agrégations SQL (sum(Tache.duree_min)) fonctionnent.
+                    # Sans ça, le KPI heures-travail-total du dashboard
+                    # renvoyait toujours 0.
+                    duree = (
+                        (h_fin.hour * 60 + h_fin.minute)
+                        - (h_debut.hour * 60 + h_debut.minute)
+                    )
                     nouvelle = Tache(
                         semaine_id=semaine_id,
                         type=str(t_data.get("type") or "autre").lower(),
                         titre=t_data.get("titre", "Tâche sans nom"),
                         jour=jour,
-                        heure_debut=_str_to_time(t_data["heure_debut"]),
-                        heure_fin=_str_to_time(t_data["heure_fin"]),
+                        heure_debut=h_debut,
+                        heure_fin=h_fin,
+                        duree_min=max(0, duree),
                         obligatoire=bool(t_data.get("obligatoire", False)),
                         justification_ia=t_data.get("justification", "") or "",
                         statut="a_faire",
@@ -141,7 +152,10 @@ def _save_planning_to_db(semaine_id: int, planning_json: dict[str, Any]) -> int:
                 except (KeyError, ValueError, TypeError) as exc:
                     # Une tâche mal formée par Gemini ne doit pas faire
                     # exploser tout l'import.
-                    print(f"[generation] Tâche ignorée ({jour}) : {exc} — {t_data}")
+                    import logging
+                    logging.getLogger("generation").warning(
+                        "Tache ignoree (%s): %s -- %s", jour, exc, t_data,
+                    )
     return nb_taches
 
 
