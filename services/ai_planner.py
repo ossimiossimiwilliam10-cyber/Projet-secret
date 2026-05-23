@@ -18,6 +18,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
+from services.gemini_utils import gemini_call_with_retry
+from services.planner_validator import validate_planning
 from services.profil_service import get_gemini_credentials
 from services.scheduler_engine import (
     JOURS,
@@ -448,13 +450,15 @@ def generate_schedule_from_ai(
 
     client = genai.Client(api_key=_gemini_key)
 
-    response = client.models.generate_content(
-        model=profil.systeme.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.2,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=_gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
+        )
     )
 
     text_response = getattr(response, "text", "") or ""
@@ -464,8 +468,9 @@ def generate_schedule_from_ai(
             raison = response.candidates[0].finish_reason
         raise ValueError(f"Gemini a refusé de répondre. Code d'arrêt (finish_reason) : {raison}")
 
-    # 4. Nettoyage et Parsing robuste du JSON
-    return _parse_gemini_json(text_response)
+    # 4. Parsing JSON + validation stricte du schéma de planning.
+    parsed = _parse_gemini_json(text_response)
+    return validate_planning(parsed)
 
 
 def _parse_gemini_json(text: str) -> dict[str, Any]:
@@ -707,13 +712,15 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
     client = genai.Client(api_key=_gemini_key)
-    response = client.models.generate_content(
-        model=profil.systeme.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=_gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
+        )
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
@@ -893,13 +900,15 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
     client = genai.Client(api_key=_gemini_key)
-    response = client.models.generate_content(
-        model=profil.systeme.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=_gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
+        )
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():

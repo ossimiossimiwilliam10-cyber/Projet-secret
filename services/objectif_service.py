@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import Chapitre, Objectif, Utilisateur
+from services.gemini_utils import gemini_call_with_retry
 from services.profil_service import get_gemini_credentials
 
 
@@ -212,13 +213,15 @@ def proposer_strategie(
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
     client = genai.Client(api_key=_gemini_key)
-    response = client.models.generate_content(
-        model=profil.systeme.gemini_model or "gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=_gemini_model or "gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
+        )
     )
 
     text = getattr(response, "text", "") or ""

@@ -8,6 +8,7 @@ import streamlit as st
 
 from database.db import get_session, session_scope
 from database.models import Utilisateur
+from services.gemini_utils import gemini_call_with_retry
 from services.profil_service import get_gemini_credentials
 
 def _parse_gemini_json(text: str) -> dict:
@@ -47,13 +48,15 @@ RETOURNE UNIQUEMENT UN JSON AU FORMAT SUIVANT :
 }
 """
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model,
-        contents=[prompt, image],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.1,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=[prompt, image],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
     )
 
     text = getattr(response, "text", "") or ""

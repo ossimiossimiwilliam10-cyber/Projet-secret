@@ -34,10 +34,15 @@ from database.db import BASE_DIR
 from database.models import Chapitre, Utilisateur
 from services.cache_versioning import (
     FICHE_PROMPT_VERSION,
+    QCM_PROMPT_VERSION,
+    QUIZ_PROMPT_VERSION,
+    cache_is_valid,
     fiche_cache_is_valid,
     texte_sha256,
 )
+from services.gemini_utils import gemini_call_with_retry
 from services.profil_service import get_gemini_credentials
+from services.qcm_validator import validate_qcm_questions, validate_quiz_questions
 
 
 # ===========================================================================
@@ -873,13 +878,15 @@ R2. …
 
     msg = f"Localise « {chap.titre} » dans le document et génère la fiche.\n\nDOCUMENT :\n{texte}"
 
-    response = client.models.generate_content(
-        model=model,
-        contents=msg,
-        config=types.GenerateContentConfig(
-            system_instruction=systeme,
-            temperature=0.3,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=msg,
+            config=types.GenerateContentConfig(
+                system_instruction=systeme,
+                temperature=0.3,
+            ),
+        )
     )
     fiche = (getattr(response, "text", "") or "").strip()
     if not fiche:
@@ -909,13 +916,23 @@ def generer_qcm(
     if chap is None:
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
-    if chap.qcm_cache and not force_regenerate:
-        return list(chap.qcm_cache)
-
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
+
+    current_sha = texte_sha256(texte)
+    cache_ok = chap.qcm_cache and cache_is_valid(
+        cached_model=chap.qcm_cache_model,
+        cached_prompt_version=chap.qcm_cache_prompt_version,
+        cached_texte_sha=chap.qcm_cache_texte_sha,
+        current_model=model,
+        current_prompt_version=QCM_PROMPT_VERSION,
+        current_texte_sha=current_sha,
+    )
+    if cache_ok and not force_regenerate:
+        return list(chap.qcm_cache)
+
     from google.genai import types  # type: ignore
 
     prompt = f"""Génère {nb} QCM sur le chapitre « {chap.titre} » ({matiere}).
@@ -940,43 +957,28 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
 ]
 """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction="JSON valide uniquement, pas de markdown.",
-            response_mime_type="application/json",
-            temperature=0.4,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="JSON valide uniquement, pas de markdown.",
+                response_mime_type="application/json",
+                temperature=0.4,
+            ),
+        )
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
         raise ValueError("Gemini a renvoyé un QCM vide.")
 
     qcm_list = _parse_json_array(text)
-
-    # Validation + nettoyage
-    cleaned: list[dict[str, Any]] = []
-    for q in qcm_list:
-        if not isinstance(q, dict):
-            continue
-        question = str(q.get("question", "")).strip()
-        options = q.get("options") or []
-        correct = str(q.get("correct", "A")).strip().upper()[:1]
-        explication = str(q.get("explication", "")).strip()
-        if not question or not isinstance(options, list) or len(options) < 2:
-            continue
-        cleaned.append({
-            "question": question,
-            "options": [str(o) for o in options[:4]],
-            "correct": correct if correct in {"A", "B", "C", "D"} else "A",
-            "explication": explication,
-        })
-
-    if not cleaned:
-        raise ValueError("Aucune question valide n'a été extraite du JSON Gemini.")
+    cleaned = validate_qcm_questions(qcm_list)
 
     chap.qcm_cache = cleaned
+    chap.qcm_cache_model = model
+    chap.qcm_cache_prompt_version = QCM_PROMPT_VERSION
+    chap.qcm_cache_texte_sha = current_sha
     return cleaned
 
 
@@ -995,13 +997,23 @@ def generer_quiz_ouvert(
     if chap is None:
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
-    if chap.quiz_cache and not force_regenerate:
-        return list(chap.quiz_cache)
-
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
+
+    current_sha = texte_sha256(texte)
+    cache_ok = chap.quiz_cache and cache_is_valid(
+        cached_model=chap.quiz_cache_model,
+        cached_prompt_version=chap.quiz_cache_prompt_version,
+        cached_texte_sha=chap.quiz_cache_texte_sha,
+        current_model=model,
+        current_prompt_version=QUIZ_PROMPT_VERSION,
+        current_texte_sha=current_sha,
+    )
+    if cache_ok and not force_regenerate:
+        return list(chap.quiz_cache)
+
     from google.genai import types  # type: ignore
 
     prompt = f"""Génère EXACTEMENT {nb} questions ouvertes sur « {chap.titre} » ({matiere}).
@@ -1017,33 +1029,26 @@ RÈGLES DE SORTIE :
 - Une question par ligne, format : "N. Question"
 """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction="Professeur exigeant. Liste numérotée uniquement.",
-            temperature=0.4,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="Professeur exigeant. Liste numérotée uniquement.",
+                temperature=0.4,
+            ),
+        )
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
         raise ValueError("Gemini a renvoyé un quiz vide.")
 
-    questions: list[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        # Strip "1.", "1)", "1 -", "Q1.", "Q1)" prefixes
-        line = re.sub(r"^(Q?\d+)\s*[\.\)\-:]\s*", "", line).strip()
-        if line:
-            questions.append(line)
-    questions = questions[:nb]
-
-    if not questions:
-        raise ValueError("Aucune question extraite du texte renvoyé par Gemini.")
+    questions = validate_quiz_questions(text, max_questions=nb)
 
     chap.quiz_cache = questions
+    chap.quiz_cache_model = model
+    chap.quiz_cache_prompt_version = QUIZ_PROMPT_VERSION
+    chap.quiz_cache_texte_sha = current_sha
     return questions
 
 
@@ -1113,14 +1118,16 @@ RETOURNE UNIQUEMENT un JSON :
 }}
 """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction="Correcteur bienveillant et exigeant. JSON valide uniquement.",
-            response_mime_type="application/json",
-            temperature=0.2,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="Correcteur bienveillant et exigeant. JSON valide uniquement.",
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
+        )
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:

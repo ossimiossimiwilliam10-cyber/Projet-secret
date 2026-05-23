@@ -294,12 +294,18 @@ class Chapitre(Base):
     quiz_cache = Column(JSON, nullable=True)
     texte_cache = Column(Text, nullable=True)
     # Métadonnées de cache versionné — voir services.cache_versioning.
-    # Permettent d'invalider automatiquement la fiche quand le modèle
+    # Permettent d'invalider automatiquement les caches IA quand le modèle
     # Gemini, le prompt, ou le contenu PDF change.
     fiche_ia_model = Column(String(100), nullable=True)
     fiche_ia_prompt_version = Column(Integer, nullable=True)
     fiche_ia_texte_sha = Column(String(64), nullable=True)
     fiche_ia_generated_at = Column(DateTime, nullable=True)
+    qcm_cache_model = Column(String(100), nullable=True)
+    qcm_cache_prompt_version = Column(Integer, nullable=True)
+    qcm_cache_texte_sha = Column(String(64), nullable=True)
+    quiz_cache_model = Column(String(100), nullable=True)
+    quiz_cache_prompt_version = Column(Integer, nullable=True)
+    quiz_cache_texte_sha = Column(String(64), nullable=True)
 
     # --- Notes personnelles ----------------------------------------------
     notes = Column(Text, default="")
