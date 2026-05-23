@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from database.db import BASE_DIR
 from database.models import Chapitre, Utilisateur
+from services.profil_service import get_gemini_credentials
 
 
 # ===========================================================================
@@ -769,8 +770,8 @@ def _get_gemini_client_and_model(session: Session) -> tuple[Any, str]:
         ValueError: si la clé API ou le profil est manquant.
         RuntimeError: si le SDK google-genai n'est pas installé.
     """
-    profil = session.query(Utilisateur).first()
-    if not profil or not (profil.systeme.gemini_api_key or "").strip():
+    api_key, model = get_gemini_credentials(session)
+    if not api_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     try:
@@ -780,8 +781,7 @@ def _get_gemini_client_and_model(session: Session) -> tuple[Any, str]:
             "Package `google-genai` non installé. `pip install google-genai`."
         ) from exc
 
-    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
-    model = profil.systeme.gemini_model or "gemini-2.5-flash"
+    client = genai.Client(api_key=api_key)
     return client, model
 
 

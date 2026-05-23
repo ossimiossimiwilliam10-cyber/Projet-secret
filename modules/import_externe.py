@@ -8,6 +8,7 @@ import streamlit as st
 
 from database.db import get_session, session_scope
 from database.models import Utilisateur
+from services.profil_service import get_gemini_credentials
 
 def _parse_gemini_json(text: str) -> dict:
     s = text.strip()
@@ -65,7 +66,8 @@ def render() -> None:
 
     with get_session() as session:
         profil = session.query(Utilisateur).first()
-        if not profil or not profil.systeme.gemini_api_key:
+        api_key, model = get_gemini_credentials(session)
+        if not profil or not api_key:
             st.warning("⚠️ Clé API Gemini manquante. Configure ton profil d'abord.")
             return
 
@@ -81,8 +83,8 @@ def render() -> None:
                     image = Image.open(uploaded_file)
                     nouveaux_evenements = _extraire_planning_image_ia(
                         image,
-                        profil.systeme.gemini_api_key,
-                        profil.systeme.gemini_model
+                        api_key,
+                        model,
                     )
 
                     if nouveaux_evenements:

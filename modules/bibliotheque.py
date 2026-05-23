@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from database import Chapitre, Matiere, Utilisateur, UE, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
+from services.profil_service import get_gemini_credentials
 from services.revision_service import (
     initialiser_chapitre_pour_revision,
     label_couleur_status,
@@ -56,12 +57,9 @@ UE_COLORS_DEFAULT = [
 # Helpers d'accès BD
 # ---------------------------------------------------------------------------
 def _get_api_config() -> tuple[str, str]:
-    """Récupère la clé API et le modèle depuis le profil."""
+    """Récupère la clé API (déchiffrée) et le modèle depuis le profil."""
     with get_session() as session:
-        p = session.query(Utilisateur).first()
-        if not p or not p.systeme.gemini_api_key:
-            return "", "gemini-2.5-flash"
-        return p.systeme.gemini_api_key, p.systeme.gemini_model
+        return get_gemini_credentials(session)
 
 
 def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:

@@ -24,6 +24,7 @@ import streamlit as st
 from database.db import get_session, session_scope
 from database.models import Chapitre, Matiere
 from services import revision_service as rs
+from services.profil_service import get_gemini_credentials
 from services.gamification_service import (
     attribuer_xp_quiz,
     attribuer_xp_promotion_leitner,
@@ -873,15 +874,12 @@ def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
         try:
             # 1. On récupère la clé API ET le contenu du chapitre
             with get_session() as session:
-                profil = session.query(Utilisateur).first()
                 chapitre = session.get(Chapitre, chap_id)
-                
-                if not profil or not profil.systeme.gemini_api_key:
+                api_key, model_name = get_gemini_credentials(session)
+
+                if not api_key:
                     st.error("❌ Clé API Gemini introuvable.")
                     return
-                
-                api_key = profil.systeme.gemini_api_key.strip()
-                model_name = profil.systeme.gemini_model
                 
                 titre_chapitre = chapitre.titre if chapitre else "Inconnu"
                 # On utilise la fiche IA comme correction officielle. 

@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
+from services.profil_service import get_gemini_credentials
 from services.scheduler_engine import (
     JOURS,
     calculer_cible_hebdo_minutes,
@@ -431,7 +432,8 @@ def generate_schedule_from_ai(
         raise ValueError("Aucune saisie hebdomadaire trouvée pour cette semaine.")
 
     profil = session.query(Utilisateur).first()
-    if not profil or not profil.systeme.gemini_api_key:
+    _gemini_key, _gemini_model = get_gemini_credentials(session)
+    if not profil or not _gemini_key:
         raise ValueError("Clé API Gemini introuvable dans le profil.")
 
     # 2. Construction du prompt
@@ -444,7 +446,7 @@ def generate_schedule_from_ai(
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
+    client = genai.Client(api_key=_gemini_key)
 
     response = client.models.generate_content(
         model=profil.systeme.gemini_model,
@@ -572,7 +574,8 @@ def integrer_nouveautes_a_semaine(session: Session, semaine_id: int) -> dict[str
         raise ValueError("Semaine introuvable.")
 
     profil = session.query(Utilisateur).first()
-    if not profil or not profil.systeme.gemini_api_key:
+    _gemini_key, _gemini_model = get_gemini_credentials(session)
+    if not profil or not _gemini_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     today = datetime.date.today()
@@ -703,7 +706,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
+    client = genai.Client(api_key=_gemini_key)
     response = client.models.generate_content(
         model=profil.systeme.gemini_model,
         contents=prompt,
@@ -785,7 +788,8 @@ def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
         raise ValueError("Semaine introuvable.")
 
     profil = session.query(Utilisateur).first()
-    if not profil or not profil.systeme.gemini_api_key:
+    _gemini_key, _gemini_model = get_gemini_credentials(session)
+    if not profil or not _gemini_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     today = datetime.date.today()
@@ -888,7 +892,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     except ImportError as exc:
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
-    client = genai.Client(api_key=profil.systeme.gemini_api_key.strip())
+    client = genai.Client(api_key=_gemini_key)
     response = client.models.generate_content(
         model=profil.systeme.gemini_model,
         contents=prompt,
