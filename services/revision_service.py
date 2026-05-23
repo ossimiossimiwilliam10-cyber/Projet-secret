@@ -37,6 +37,7 @@ from services.cache_versioning import (
     fiche_cache_is_valid,
     texte_sha256,
 )
+from services.gemini_utils import gemini_call_with_retry
 from services.profil_service import get_gemini_credentials
 
 
@@ -873,13 +874,15 @@ R2. …
 
     msg = f"Localise « {chap.titre} » dans le document et génère la fiche.\n\nDOCUMENT :\n{texte}"
 
-    response = client.models.generate_content(
-        model=model,
-        contents=msg,
-        config=types.GenerateContentConfig(
-            system_instruction=systeme,
-            temperature=0.3,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=msg,
+            config=types.GenerateContentConfig(
+                system_instruction=systeme,
+                temperature=0.3,
+            ),
+        )
     )
     fiche = (getattr(response, "text", "") or "").strip()
     if not fiche:
@@ -940,14 +943,16 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
 ]
 """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction="JSON valide uniquement, pas de markdown.",
-            response_mime_type="application/json",
-            temperature=0.4,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="JSON valide uniquement, pas de markdown.",
+                response_mime_type="application/json",
+                temperature=0.4,
+            ),
+        )
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
@@ -1017,13 +1022,15 @@ RÈGLES DE SORTIE :
 - Une question par ligne, format : "N. Question"
 """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction="Professeur exigeant. Liste numérotée uniquement.",
-            temperature=0.4,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="Professeur exigeant. Liste numérotée uniquement.",
+                temperature=0.4,
+            ),
+        )
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
@@ -1113,14 +1120,16 @@ RETOURNE UNIQUEMENT un JSON :
 }}
 """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction="Correcteur bienveillant et exigeant. JSON valide uniquement.",
-            response_mime_type="application/json",
-            temperature=0.2,
-        ),
+    response = gemini_call_with_retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="Correcteur bienveillant et exigeant. JSON valide uniquement.",
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
+        )
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:

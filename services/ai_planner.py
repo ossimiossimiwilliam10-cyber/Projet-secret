@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
+from services.gemini_utils import gemini_call_with_retry
 from services.profil_service import get_gemini_credentials
 from services.scheduler_engine import (
     JOURS,
@@ -448,13 +449,21 @@ def generate_schedule_from_ai(
 
     client = genai.Client(api_key=_gemini_key)
 
-    response = client.models.generate_content(
+    response = gemini_call_with_retry(
+
+
+        lambda: client.models.generate_content(
         model=profil.systeme.gemini_model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.2,
         ),
+
+
+        )
+
+
     )
 
     text_response = getattr(response, "text", "") or ""
@@ -707,13 +716,18 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
     client = genai.Client(api_key=_gemini_key)
-    response = client.models.generate_content(
+    response = gemini_call_with_retry(
+
+        lambda: client.models.generate_content(
         model=profil.systeme.gemini_model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.3,
         ),
+
+        )
+
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
@@ -893,13 +907,18 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
     client = genai.Client(api_key=_gemini_key)
-    response = client.models.generate_content(
+    response = gemini_call_with_retry(
+
+        lambda: client.models.generate_content(
         model=profil.systeme.gemini_model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.3,
         ),
+
+        )
+
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
