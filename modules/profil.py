@@ -250,7 +250,8 @@ def render() -> None:
         color = "green" if pct >= 100 else "orange" if pct >= 80 else "red"
         st.info(f"**Vélocité historique : :{color}[{pct}%]** — {velocite_msg}")
 
-    data = load_profil()    is_new = not data  # profil vide → première utilisation
+    data = load_profil()
+    is_new = not data  # profil vide → première utilisation
     if is_new:
         st.info(
             "👋 **Première utilisation détectée.** "
