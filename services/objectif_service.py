@@ -221,7 +221,8 @@ def proposer_strategie(
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
-        )
+        ),
+        context="objectif_strategie",
     )
 
     text = getattr(response, "text", "") or ""

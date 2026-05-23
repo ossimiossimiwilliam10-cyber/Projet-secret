@@ -886,7 +886,8 @@ R2. …
                 system_instruction=systeme,
                 temperature=0.3,
             ),
-        )
+        ),
+        context="fiche_ia",
     )
     fiche = (getattr(response, "text", "") or "").strip()
     if not fiche:
@@ -966,7 +967,8 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
                 response_mime_type="application/json",
                 temperature=0.4,
             ),
-        )
+        ),
+        context="qcm",
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
@@ -1037,7 +1039,8 @@ RÈGLES DE SORTIE :
                 system_instruction="Professeur exigeant. Liste numérotée uniquement.",
                 temperature=0.4,
             ),
-        )
+        ),
+        context="quiz_ouvert",
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:
@@ -1127,7 +1130,8 @@ RETOURNE UNIQUEMENT un JSON :
                 response_mime_type="application/json",
                 temperature=0.2,
             ),
-        )
+        ),
+        context="evaluation_quiz",
     )
     text = (getattr(response, "text", "") or "").strip()
     if not text:

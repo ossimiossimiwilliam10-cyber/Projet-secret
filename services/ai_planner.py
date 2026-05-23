@@ -458,7 +458,8 @@ def generate_schedule_from_ai(
                 response_mime_type="application/json",
                 temperature=0.2,
             ),
-        )
+        ),
+        context="planner_generate",
     )
 
     text_response = getattr(response, "text", "") or ""
@@ -720,7 +721,8 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
-        )
+        ),
+        context="planner_integrer_nouveautes",
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
@@ -914,7 +916,8 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
-        )
+        ),
+        context="planner_replan",
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
