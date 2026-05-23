@@ -159,7 +159,11 @@ _EXPECTED_COLUMNS = {
         # Flag d'idempotence pour bloquer le farming XP par toggle.
         "xp_attribue": "BOOLEAN DEFAULT 0",
     },
-    # `ues`, `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
+    "ues": {
+        # Rattachement optionnel à un Semestre (nouvelle hiérarchie).
+        "semestre_id": "INTEGER REFERENCES semestres(id) ON DELETE SET NULL",
+    },
+    # `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).
 }
 

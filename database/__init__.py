@@ -18,6 +18,7 @@ from .db import (
 from .models import (
     Utilisateur,
     Achievement,
+    Semestre,
     UE,
     Matiere,
     Chapitre,
@@ -48,6 +49,7 @@ __all__ = [
     # models
     "Utilisateur",
     "Achievement",
+    "Semestre",
     "UE",
     "Matiere",
     "Chapitre",

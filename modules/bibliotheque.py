@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy.orm import selectinload
 
-from database import Chapitre, Matiere, Utilisateur, UE, get_session, session_scope
+from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
 from services.pdf_storage import (
@@ -93,10 +93,39 @@ def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
             "semestre": ue.semestre,
             "credits_ects": ue.credits_ects,
             "couleur": ue.couleur,
+            "semestre_id": ue.semestre_id,
             "nb_matieres": len(ue.matieres),
             "nb_chapitres": sum(len(m.chapitres) for m in ue.matieres),
         }
         for ue in ues
+    ]
+
+
+def _get_semestres_snapshot(session: Session) -> list[dict[str, Any]]:
+    """Récupère tous les semestres actifs en snapshot dict.
+
+    Eager loading : 1 requête (Semestre → UE → Matières → Chapitres).
+    """
+    semestres = (
+        session.query(Semestre)
+        .options(selectinload(Semestre.ues).selectinload(UE.matieres).selectinload(Matiere.chapitres))
+        .filter_by(actif=True)
+        .order_by(Semestre.nom)
+        .all()
+    )
+    return [
+        {
+            "id": s.id,
+            "nom": s.nom,
+            "code": s.code,
+            "date_debut": s.date_debut,
+            "date_fin": s.date_fin,
+            "nb_ues": len(s.ues),
+            "nb_matieres": sum(len(ue.matieres) for ue in s.ues),
+            "nb_chapitres": sum(sum(len(m.chapitres) for m in ue.matieres) for ue in s.ues),
+            "ects_total": sum(ue.credits_ects or 0 for ue in s.ues),
+        }
+        for s in semestres
     ]
 
 
@@ -170,6 +199,121 @@ def _find_rattachement_label(
         if vals["matiere_id"] == matiere_id and vals["ue_id"] == ue_id:
             return label
     return "— Aucun rattachement (cours autonome) —"
+
+
+# ---------------------------------------------------------------------------
+# Section : gestion des Semestres
+# ---------------------------------------------------------------------------
+def _render_semestres_section() -> None:
+    """Liste les Semestres existants + formulaire de création."""
+    st.subheader("📅 Mes Semestres")
+    st.caption(
+        "Un semestre regroupe plusieurs UE. Ex: le semestre *S5* "
+        "contient les UE *Maths*, *Physique*, *Droit*. "
+        "C'est le plus haut niveau d'organisation de ton programme."
+    )
+
+    with get_session() as session:
+        semestre_items = _get_semestres_snapshot(session)
+
+    if semestre_items:
+        editing_id = st.session_state.get("editing_semestre")
+        for s in semestre_items:
+            with st.container(border=True):
+                if editing_id == s["id"]:
+                    _render_semestre_edit_form(s)
+                else:
+                    col_a, col_b, col_c1, col_c2 = st.columns([5, 2, 0.5, 0.5])
+                    with col_a:
+                        meta = []
+                        if s["code"]:
+                            meta.append(f"`{s['code']}`")
+                        if s["date_debut"] and s["date_fin"]:
+                            meta.append(f"{s['date_debut']} → {s['date_fin']}")
+                        meta_str = " · ".join(meta) if meta else "—"
+                        st.markdown(
+                            f"<div>"
+                            f"<b style='font-size:1.05rem;'>📅 {s['nom']}</b><br/>"
+                            f"<span style='color:#6b7280; font-size:0.85rem;'>{meta_str}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with col_b:
+                        st.markdown(
+                            f"<div style='padding-top:0.7rem;'>"
+                            f"🎓 <b>{s['nb_ues']}</b> UE · 📘 <b>{s['nb_matieres']}</b> matières · "
+                            f"🎯 <b>{s['ects_total']:.0f}</b> ECTS</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with col_c1:
+                        if st.button("✏️", key=f"edit_sem_{s['id']}", help="Modifier ce semestre"):
+                            st.session_state["editing_semestre"] = s["id"]
+                            st.rerun()
+                    with col_c2:
+                        if st.button("🗑️", key=f"del_sem_{s['id']}", help="Supprimer (détache les UE)"):
+                            with session_scope() as sess:
+                                s_db = sess.get(Semestre, s["id"])
+                                if s_db:
+                                    sess.delete(s_db)
+                            st.toast(f"Semestre '{s['nom']}' supprimé", icon="🗑️")
+                            st.rerun()
+    else:
+        st.info("ℹ️ Aucun semestre pour le moment. Crée-en un pour organiser tes UE par période.")
+
+    with st.expander("➕ Créer un nouveau semestre", expanded=False):
+        with st.form("form_create_semestre", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                nom_sem = st.text_input("Nom*", placeholder="Ex: Semestre 5")
+                code_sem = st.text_input("Code", placeholder="Ex: S5")
+            with col2:
+                date_debut_sem = st.date_input("Date de début", value=None)
+                date_fin_sem = st.date_input("Date de fin", value=None)
+            if st.form_submit_button("Créer le semestre", type="primary", width='stretch'):
+                if not nom_sem.strip():
+                    st.error("Le nom est obligatoire.")
+                else:
+                    with session_scope() as session:
+                        session.add(Semestre(
+                            nom=nom_sem.strip(), code=code_sem.strip(),
+                            date_debut=date_debut_sem, date_fin=date_fin_sem,
+                            actif=True,
+                        ))
+                    st.toast(f"Semestre '{nom_sem}' créé ✅", icon="📅")
+                    st.rerun()
+
+
+def _render_semestre_edit_form(s: dict) -> None:
+    """Formulaire inline d'édition d'un semestre."""
+    st.markdown(f"**✏️ Modifier le semestre : {s['nom']}**")
+    col1, col2 = st.columns(2)
+    with col1:
+        new_nom = st.text_input("Nom*", value=s["nom"], key=f"edit_sem_nom_{s['id']}")
+        new_code = st.text_input("Code", value=s["code"] or "", key=f"edit_sem_code_{s['id']}")
+    with col2:
+        new_debut = st.date_input("Date début", value=s["date_debut"], key=f"edit_sem_debut_{s['id']}")
+        new_fin = st.date_input("Date fin", value=s["date_fin"], key=f"edit_sem_fin_{s['id']}")
+
+    col_save, col_cancel = st.columns(2)
+    with col_save:
+        if st.button("💾 Enregistrer", key=f"save_sem_{s['id']}", type="primary", width='stretch'):
+            if not new_nom.strip():
+                st.error("Le nom est obligatoire.")
+                return
+            with session_scope() as session:
+                s_db = session.get(Semestre, s["id"])
+                if s_db:
+                    s_db.nom = new_nom.strip()
+                    s_db.code = new_code.strip()
+                    s_db.date_debut = new_debut
+                    s_db.date_fin = new_fin
+            st.session_state.pop("editing_semestre", None)
+            st.toast(f"Semestre '{new_nom}' mis à jour ✅", icon="✏️")
+            st.rerun()
+    with col_cancel:
+        if st.button("✖ Annuler", key=f"cancel_sem_{s['id']}", width='stretch'):
+            st.session_state.pop("editing_semestre", None)
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +396,15 @@ def _render_ues_section() -> None:
                 code_ue = st.text_input("Code (optionnel)", placeholder="Ex: MATH301")
                 semestre_ue = st.text_input("Semestre (optionnel)", placeholder="Ex: S5")
             with col2:
+                # Selectbox Semestre de rattachement
+                with get_session() as s2:
+                    semestres = s2.query(Semestre).filter_by(actif=True).order_by(Semestre.nom).all()
+                sem_choices = {"— Aucun semestre —": None}
+                for sem in semestres:
+                    sem_choices[f"📅 {sem.nom}"] = sem.id
+                sem_choice = st.selectbox("Semestre de rattachement", options=list(sem_choices.keys()))
+                semestre_id_ue = sem_choices[sem_choice]
+
                 # Suggère une couleur basée sur le nb d'UE existantes
                 default_color = UE_COLORS_DEFAULT[len(ue_items) % len(UE_COLORS_DEFAULT)]
                 credits_ue = st.number_input(
@@ -279,6 +432,7 @@ def _render_ues_section() -> None:
                     semestre=semestre_ue.strip(),
                     credits_ects=credits_ue if credits_ue > 0 else None,
                     couleur=couleur_ue,
+                    semestre_id=semestre_id_ue,
                     actif=True,
                 ))
             st.toast(f"UE '{nom_ue}' créée ✅", icon="🎓")
@@ -822,216 +976,232 @@ def _nom_cours_from_filename(filename: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Carte d'un Chapitre (Nouvelle UI centré Chapitre)
+# Helpers visuels pour le Programme
+# ---------------------------------------------------------------------------
+def _chapter_title_html(ch: Chapitre) -> str:
+    """Titre d'expander avec barre de progression intégrée."""
+    m = int(ch.maitrise_pct or 0)
+    bar_width = min(m // 10, 10)
+    bar = "█" * bar_width + "░" * (10 - bar_width)
+    label_rev, _ = label_couleur_status(ch)
+    return f"📑 Ch.{ch.numero} : {ch.titre}  [{bar}] {m}%  {label_rev}"
+
+
+def _render_ue_header_html(ue: UE, pct: float) -> None:
+    """Bandeau UE avec barre de complétion."""
+    meta_parts = []
+    if ue.code:
+        meta_parts.append(f"`{ue.code}`")
+    if ue.credits_ects:
+        meta_parts.append(f"{ue.credits_ects:.0f} ECTS")
+    meta_str = " · ".join(meta_parts) if meta_parts else ""
+    st.markdown(
+        f"<div style='display:flex; align-items:center; gap:10px; "
+        f"margin-top:1.2rem; margin-bottom:0.4rem; margin-left:1rem; "
+        f"border-left:4px solid {ue.couleur}; padding:6px 14px; "
+        f"background:{ue.couleur}15; border-radius:4px;'>"
+        f"<div style='font-size:1.15rem; font-weight:600;'>🎓 {ue.nom}</div>"
+        f"<div style='color:#6b7280; font-size:0.85rem;'>{meta_str}</div>"
+        f"<div style='margin-left:auto; font-size:0.85rem;'>"
+        f"Maîtrise UE : {int(pct)}%</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.progress(int(pct) / 100.0, text=f"  ")
+
+
+# ---------------------------------------------------------------------------
+# Carte d'un Chapitre (refonte UX : confirmation suppression)
 # ---------------------------------------------------------------------------
 def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
-    """Affiche la carte détaillée d'un chapitre (remplace la carte cours)."""
+    """Affiche la carte détaillée d'un chapitre."""
     maitrise = chap.maitrise_pct or 0.0
-    alerte = False
-    
-    # On détermine si on doit afficher une alerte basée sur la révision
     label_rev, color_rev = label_couleur_status(chap)
-    if chap.date_prochaine:
-        delta = (chap.date_prochaine - datetime.date.today()).days
-        if delta <= 0 and maitrise < 50:
-            alerte = True
 
-    # Header du chapitre
-    titre_expander = f"📑 Ch. {chap.numero} : {chap.titre}"
-    titre_expander += f" — Maîtrise : {int(maitrise)}%"
+    # Ligne 1 : Progression
+    col_prog, col_meta = st.columns([3, 1])
+    with col_prog:
+        st.progress(int(maitrise) / 100.0, text=f"Maîtrise : {int(maitrise)}%")
+    with col_meta:
+        st.caption(f"⏱️ {chap.temps_estime_h}h")
+    st.divider()
 
-    with st.expander(titre_expander, expanded=alerte):
-        if alerte:
-            st.error(
-                f"⚠️ **Alerte :** Révision en retard et maîtrise "
-                f"faible ({int(maitrise)}%)."
+    # Ligne 2 : Actions & PDF
+    col_act, col_pdf = st.columns([1, 1])
+    with col_act:
+        st.markdown("##### ⚙️ Progression & Révision")
+        with st.form(f"form_prog_{chap.id}", border=False):
+            new_maitrise = st.slider("Niveau de maîtrise (%)", 0, 100, int(maitrise), 5)
+            new_etape = st.selectbox(
+                "Prochaine étape",
+                options=TYPES_TRAVAIL,
+                index=TYPES_TRAVAIL.index(chap.type_travail_restant) if chap.type_travail_restant in TYPES_TRAVAIL else 0,
             )
-
-        # Ligne 1 : Progression & Info IA
-        col_prog, col_meta = st.columns([3, 1])
-        with col_prog:
-            st.progress(
-                int(maitrise) / 100.0,
-                text=f"Maîtrise actuelle : {int(maitrise)}%",
-            )
-        with col_meta:
-            st.caption(f"⏱️ Temps estimé : {chap.temps_estime_h}h")
-            
-        st.divider()
-
-        # Ligne 2 : Actions & PDF
-        col_act, col_pdf = st.columns([1, 1])
-        
-        with col_act:
-            st.markdown("##### ⚙️ Progression & Révision")
-            
-            with st.form(f"form_prog_{chap.id}", border=False):
-                new_maitrise = st.slider("Niveau de maîtrise (%)", 0, 100, int(maitrise), 5)
-                new_etape = st.selectbox("Prochaine étape", options=TYPES_TRAVAIL, index=TYPES_TRAVAIL.index(chap.type_travail_restant) if chap.type_travail_restant in TYPES_TRAVAIL else 0)
-                
-                if st.form_submit_button("💾 Enregistrer"):
-                    try:
-                        ch_db = session.get(Chapitre, chap.id)
-                        if ch_db:
-                            ch_db.maitrise_pct = new_maitrise
-                            ch_db.type_travail_restant = new_etape
-                            session.commit()
-                            st.toast("Progression mise à jour !", icon="✅")
-                            st.rerun()
-                    except Exception as e:
-                        session.rollback()
-                        st.error(f"Erreur : {e}")
-
-            st.markdown(
-                f"<div style='color:{color_rev}; font-size:0.9rem; margin-top:10px;'>"
-                f"<b>{label_rev}</b> (Niveau Leitner : {chap.niveau_actuel or 0}/{MAX_NIVEAU})"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-            
-            if st.button("🧠 Ouvrir la Salle d'étude", key=f"btn_study_{chap.id}", type="primary"):
-                st.session_state.target_chapitre_id = chap.id
+            if st.form_submit_button("💾 Enregistrer"):
                 try:
-                    st.switch_page("pages/session_etude.py")
-                except Exception:
-                    st.rerun()
+                    ch_db = session.get(Chapitre, chap.id)
+                    if ch_db:
+                        ch_db.maitrise_pct = new_maitrise
+                        ch_db.type_travail_restant = new_etape
+                        session.commit()
+                        st.toast("Progression mise à jour !", icon="✅")
+                        st.rerun()
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erreur : {e}")
 
-        with col_pdf:
-            st.markdown("##### 📄 Documents (PDF)")
-            pdfs = chap.pdfs or []
-            
-            if not pdfs:
-                st.info("Aucun document associé.")
-            else:
-                import html as _html
-                for idx, pdf_info in enumerate(pdfs):
-                    col_p1, col_p2 = st.columns([4, 1])
-                    with col_p1:
-                        # Echappement HTML : label vient de l'utilisateur,
-                        # path est généré par nous (safe) mais on échappe
-                        # par défense en profondeur.
-                        label_safe = _html.escape(str(pdf_info.get('label', 'Document')))
-                        path_safe = _html.escape(str(pdf_info.get('path', '')))
-                        st.markdown(
-                            f"📎 <strong>{label_safe}</strong><br>"
-                            f"<small>{path_safe}</small>",
-                            unsafe_allow_html=True,
-                        )
-                    with col_p2:
-                        if st.button("🗑️", key=f"del_pdf_{chap.id}_{idx}"):
-                            try:
-                                ch_db = session.get(Chapitre, chap.id)
-                                if ch_db:
-                                    current_pdfs = list(ch_db.pdfs)
-                                    current_pdfs.pop(idx)
-                                    # Pour forcer SQLAlchemy à détecter la modif du JSON
-                                    ch_db.pdfs = current_pdfs
-                                    session.commit()
-                                    st.rerun()
-                            except Exception as e:
-                                session.rollback()
-                                st.error(f"Erreur : {e}")
-
-            with st.expander("➕ Ajouter un PDF"):
-                with st.form(f"form_pdf_{chap.id}", clear_on_submit=True, border=False):
-                    new_pdf = st.file_uploader("Fichier", type=["pdf"])
-                    new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document")
-                    if st.form_submit_button("Ajouter"):
-                        if new_pdf:
-                            pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
-                            pdf_path.write_bytes(new_pdf.getvalue())
-                            
-                            try:
-                                ch_db = session.get(Chapitre, chap.id)
-                                if ch_db:
-                                    current_pdfs = list(ch_db.pdfs or [])
-                                    current_pdfs.append({
-                                        "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
-                                        "label": new_label,
-                                        "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                                    })
-                                    ch_db.pdfs = current_pdfs
-                                    session.commit()
-                                    st.toast("PDF ajouté !", icon="📄")
-                                    st.rerun()
-                            except Exception as e:
-                                session.rollback()
-                                st.error(f"Erreur : {e}")
-
-        # Zone danger
-        st.divider()
-        if st.button("🗑️ Supprimer le chapitre", key=f"del_chap_{chap.id}", type="secondary"):
+        st.markdown(
+            f"<div style='color:{color_rev}; font-size:0.9rem; margin-top:10px;'>"
+            f"<b>{label_rev}</b> (Niveau Leitner : {chap.niveau_actuel or 0}/{MAX_NIVEAU})"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("🧠 Salle d'étude", key=f"btn_study_{chap.id}", type="primary"):
+            st.session_state.target_chapitre_id = chap.id
             try:
-                ch_db = session.get(Chapitre, chap.id)
-                if ch_db:
-                    session.delete(ch_db)
-                    session.commit()
+                st.switch_page("pages/session_etude.py")
+            except Exception:
+                st.rerun()
+
+    with col_pdf:
+        st.markdown("##### 📄 Documents (PDF)")
+        pdfs = chap.pdfs or []
+        if not pdfs:
+            st.info("Aucun document associé.")
+        else:
+            import html as _html
+            for idx, pdf_info in enumerate(pdfs):
+                col_p1, col_p2 = st.columns([4, 1])
+                with col_p1:
+                    label_safe = _html.escape(str(pdf_info.get('label', 'Document')))
+                    path_safe = _html.escape(str(pdf_info.get('path', '')))
+                    st.markdown(
+                        f"📎 <strong>{label_safe}</strong><br><small>{path_safe}</small>",
+                        unsafe_allow_html=True,
+                    )
+                with col_p2:
+                    if st.button("🗑️", key=f"del_pdf_{chap.id}_{idx}"):
+                        try:
+                            ch_db = session.get(Chapitre, chap.id)
+                            if ch_db:
+                                current_pdfs = list(ch_db.pdfs)
+                                current_pdfs.pop(idx)
+                                ch_db.pdfs = current_pdfs
+                                session.commit()
+                                st.rerun()
+                        except Exception as e:
+                            session.rollback()
+                            st.error(f"Erreur : {e}")
+
+        with st.expander("➕ Ajouter un PDF"):
+            with st.form(f"form_pdf_{chap.id}", clear_on_submit=True, border=False):
+                new_pdf = st.file_uploader("Fichier", type=["pdf"])
+                new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document")
+                if st.form_submit_button("Ajouter"):
+                    if new_pdf:
+                        pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
+                        pdf_path.write_bytes(new_pdf.getvalue())
+                        try:
+                            ch_db = session.get(Chapitre, chap.id)
+                            if ch_db:
+                                current_pdfs = list(ch_db.pdfs or [])
+                                current_pdfs.append({
+                                    "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
+                                    "label": new_label,
+                                    "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                })
+                                ch_db.pdfs = current_pdfs
+                                session.commit()
+                                st.toast("PDF ajouté !", icon="📄")
+                                st.rerun()
+                        except Exception as e:
+                            session.rollback()
+                            st.error(f"Erreur : {e}")
+
+    # Zone danger — avec confirmation
+    st.divider()
+    st.markdown("##### 🧨 Zone de danger")
+    confirm_key = f"confirm_del_{chap.id}"
+    if confirm_key not in st.session_state:
+        st.session_state[confirm_key] = False
+
+    if not st.session_state[confirm_key]:
+        if st.button("🗑️ Supprimer ce chapitre", key=f"del_chap_{chap.id}", type="secondary"):
+            st.session_state[confirm_key] = True
+            st.rerun()
+    else:
+        st.warning(f"⚠️ **Confirmation** : supprimer « {chap.titre} » ? Cette action est irréversible.")
+        col_yes, col_no = st.columns(2)
+        with col_yes:
+            if st.button("✅ Oui, supprimer", key=f"confirm_yes_{chap.id}", type="primary"):
+                try:
+                    ch_db = session.get(Chapitre, chap.id)
+                    if ch_db:
+                        session.delete(ch_db)
+                        session.commit()
+                    st.session_state.pop(confirm_key, None)
                     st.toast("Chapitre supprimé.", icon="🗑️")
                     st.rerun()
-            except Exception as e:
-                session.rollback()
-                st.error(f"Erreur : {e}")
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erreur : {e}")
+        with col_no:
+            if st.button("❌ Annuler", key=f"confirm_no_{chap.id}"):
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
-# Rendu principal — avec regroupement par UE
+# Rendu principal — avec regroupement par Semestre
 # ---------------------------------------------------------------------------
 def _render_kpis() -> None:
-    """En-tête : 4 chiffres-clés (UE, Matières, Chapitres, Maîtrise moyenne)."""
+    """En-tête : 5 chiffres-clés (Semestres, UE, Matières, Chapitres, ECTS) + maîtrise."""
     with get_session() as session:
+        nb_semestres = session.query(Semestre).filter_by(actif=True).count()
         nb_ues = session.query(UE).filter_by(actif=True).count()
         nb_matieres = session.query(Matiere).filter_by(actif=True).count()
         chapitres = session.query(Chapitre).all()
         nb_chapitres = len(chapitres)
-        if nb_chapitres > 0:
-            maitrise_moy = sum(float(c.maitrise_pct or 0) for c in chapitres) / nb_chapitres
-        else:
-            maitrise_moy = 0.0
+        maitrise_moy = sum(float(c.maitrise_pct or 0) for c in chapitres) / nb_chapitres if nb_chapitres else 0.0
+        ects_total = sum(ue.credits_ects or 0 for ue in session.query(UE).filter_by(actif=True).all())
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🎓 UE", nb_ues)
-    c2.metric("📘 Matières", nb_matieres)
-    c3.metric("📑 Chapitres", nb_chapitres)
-    c4.metric("📈 Maîtrise moyenne", f"{maitrise_moy:.0f} %")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("📅 Semestres", nb_semestres)
+    c2.metric("🎓 UE", nb_ues)
+    c3.metric("📘 Matières", nb_matieres)
+    c4.metric("📑 Chapitres", nb_chapitres)
+    c5.metric("🎯 ECTS", f"{ects_total:.0f}")
+    st.progress(int(maitrise_moy) / 100.0, text=f"📈 Maîtrise globale moyenne : {maitrise_moy:.0f}%")
 
 
 def _render_programme_section() -> None:
-    """Section « Mon Programme » — affichage hiérarchique UE → Matière → Chapitre."""
+    """Section « Mon Programme » — hiérarchie Semestre → UE → Matière → Chapitre
+    avec recherche, filtres, urgences, barres de complétion."""
     with get_session() as session:
-        # Eager loading complet : 3 requêtes au lieu de potentiellement
-        # 1 + N(matières) + N×M(chapitres) sur l'affichage hiérarchique.
+        semestres = (
+            session.query(Semestre)
+            .options(selectinload(Semestre.ues).selectinload(UE.matieres))
+            .filter_by(actif=True).order_by(Semestre.nom).all()
+        )
         ues = (
-            session.query(UE)
-            .options(selectinload(UE.matieres))
-            .filter_by(actif=True)
-            .order_by(UE.nom)
-            .all()
+            session.query(UE).options(selectinload(UE.matieres))
+            .filter_by(actif=True).order_by(UE.nom).all()
         )
         matieres = (
             session.query(Matiere)
             .options(selectinload(Matiere.ue), selectinload(Matiere.chapitres))
-            .filter_by(actif=True)
-            .order_by(Matiere.nom)
-            .all()
+            .filter_by(actif=True).order_by(Matiere.nom).all()
         )
         chapitres = session.query(Chapitre).all()
 
         if not chapitres:
-            st.info(
-                "Ta bibliothèque est vide. Ajoute un premier cours via le formulaire ci-dessus."
-            )
+            st.info("Ta bibliothèque est vide. Importe un premier PDF via l'onglet « 📥 Importer ».")
             return
 
-        # Index pour O(1) lookups : un chapitre est soit rattaché à une
-        # matière, soit autonome (rare, surtout pendant la transition).
         chaps_par_matiere: dict[int, list[Chapitre]] = {}
-        chaps_autonomes: list[Chapitre] = []
-
         for ch in chapitres:
             if ch.matiere_id:
                 chaps_par_matiere.setdefault(ch.matiere_id, []).append(ch)
-            else:
-                chaps_autonomes.append(ch)
 
         matieres_par_ue: dict[int, list[Matiere]] = {}
         matieres_sans_ue: list[Matiere] = []
@@ -1041,83 +1211,155 @@ def _render_programme_section() -> None:
             else:
                 matieres_sans_ue.append(m)
 
-        # --- Affichage hiérarchique : UE → Matière → Chapitre -------------
+        ues_par_semestre: dict[int, list[UE]] = {}
+        ues_sans_semestre: list[UE] = []
         for ue in ues:
-            ue_matieres = matieres_par_ue.get(ue.id, [])
-            # Skip cette UE si elle n'a pas de matières rattachées.
-            if not ue_matieres:
-                continue
+            if ue.semestre_id:
+                ues_par_semestre.setdefault(ue.semestre_id, []).append(ue)
+            else:
+                ues_sans_semestre.append(ue)
 
-            meta_parts = []
-            if ue.code:
-                meta_parts.append(f"`{ue.code}`")
-            if ue.semestre:
-                meta_parts.append(ue.semestre)
-            if ue.credits_ects:
-                meta_parts.append(f"{ue.credits_ects:.0f} ECTS")
-            meta_str = " · ".join(meta_parts) if meta_parts else ""
+        # --- Barre d'outils ---
+        col_search, col_btns = st.columns([3, 2])
+        with col_search:
+            search_query = st.text_input(
+                "🔍 Rechercher un chapitre, une matière, une UE...",
+                placeholder="Ex: thermodynamique",
+                key="prog_search",
+                label_visibility="collapsed",
+            )
+        with col_btns:
+            cb1, cb2, cb3 = st.columns(3)
+            with cb1:
+                if st.button("📂 Tout déplier", width="stretch", key="expand_all"):
+                    st.session_state["prog_view"] = "all"
+                    st.rerun()
+            with cb2:
+                if st.button("📁 Tout replier", width="stretch", key="collapse_all"):
+                    st.session_state["prog_view"] = "none"
+                    st.rerun()
+            with cb3:
+                nb_urgents = sum(
+                    1 for ch in chapitres
+                    if ch.date_prochaine
+                    and (ch.date_prochaine - datetime.date.today()).days <= 0
+                    and (ch.maitrise_pct or 0) < 50
+                )
+                if st.button(f"⚠️ Urgences ({nb_urgents})", width="stretch", key="expand_urgent"):
+                    st.session_state["prog_view"] = "urgent"
+                    st.rerun()
+
+        view = st.session_state.get("prog_view", "all")
+        search_lower = search_query.strip().lower() if search_query else ""
+
+        def _matches(ch: Chapitre, m: Matiere, u: UE | None) -> bool:
+            if not search_lower:
+                return True
+            return any(search_lower in s for s in [
+                ch.titre.lower(), m.nom.lower(), (m.code or "").lower(),
+                (u.nom.lower() if u else ""), ((u.code or "").lower() if u else ""),
+            ])
+
+        # --- Section « À réviser aujourd'hui » ---
+        urgents: list[tuple[Chapitre, Matiere | None, UE | None]] = []
+        for ch in chapitres:
+            if ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50:
+                m = next((x for x in matieres if x.id == ch.matiere_id), None)
+                urgents.append((ch, m, m.ue if m else None))
+
+        if urgents:
+            st.markdown(
+                f"<div style='margin-top:1rem; padding:10px 14px; background:#fef2f2; "
+                f"border-left:4px solid #dc2626; border-radius:4px;'>"
+                f"🔴 <b>{len(urgents)} chapitre(s) à réviser aujourd'hui</b>"
+                f"</div>", unsafe_allow_html=True,
+            )
+            for ch, m, u in urgents:
+                expanded = view in ("all", "urgent")
+                with st.expander(_chapter_title_html(ch), expanded=expanded):
+                    _render_carte_chapitre(ch, session)
+            st.divider()
+
+        # --- Hiérarchie : Semestre → UE → Matière → Chapitre ---
+        for sem in semestres:
+            sem_ues = ues_par_semestre.get(sem.id, [])
+            if not sem_ues:
+                continue
+            sem_total, sem_maitrises = 0, []
+            for ue in sem_ues:
+                for m in matieres_par_ue.get(ue.id, []):
+                    sem_total += len(chaps_par_matiere.get(m.id, []))
+                    sem_maitrises.extend(ch.maitrise_pct or 0 for ch in chaps_par_matiere.get(m.id, []))
+            if sem_total == 0:
+                continue
+            sem_pct = sum(sem_maitrises) / len(sem_maitrises) if sem_maitrises else 0
+            ects_sem = sum(ue.credits_ects or 0 for ue in sem_ues)
 
             st.markdown(
-                f"<div style='display:flex; align-items:center; gap:10px; "
-                f"margin-top:1.5rem; margin-bottom:0.5rem; "
-                f"border-left:4px solid {ue.couleur}; padding:6px 12px; "
-                f"background:{ue.couleur}15; border-radius:4px;'>"
-                f"<div style='font-size:1.3rem; font-weight:600;'>🎓 {ue.nom}</div>"
-                f"<div style='color:#6b7280; font-size:0.9rem;'>{meta_str}</div>"
-                f"</div>",
-                unsafe_allow_html=True,
+                f"<div style='margin-top:1.5rem; padding:8px 14px; "
+                f"border-left:5px solid #6366f1; background:#6366f108; border-radius:4px;'>"
+                f"<span style='font-size:1.3rem; font-weight:700;'>📅 {sem.nom}</span>  "
+                f"<span style='color:#6b7280;'>{sem_total} chap. · 🎯 {ects_sem:.0f} ECTS · Complétion {int(sem_pct)}%</span>"
+                f"</div>", unsafe_allow_html=True,
             )
+            st.progress(int(sem_pct) / 100.0, text=f"  ")
 
-            # Affiche d'abord les matières (avec leurs chapitres)
-            for matiere in ue_matieres:
-                matiere_chaps = chaps_par_matiere.get(matiere.id, [])
-                code_part = f" · `{matiere.code}`" if matiere.code else ""
-                st.markdown(
-                    f"<div style='margin-top:0.8rem; margin-bottom:0.6rem; "
-                    f"margin-left:1rem; color:#374151;'>"
-                    f"<b style='font-size:1.05rem;'>📘 {matiere.nom}</b>"
-                    f"<span style='color:#9ca3af; font-size:0.85rem;'>{code_part}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                if not matiere_chaps:
-                    st.caption("  ↳ _Aucun chapitre rattaché pour le moment._")
-                else:
-                    for ch in matiere_chaps:
-                        _render_carte_chapitre(ch, session)
+            for ue in sem_ues:
+                _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, view, _matches)
 
-        # --- Matières sans UE -------------------------------------------
+        for ue in ues_sans_semestre:
+            if matieres_par_ue.get(ue.id):
+                _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, view, _matches)
+
         for matiere in matieres_sans_ue:
             matiere_chaps = chaps_par_matiere.get(matiere.id, [])
             if not matiere_chaps:
                 continue
             st.markdown(
-                f"<div style='display:flex; align-items:center; gap:10px; "
-                f"margin-top:1.5rem; margin-bottom:0.5rem; "
-                f"border-left:4px solid #6b7280; padding:6px 12px; "
-                f"background:#6b728015; border-radius:4px;'>"
-                f"<div style='font-size:1.2rem; font-weight:600;'>📘 {matiere.nom}</div>"
-                f"<div style='color:#6b7280; font-size:0.9rem;'>(matière sans UE)</div>"
-                f"</div>",
+                f"<div style='margin-top:1.5rem; padding:6px 12px; "
+                f"border-left:4px solid #6b7280; background:#6b728015; border-radius:4px;'>"
+                f"<span style='font-size:1.1rem; font-weight:600;'>📘 {matiere.nom}</span>"
+                f"<span style='color:#6b7280; font-size:0.9rem;'> (matière sans UE)</span></div>",
                 unsafe_allow_html=True,
             )
             for ch in matiere_chaps:
-                _render_carte_chapitre(ch, session)
+                if search_lower and not (search_lower in ch.titre.lower() or search_lower in matiere.nom.lower() or (matiere.code and search_lower in matiere.code.lower())):
+                    continue
+                expanded = view == "all"
+                if view == "urgent":
+                    expanded = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
+                with st.expander(_chapter_title_html(ch), expanded=expanded):
+                    _render_carte_chapitre(ch, session)
 
-        # --- Chapitres totalement autonomes (ni UE ni matière) --------------
-        if chaps_autonomes:
-            st.markdown(
-                "<div style='display:flex; align-items:center; gap:10px; "
-                "margin-top:1.5rem; margin-bottom:0.5rem; "
-                "border-left:4px solid #6b7280; padding:6px 12px; "
-                "background:#6b728015; border-radius:4px;'>"
-                "<div style='font-size:1.2rem; font-weight:600;'>📁 Chapitres autonomes</div>"
-                "<div style='color:#6b7280; font-size:0.9rem;'>"
-                "Chapitres orphelins (issus d'anciens cours sans rattachement)."
-                "</div></div>",
-                unsafe_allow_html=True,
-            )
-            for ch in chaps_autonomes:
+
+def _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, view, _matches) -> None:
+    """Affiche une UE et ses matières/chapitres dans le programme."""
+    ue_matieres = matieres_par_ue.get(ue.id, [])
+    if not ue_matieres:
+        return
+    ue_maitrises = []
+    for m in ue_matieres:
+        ue_maitrises.extend(ch.maitrise_pct or 0 for ch in chaps_par_matiere.get(m.id, []))
+    ue_pct = sum(ue_maitrises) / len(ue_maitrises) if ue_maitrises else 0
+    _render_ue_header_html(ue, ue_pct)
+
+    for matiere in ue_matieres:
+        matiere_chaps = chaps_par_matiere.get(matiere.id, [])
+        if not matiere_chaps:
+            continue
+        code_part = f" · `{matiere.code}`" if matiere.code else ""
+        st.markdown(
+            f"<div style='margin:0.4rem 0 0.3rem 1.5rem; color:#374151;'>"
+            f"<b>📘 {matiere.nom}</b><span style='color:#9ca3af; font-size:0.85rem;'>{code_part}</span>"
+            f"</div>", unsafe_allow_html=True,
+        )
+        for ch in matiere_chaps:
+            if not _matches(ch, matiere, ue):
+                continue
+            expanded = view == "all"
+            if view == "urgent":
+                expanded = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
+            with st.expander(_chapter_title_html(ch), expanded=expanded):
                 _render_carte_chapitre(ch, session)
 
 
@@ -1128,18 +1370,13 @@ def render() -> None:
     """Point d'entrée appelé par st.Page.
 
     Structure UI :
-      - en-tête : titre + 4 KPIs
-      - tabs : 📥 Importer | 📚 Programme | ⚙️ Gérer UE & Matières
-
-    L'ancien layout linéaire (CRUD UE → CRUD Matières → Import → Programme)
-    forçait l'utilisateur à scroller pour atteindre l'arborescence. Les
-    tabs séparent les contextes : import (action ponctuelle), consultation
-    (l'usage principal), et administration (action rare).
+      - en-tête : titre + 5 KPIs (Semestres, UE, Matières, Chapitres, ECTS) + maîtrise
+      - tabs : 📥 Importer | 📚 Mon Programme | ⚙️ Gérer
     """
     st.title("📚 Bibliothèque")
     st.caption(
         "Organise ton programme selon la hiérarchie "
-        "**🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, importe les PDFs, "
+        "**📅 Semestre ▸ 🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, importe les PDFs, "
         "et active la révision espacée."
     )
 
@@ -1147,7 +1384,7 @@ def render() -> None:
     st.divider()
 
     tab_import, tab_programme, tab_admin = st.tabs(
-        ["📥 Importer", "📚 Mon Programme", "⚙️ Gérer UE & Matières"]
+        ["📥 Importer", "📚 Mon Programme", "⚙️ Gérer"]
     )
 
     with tab_import:
@@ -1157,6 +1394,8 @@ def render() -> None:
         _render_programme_section()
 
     with tab_admin:
+        _render_semestres_section()
+        st.divider()
         _render_ues_section()
         st.divider()
         _render_matieres_section()

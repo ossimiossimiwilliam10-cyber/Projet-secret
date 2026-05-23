@@ -161,6 +161,39 @@ class Achievement(Base):
 
 
 # ---------------------------------------------------------------------------
+# Semestre — niveau supérieur regroupant plusieurs UE (ex: "S5", "Semestre 1")
+# ---------------------------------------------------------------------------
+class Semestre(Base):
+    """Semestre — regroupe plusieurs Unités d'Enseignement.
+
+    Ex: \"Semestre 5\" contient les UE 'Mathématiques', 'Physique', 'Droit'.
+    Le semestre porte le libellé officiel et la période (dates de début/fin).
+    """
+
+    __tablename__ = "semestres"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nom = Column(String(200), nullable=False)            # ex: "Semestre 5"
+    code = Column(String(50), default="")                 # ex: "S5"
+    date_debut = Column(Date, nullable=True)
+    date_fin = Column(Date, nullable=True)
+    actif = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relations
+    ues = relationship(
+        "UE",
+        back_populates="semestre",
+        order_by="UE.nom",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Semestre id={self.id} nom={self.nom!r}>"
+
+
+# ---------------------------------------------------------------------------
 # UE — Unité d'Enseignement (regroupement de cours)
 # ---------------------------------------------------------------------------
 class UE(Base):
@@ -181,10 +214,19 @@ class UE(Base):
     couleur = Column(String(20), default="#4cd137")  # hex code pour distinction visuelle
     actif = Column(Boolean, default=True)
 
+    # Rattachement optionnel à un Semestre
+    semestre_id = Column(
+        Integer,
+        ForeignKey("semestres.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relations
+    semestre = relationship("Semestre", back_populates="ues")
     # Matières rattachées (ex: UE Maths → Algèbre, Analyse). Quand l'UE
     # est supprimée, les matières sont détachées (ue_id = NULL).
     matieres = relationship(
@@ -629,6 +671,7 @@ __all__ = [
     "SystemeConfig",
     "GamificationState",
     "Achievement",
+    "Semestre",
     "UE",
     "Matiere",
     "Chapitre",
