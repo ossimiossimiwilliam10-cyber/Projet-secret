@@ -46,6 +46,9 @@ coverage.xml
 data/planning.db
 data/pdfs/*
 !data/pdfs/.gitkeep
+# Secret de chiffrement Fernet — JAMAIS dans git
+data/.vault_key
+data/*.key
 
 # --- Editors / OS -----------------------------------------------------------
 .vscode/
