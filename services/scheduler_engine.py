@@ -70,34 +70,40 @@ def calculer_courbe_energie(
     Args:
         heure_lever: Heure de lever de l'étudiant.
         heure_coucher: Heure de coucher de l'étudiant.
-        chronotype: "matin", "soir", ou "intermediaire".
+        chronotype: "leve_tot", "intermediaire" ou "couche_tard"
+            (cohérent avec ``modules.profil.CHRONOTYPES``). Toute autre
+            valeur est traitée comme "leve_tot" (pic le matin).
         checkin: Dictionnaire optionnel contenant "fatigue_physique".
 
     Returns:
         Dict avec deux clés : "haute_energie" et "basse_energie",
         contenant des listes de chaînes horaires (ex: "09:00-11:30").
     """
-    from datetime import datetime, time, timedelta
+    from datetime import time
 
     hl = heure_lever or time(7, 0)
     hc = heure_coucher or time(23, 0)
-    
+
     # Conversion en minutes depuis minuit
     hl_min = hl.hour * 60 + hl.minute
     hc_min = hc.hour * 60 + hc.minute
     if hc_min <= hl_min:
-        hc_min += 24 * 60 # Coucher le lendemain
+        hc_min += 24 * 60  # Coucher le lendemain
 
     duree_journee_min = hc_min - hl_min
     if duree_journee_min <= 0:
         return {"haute_energie": [], "basse_energie": []}
 
-    # Modulateur de Biorhythme selon le chronotype
-    offset_pic_pct = 0.25 # Matin par défaut (quart de la journée)
+    # Modulateur de biorythme selon le chronotype.
+    # Lève-tôt → pic au 1er quart de la journée.
+    # Intermédiaire → pic au milieu (40 %).
+    # Couche-tard → pic dans la seconde moitié (65 %).
     if chronotype == "couche_tard":
         offset_pic_pct = 0.65
     elif chronotype == "intermediaire":
         offset_pic_pct = 0.40
+    else:  # "leve_tot" ou valeur inconnue (default safe).
+        offset_pic_pct = 0.25
 
     pic_absolu_min = hl_min + int(duree_journee_min * offset_pic_pct)
 
