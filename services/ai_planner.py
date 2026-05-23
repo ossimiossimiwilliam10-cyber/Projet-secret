@@ -214,7 +214,10 @@ def build_planner_prompt(
     consignes_txt = (consignes_manuelles or "").strip() or "(Aucune consigne exceptionnelle cette semaine.)"
 
     # -- 2 quinquies. Trajets habituels (Chantier 3) --
-    trajets_habituels = dict(getattr(profil, "trajets_habituels", None) or {})
+    # Champ sur LogistiqueConfig depuis la refonte DDD.
+    trajets_habituels = dict(
+        getattr(profil.logistique, "trajets_habituels", None) or {}
+    )
 
     # -- 2 sexies. Check-in biomécanique du jour (Chantier 4) --
     from database.models import CheckInQuotidien
