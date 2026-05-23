@@ -157,6 +157,35 @@ def test_plafond_fallback_si_non_renseigne():
     assert q == 60 * SESSIONS_PAR_JOUR
 
 
+def test_plafond_journalier_via_biometrie_sous_config():
+    """Anti-régression DDD : en production le profil est un `Utilisateur`
+    dont les champs biometriques vivent sur `profil.biometrie.<attr>`.
+    Avant le fix, le scheduler lisait directement sur le profil → None →
+    fallback systématique, le plafond utilisateur était ignoré.
+    """
+    biometrie = SimpleNamespace(
+        heures_etude_plafond_par_jour=8.0,
+        duree_max_session_min=50,
+    )
+    profil_prod = SimpleNamespace(biometrie=biometrie)
+    q = calculer_quota_etude_minutes(profil_prod, None)
+    # 8 h = 480 min — le plafond utilisateur est bien respecté.
+    assert q == 480
+
+
+def test_cible_hebdo_via_biometrie_sous_config():
+    """Idem pour la cible hebdo : doit être lue via `profil.biometrie`."""
+    from services.scheduler_engine import calculer_cible_hebdo_minutes
+
+    biometrie = SimpleNamespace(
+        heures_etude_cible_par_semaine=25.0,
+        heures_etude_plafond_par_jour=6.0,
+        duree_max_session_min=50,
+    )
+    profil_prod = SimpleNamespace(biometrie=biometrie)
+    assert calculer_cible_hebdo_minutes(profil_prod) == 25 * 60
+
+
 def test_cible_hebdo_utilise_le_champ_dedie():
     """``calculer_cible_hebdo_minutes`` lit
     ``heures_etude_cible_par_semaine`` quand il est renseigné."""
