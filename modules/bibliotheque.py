@@ -18,6 +18,8 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session
 
+from sqlalchemy.orm import selectinload
+
 from database import Chapitre, Matiere, Utilisateur, UE, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
@@ -64,8 +66,17 @@ def _get_api_config() -> tuple[str, str]:
 
 def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
     """Récupère toutes les UE actives en snapshot dict (survit à la fermeture
-    de session)."""
-    ues = session.query(UE).filter_by(actif=True).order_by(UE.nom).all()
+    de session).
+
+    Eager loading : 1 requête au lieu de 1+N+N×M (UE → matières → chapitres).
+    """
+    ues = (
+        session.query(UE)
+        .options(selectinload(UE.matieres).selectinload(Matiere.chapitres))
+        .filter_by(actif=True)
+        .order_by(UE.nom)
+        .all()
+    )
     return [
         {
             "id": ue.id,
@@ -82,8 +93,17 @@ def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
 
 
 def _get_matieres_snapshot(session: Session) -> list[dict[str, Any]]:
-    """Snapshot dict des matières actives (survit à la fermeture de session)."""
-    matieres = session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
+    """Snapshot dict des matières actives (survit à la fermeture de session).
+
+    Eager loading : 1 requête au lieu de 1+N (Matière → UE → chapitres).
+    """
+    matieres = (
+        session.query(Matiere)
+        .options(selectinload(Matiere.ue), selectinload(Matiere.chapitres))
+        .filter_by(actif=True)
+        .order_by(Matiere.nom)
+        .all()
+    )
     return [
         {
             "id": m.id,
@@ -917,8 +937,22 @@ def render() -> None:
     st.subheader("Mon Programme")
 
     with get_session() as session:
-        ues = session.query(UE).filter_by(actif=True).order_by(UE.nom).all()
-        matieres = session.query(Matiere).filter_by(actif=True).order_by(Matiere.nom).all()
+        # Eager loading complet : 3 requêtes au lieu de potentiellement
+        # 1 + N(matières) + N×M(chapitres) sur l'affichage hiérarchique.
+        ues = (
+            session.query(UE)
+            .options(selectinload(UE.matieres))
+            .filter_by(actif=True)
+            .order_by(UE.nom)
+            .all()
+        )
+        matieres = (
+            session.query(Matiere)
+            .options(selectinload(Matiere.ue), selectinload(Matiere.chapitres))
+            .filter_by(actif=True)
+            .order_by(Matiere.nom)
+            .all()
+        )
         chapitres = session.query(Chapitre).all()
 
         if not chapitres:
