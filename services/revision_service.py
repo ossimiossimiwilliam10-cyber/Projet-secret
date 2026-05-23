@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import datetime
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,11 @@ from sqlalchemy.orm import Session
 
 from database.db import BASE_DIR
 from database.models import Chapitre, Utilisateur
+from services.cache_versioning import (
+    FICHE_PROMPT_VERSION,
+    fiche_cache_is_valid,
+    texte_sha256,
+)
 from services.profil_service import get_gemini_credentials
 
 
@@ -802,13 +808,23 @@ def generer_fiche_ia(
     if chap is None:
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
-    if chap.fiche_ia and not force_regenerate:
-        return chap.fiche_ia
-
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
+
+    # Cache versionné : on ne réutilise la fiche que si modèle, prompt et
+    # contenu source sont identiques à la version stockée.
+    current_sha = texte_sha256(texte)
+    cache_ok = chap.fiche_ia and fiche_cache_is_valid(
+        cached_model=chap.fiche_ia_model,
+        cached_prompt_version=chap.fiche_ia_prompt_version,
+        cached_texte_sha=chap.fiche_ia_texte_sha,
+        current_model=model,
+        current_texte_sha=current_sha,
+    )
+    if cache_ok and not force_regenerate:
+        return chap.fiche_ia
     from google.genai import types  # type: ignore
 
     systeme = f"""Tu es un professeur d'élite — pédagogue exigeant, expert en mémorisation.
@@ -870,6 +886,10 @@ R2. …
         raise ValueError("Gemini a renvoyé une fiche vide.")
 
     chap.fiche_ia = fiche
+    chap.fiche_ia_model = model
+    chap.fiche_ia_prompt_version = FICHE_PROMPT_VERSION
+    chap.fiche_ia_texte_sha = current_sha
+    chap.fiche_ia_generated_at = datetime.datetime.now(datetime.timezone.utc)
     return fiche
 
 
