@@ -12,4 +12,4 @@ backgroundColor = "#F8F9FE"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#2D3436"
 font = "sans serif"
-baseFontSize = "16px"
+baseFontSize = 16
