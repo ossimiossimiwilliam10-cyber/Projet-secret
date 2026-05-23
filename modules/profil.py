@@ -301,8 +301,61 @@ def test_gemini_connection(api_key: str, model: str, max_retries: int = 3) -> tu
     return False, f"Le modèle a refusé de répondre. {raison_fr}"
 
 
-# Alias rétrocompatible — le code UI appelle `test_llm_connection`.
-test_llm_connection = test_gemini_connection
+def test_llm_connection(api_key: str, model: str, max_retries: int = 3) -> tuple[bool, str]:
+    """Teste la connexion au LLM (Gemini ou DeepSeek) selon le modèle choisi.
+
+    Route automatiquement vers l'API Google Gemini OU l'API DeepSeek (OpenAI-compatible).
+    """
+    is_openai = model.startswith("deepseek") or model.startswith("gpt") or model.startswith("o1") or model.startswith("o3")
+
+    if is_openai:
+        return _test_deepseek_connection(api_key, model, max_retries)
+    else:
+        return test_gemini_connection(api_key, model, max_retries)
+
+
+def _test_deepseek_connection(api_key: str, model: str, max_retries: int = 3) -> tuple[bool, str]:
+    """Test minimal de l'API DeepSeek (compatible OpenAI)."""
+    if not api_key.strip():
+        return False, "Clé API vide."
+
+    try:
+        import openai
+    except ImportError:
+        return False, "Package `openai` non installé. Lance : pip install openai"
+
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            client = openai.OpenAI(
+                api_key=api_key.strip(),
+                base_url="https://api.deepseek.com/v1",
+            )
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Réponds uniquement avec le mot : OK"}],
+                max_tokens=10,
+            )
+            text = resp.choices[0].message.content or ""
+            if text.strip():
+                return True, f"Connexion DeepSeek réussie. Réponse : « {text.strip()[:80]} »"
+            return True, "Connexion DeepSeek OK (réponse vide)."
+        except Exception as exc:
+            last_exc = exc
+            msg = str(exc)[:300]
+            if "401" in msg or "403" in msg or "unauthor" in msg.lower() or "invalid" in msg.lower():
+                return False, f"🔐 Clé DeepSeek refusée. Vérifie ta clé sur platform.deepseek.com.\n\nDétail : {msg}"
+            if "404" in msg:
+                return False, f"❓ Modèle DeepSeek introuvable (`{model}`).\n\nDétail : {msg}"
+            if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
+                return False, f"⏱️ Quota DeepSeek dépassé. Réessaie dans quelques minutes.\n\nDétail : {msg}"
+            if attempt < max_retries - 1 and _is_retryable_error(exc):
+                _time_mod.sleep(2 ** attempt)
+                continue
+            return False, f"Échec DeepSeek : {type(exc).__name__} — {msg}"
+
+    assert last_exc is not None
+    return False, f"Échec DeepSeek après {max_retries} tentatives."
 
 
 # ---------------------------------------------------------------------------
