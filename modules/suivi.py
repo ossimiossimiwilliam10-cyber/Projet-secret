@@ -52,21 +52,44 @@ def _jour_from_date(d: datetime.date) -> str:
     return JOURS[d.weekday()]
 
 
+_VALID_TACHE_STATUTS = {"a_faire", "fait", "partiellement", "non_fait", "reporte"}
+# Statuts qui déclenchent une attribution d'XP + bump maîtrise. Toute
+# transition VERS l'un d'eux depuis un statut HORS de ce set génère le gain.
+# Transition à l'intérieur du set (fait ↔ partiellement) ou entrée depuis
+# l'extérieur sur une tâche DÉJÀ comptabilisée : pas de double XP.
+_STATUTS_RECOMPENSES = {"fait", "partiellement"}
+
+
 def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gamification_service.GainXP | None:
-    """Met à jour le statut d'une tâche et bumpe la maîtrise / XP."""
+    """Met à jour le statut d'une tâche et bumpe la maîtrise / XP.
+
+    Garantit l'idempotence : toggler `fait → a_faire → fait` ne donne
+    PAS d'XP supplémentaire la 2e fois (sinon l'utilisateur pouvait
+    farmer infiniment).
+    """
+    if statut not in _VALID_TACHE_STATUTS:
+        raise ValueError(
+            f"Statut invalide : {statut!r}. Attendus : {sorted(_VALID_TACHE_STATUTS)}"
+        )
+
     gain = None
     with session_scope() as s:
         t = s.get(Tache, task_id)
         if t is None:
             return None
+
+        # Flag persistant : True dès qu'une XP a été attribuée pour CETTE
+        # tâche (peu importe les toggles statut qui suivent).
+        deja_recompense = bool(t.xp_attribue)
         t.statut = statut
         if commentaire:
             t.commentaire_etudiant = commentaire
 
-        profil = gamification_service.get_or_create_profil(s)
+        profil = gamification_service.get_or_create_utilisateur(s)
 
-        # 1. Gain d'XP
-        if statut == "fait":
+        # 1. Gain d'XP — UNIQUEMENT à la 1re transition vers fait/partiellement.
+        # Cela bloque le farming par toggle (fait → a_faire → fait → …).
+        if statut == "fait" and not deja_recompense:
             # Défensif : justification_ia est nullable en DB, plusieurs `X in None`
             # crasheraient sinon. On lit une seule fois en safe-string locale.
             justification = t.justification_ia or ""
@@ -100,8 +123,19 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
             else:
                 gain = gamification_service.attribuer_xp_tache(s, profil, duree_min=t.duree_min or 30, obligatoire=t.obligatoire, titre=t.titre)
 
-        # 2. Bump de maîtrise si tâche d'étude liée à un ou plusieurs chapitres
-        if t.chapitre_ids and statut in ("fait", "partiellement"):
+        # Marque la tâche comme récompensée. Tout toggle futur ne déclenchera
+        # plus ni XP ni bump maîtrise.
+        if statut in _STATUTS_RECOMPENSES and not deja_recompense:
+            t.xp_attribue = True
+
+        # 2. Bump de maîtrise — même règle d'idempotence que pour l'XP.
+        # Sans ce check, un toggle fait → a_faire → fait poussait la maîtrise
+        # à 100% en quelques clics (sans aucune révision effective).
+        if (
+            t.chapitre_ids
+            and statut in _STATUTS_RECOMPENSES
+            and not deja_recompense
+        ):
             bump = MAITRISE_BUMP_FAIT if statut == "fait" else MAITRISE_BUMP_PARTIEL
             for ch_id in t.chapitre_ids:
                 ch = s.get(Chapitre, ch_id)
