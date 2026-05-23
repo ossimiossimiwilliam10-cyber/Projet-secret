@@ -966,26 +966,27 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
 # ---------------------------------------------------------------------------
 # Rendu principal — avec regroupement par UE
 # ---------------------------------------------------------------------------
-def render() -> None:
-    """Point d'entrée appelé par st.Page."""
-    st.title("📚 Bibliothèque")
-    st.caption(
-        "Organise ton programme selon la hiérarchie **🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, "
-        "importe les PDFs, et active la révision espacée."
-    )
+def _render_kpis() -> None:
+    """En-tête : 4 chiffres-clés (UE, Matières, Chapitres, Maîtrise moyenne)."""
+    with get_session() as session:
+        nb_ues = session.query(UE).filter_by(actif=True).count()
+        nb_matieres = session.query(Matiere).filter_by(actif=True).count()
+        chapitres = session.query(Chapitre).all()
+        nb_chapitres = len(chapitres)
+        if nb_chapitres > 0:
+            maitrise_moy = sum(float(c.maitrise_pct or 0) for c in chapitres) / nb_chapitres
+        else:
+            maitrise_moy = 0.0
 
-    # 1. Sections UE et Matières (CRUD)
-    _render_ues_section()
-    st.divider()
-    _render_matieres_section()
-    st.divider()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🎓 UE", nb_ues)
+    c2.metric("📘 Matières", nb_matieres)
+    c3.metric("📑 Chapitres", nb_chapitres)
+    c4.metric("📈 Maîtrise moyenne", f"{maitrise_moy:.0f} %")
 
-    # 2. Import unifié — 1 ou N PDFs → 1 ou N chapitres rattachés à une Matière
-    _render_import_unifie()
 
-    st.divider()
-    st.subheader("Mon Programme")
-
+def _render_programme_section() -> None:
+    """Section « Mon Programme » — affichage hiérarchique UE → Matière → Chapitre."""
     with get_session() as session:
         # Eager loading complet : 3 requêtes au lieu de potentiellement
         # 1 + N(matières) + N×M(chapitres) sur l'affichage hiérarchique.
@@ -1108,3 +1109,44 @@ def render() -> None:
             )
             for ch in chaps_autonomes:
                 _render_carte_chapitre(ch, session)
+
+
+# ---------------------------------------------------------------------------
+# Point d'entrée — orchestration en onglets
+# ---------------------------------------------------------------------------
+def render() -> None:
+    """Point d'entrée appelé par st.Page.
+
+    Structure UI :
+      - en-tête : titre + 4 KPIs
+      - tabs : 📥 Importer | 📚 Programme | ⚙️ Gérer UE & Matières
+
+    L'ancien layout linéaire (CRUD UE → CRUD Matières → Import → Programme)
+    forçait l'utilisateur à scroller pour atteindre l'arborescence. Les
+    tabs séparent les contextes : import (action ponctuelle), consultation
+    (l'usage principal), et administration (action rare).
+    """
+    st.title("📚 Bibliothèque")
+    st.caption(
+        "Organise ton programme selon la hiérarchie "
+        "**🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**, importe les PDFs, "
+        "et active la révision espacée."
+    )
+
+    _render_kpis()
+    st.divider()
+
+    tab_import, tab_programme, tab_admin = st.tabs(
+        ["📥 Importer", "📚 Mon Programme", "⚙️ Gérer UE & Matières"]
+    )
+
+    with tab_import:
+        _render_import_unifie()
+
+    with tab_programme:
+        _render_programme_section()
+
+    with tab_admin:
+        _render_ues_section()
+        st.divider()
+        _render_matieres_section()
