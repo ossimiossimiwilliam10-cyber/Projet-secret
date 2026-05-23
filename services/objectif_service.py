@@ -325,7 +325,7 @@ def marquer_atteint(session: Session, objectif_id: int) -> None:
     if obj is None:
         return
     obj.statut = "atteint"
-    obj.date_atteinte = datetime.datetime.utcnow()
+    obj.date_atteinte = datetime.datetime.now(datetime.timezone.utc)
 
 
 def abandonner(session: Session, objectif_id: int) -> None:

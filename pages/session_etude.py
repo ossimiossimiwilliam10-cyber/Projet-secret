@@ -29,7 +29,7 @@ from services.profil_service import get_gemini_credentials
 from services.gamification_service import (
     attribuer_xp_quiz,
     attribuer_xp_promotion_leitner,
-    get_or_create_profil,
+    get_or_create_utilisateur,
     GainXP,
 )
 
@@ -354,7 +354,7 @@ def _submit_qcm(chap_id: int, questions: list[dict]) -> None:
         with session_scope() as session:
             leitner = rs.appliquer_resultat_quiz(session, chap_id, score_num, mode="qcm")
             # --- F3a : XP du quiz + éventuelle promotion Leitner ----------
-            profil = get_or_create_profil(session)
+            profil = get_or_create_utilisateur(session)
             chap_obj = session.get(Chapitre, chap_id)
             g_quiz = attribuer_xp_quiz(session, profil, score_num, chap_obj)
             gains_xp.append({"type": "quiz", "gain": _serialize_gain(g_quiz)})
@@ -581,7 +581,7 @@ def _submit_quiz(chap_id: int, questions: list[str]) -> None:
                     session, chap_id, evaluation["score_num"], mode="quiz"
                 )
                 # --- F3a : XP --------------------------------------------
-                profil = get_or_create_profil(session)
+                profil = get_or_create_utilisateur(session)
                 chap_obj = session.get(Chapitre, chap_id)
                 g_quiz = attribuer_xp_quiz(session, profil, evaluation["score_num"], chap_obj)
                 gains_xp.append({"type": "quiz", "gain": _serialize_gain(g_quiz)})

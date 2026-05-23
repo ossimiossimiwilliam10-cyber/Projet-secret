@@ -938,7 +938,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                                     current_pdfs.append({
                                         "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
                                         "label": new_label,
-                                        "uploaded_at": datetime.datetime.now().isoformat()
+                                        "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
                                     })
                                     ch_db.pdfs = current_pdfs
                                     session.commit()

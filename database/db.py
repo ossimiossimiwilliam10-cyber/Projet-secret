@@ -155,6 +155,10 @@ _EXPECTED_COLUMNS = {
         # Lieu du job — pour croiser avec trajets_habituels du profil.
         "lieu": "VARCHAR(200) DEFAULT ''",
     },
+    "taches": {
+        # Flag d'idempotence pour bloquer le farming XP par toggle.
+        "xp_attribue": "BOOLEAN DEFAULT 0",
+    },
     # `ues`, `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).
 }

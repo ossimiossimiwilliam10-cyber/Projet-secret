@@ -426,6 +426,9 @@ class Tache(Base):
     priorite = Column(String(15), default="normale")
     obligatoire = Column(Boolean, default=False)
     statut = Column(String(20), default="a_faire")
+    # Flag d'idempotence : True dès la 1re transition vers fait/partiellement.
+    # Empêche le farming d'XP / de maîtrise par toggle fait → a_faire → fait.
+    xp_attribue = Column(Boolean, default=False, nullable=False)
 
     # Rattachement direct à la matière (refonte bibliothèque).
     matiere_id = Column(
