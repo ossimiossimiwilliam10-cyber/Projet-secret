@@ -122,6 +122,12 @@ _EXPECTED_COLUMNS = {
         "fiche_ia_prompt_version":  "INTEGER",
         "fiche_ia_texte_sha":       "VARCHAR(64)",
         "fiche_ia_generated_at":    "DATETIME",
+        "qcm_cache_model":          "VARCHAR(100)",
+        "qcm_cache_prompt_version": "INTEGER",
+        "qcm_cache_texte_sha":      "VARCHAR(64)",
+        "quiz_cache_model":         "VARCHAR(100)",
+        "quiz_cache_prompt_version":"INTEGER",
+        "quiz_cache_texte_sha":     "VARCHAR(64)",
         # Notes perso
         "notes":           "TEXT DEFAULT ''",
         # Versioning optimiste pour éviter les écrasements multi-onglets.

@@ -34,6 +34,9 @@ from database.db import BASE_DIR
 from database.models import Chapitre, Utilisateur
 from services.cache_versioning import (
     FICHE_PROMPT_VERSION,
+    QCM_PROMPT_VERSION,
+    QUIZ_PROMPT_VERSION,
+    cache_is_valid,
     fiche_cache_is_valid,
     texte_sha256,
 )
@@ -912,13 +915,23 @@ def generer_qcm(
     if chap is None:
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
-    if chap.qcm_cache and not force_regenerate:
-        return list(chap.qcm_cache)
-
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
+
+    current_sha = texte_sha256(texte)
+    cache_ok = chap.qcm_cache and cache_is_valid(
+        cached_model=chap.qcm_cache_model,
+        cached_prompt_version=chap.qcm_cache_prompt_version,
+        cached_texte_sha=chap.qcm_cache_texte_sha,
+        current_model=model,
+        current_prompt_version=QCM_PROMPT_VERSION,
+        current_texte_sha=current_sha,
+    )
+    if cache_ok and not force_regenerate:
+        return list(chap.qcm_cache)
+
     from google.genai import types  # type: ignore
 
     prompt = f"""Génère {nb} QCM sur le chapitre « {chap.titre} » ({matiere}).
@@ -982,6 +995,9 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
         raise ValueError("Aucune question valide n'a été extraite du JSON Gemini.")
 
     chap.qcm_cache = cleaned
+    chap.qcm_cache_model = model
+    chap.qcm_cache_prompt_version = QCM_PROMPT_VERSION
+    chap.qcm_cache_texte_sha = current_sha
     return cleaned
 
 
@@ -1000,13 +1016,23 @@ def generer_quiz_ouvert(
     if chap is None:
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
-    if chap.quiz_cache and not force_regenerate:
-        return list(chap.quiz_cache)
-
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
     client, model = _get_gemini_client_and_model(session)
+
+    current_sha = texte_sha256(texte)
+    cache_ok = chap.quiz_cache and cache_is_valid(
+        cached_model=chap.quiz_cache_model,
+        cached_prompt_version=chap.quiz_cache_prompt_version,
+        cached_texte_sha=chap.quiz_cache_texte_sha,
+        current_model=model,
+        current_prompt_version=QUIZ_PROMPT_VERSION,
+        current_texte_sha=current_sha,
+    )
+    if cache_ok and not force_regenerate:
+        return list(chap.quiz_cache)
+
     from google.genai import types  # type: ignore
 
     prompt = f"""Génère EXACTEMENT {nb} questions ouvertes sur « {chap.titre} » ({matiere}).
@@ -1051,6 +1077,9 @@ RÈGLES DE SORTIE :
         raise ValueError("Aucune question extraite du texte renvoyé par Gemini.")
 
     chap.quiz_cache = questions
+    chap.quiz_cache_model = model
+    chap.quiz_cache_prompt_version = QUIZ_PROMPT_VERSION
+    chap.quiz_cache_texte_sha = current_sha
     return questions
 
 
