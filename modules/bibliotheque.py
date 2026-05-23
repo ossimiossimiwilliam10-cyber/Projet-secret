@@ -23,6 +23,11 @@ from sqlalchemy.orm import selectinload
 from database import Chapitre, Matiere, Utilisateur, UE, get_session, session_scope
 from database.db import PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
+from services.pdf_storage import (
+    PdfValidationError,
+    safe_pdf_filename,
+    validate_pdf_upload,
+)
 from services.profil_service import get_gemini_credentials
 from services.revision_service import (
     initialiser_chapitre_pour_revision,
@@ -587,10 +592,13 @@ def _process_import_unifie(
         )
 
         try:
-            # 1. Écriture du PDF sur disque, sous un nom unique horodaté.
-            pdf_filename = f"m{matiere_id}-{int(_time.time())}-{i}.pdf"
+            # 1. Validation puis écriture du PDF sur disque, sous un nom
+            # déterministe (pas de path traversal possible).
+            pdf_bytes = pdf_file.getvalue()
+            validate_pdf_upload(pdf_bytes, pdf_file.name)
+            pdf_filename = safe_pdf_filename(matiere_id, int(_time.time()), i)
             pdf_path = PDF_DIR / pdf_filename
-            pdf_path.write_bytes(pdf_file.getvalue())
+            pdf_path.write_bytes(pdf_bytes)
             pdf_rel = str(pdf_path.relative_to(PDF_DIR.parent.parent))
 
             # 2. Analyse Gemini du PDF.
@@ -616,6 +624,8 @@ def _process_import_unifie(
 
             pdfs_ok += 1
             chapitres_total += len(new_ids)
+        except PdfValidationError as exc:
+            erreurs.append((pdf_file.name, f"Validation : {exc}"))
         except Exception as exc:
             erreurs.append((pdf_file.name, str(exc)))
 
