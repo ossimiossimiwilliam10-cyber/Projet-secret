@@ -13,6 +13,7 @@ Refonte NASA — chantier 4 (sécurité fichiers) :
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -70,6 +71,52 @@ def validate_pdf_upload(file_bytes: bytes, filename: str) -> None:
         )
 
 
+def compute_sha256(file_bytes: bytes) -> str:
+    """Empreinte SHA-256 hex (64 caractères) du contenu binaire."""
+    return hashlib.sha256(file_bytes).hexdigest()
+
+
+def find_existing_upload(session, sha: str, matiere_id: int):
+    """Retourne le :class:`PdfUpload` existant pour ce ``(sha, matiere_id)``,
+    ou ``None`` si jamais ingéré sur cette matière.
+
+    Permet d'éviter de re-payer un appel Gemini si l'utilisateur dépose
+    deux fois le même PDF sur la même matière.
+    """
+    from database import PdfUpload
+
+    return (
+        session.query(PdfUpload)
+        .filter_by(sha256=sha, matiere_id=matiere_id)
+        .first()
+    )
+
+
+def record_upload(
+    session,
+    *,
+    sha: str,
+    matiere_id: int,
+    filename_original: str,
+    filename_stored: str,
+    label: str,
+    nb_chapitres: int,
+) -> None:
+    """Trace un nouvel upload dans la table ``pdf_uploads``."""
+    from database import PdfUpload
+
+    session.add(
+        PdfUpload(
+            sha256=sha,
+            matiere_id=matiere_id,
+            filename_original=filename_original[:255],
+            filename_stored=filename_stored[:255],
+            label=label[:200],
+            nb_chapitres_crees=nb_chapitres,
+        )
+    )
+
+
 def safe_pdf_filename(matiere_id: int, timestamp: int, index: int) -> str:
     """Génère un nom de PDF déterministe et sûr.
 
@@ -119,6 +166,9 @@ __all__ = [
     "MAX_PDF_SIZE_BYTES",
     "PdfValidationError",
     "validate_pdf_upload",
+    "compute_sha256",
+    "find_existing_upload",
+    "record_upload",
     "safe_pdf_filename",
     "find_orphan_pdfs",
     "cleanup_orphan_pdfs",

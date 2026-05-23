@@ -319,6 +319,39 @@ class Chapitre(Base):
 
 
 # ---------------------------------------------------------------------------
+# PdfUpload — idempotence des uploads (SHA-256)
+# ---------------------------------------------------------------------------
+class PdfUpload(Base):
+    """Trace chaque PDF uploadé par son empreinte SHA-256.
+
+    Sert deux objectifs :
+      1. **Idempotence** : si l'utilisateur re-dépose deux fois le même PDF
+         (même contenu binaire), on évite de relancer une analyse Gemini.
+      2. **Audit** : on garde la trace de quel fichier a été ingéré quand,
+         pour quelle matière, et combien de chapitres en ont été extraits.
+    """
+
+    __tablename__ = "pdf_uploads"
+    __table_args__ = (
+        UniqueConstraint("sha256", "matiere_id", name="uq_pdfupload_sha_matiere"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sha256 = Column(String(64), nullable=False, index=True)
+    matiere_id = Column(
+        Integer, ForeignKey("matieres.id", ondelete="CASCADE"), nullable=False
+    )
+    filename_original = Column(String(255), default="")
+    filename_stored = Column(String(255), default="")
+    label = Column(String(200), default="")
+    nb_chapitres_crees = Column(Integer, default=0)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<PdfUpload id={self.id} sha={self.sha256[:8]}... matiere={self.matiere_id}>"
+
+
+# ---------------------------------------------------------------------------
 # Semaines & tâches
 # ---------------------------------------------------------------------------
 class Semaine(Base):
