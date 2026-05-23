@@ -214,17 +214,14 @@ def proposer_strategie(
 
     client = genai.Client(api_key=_gemini_key)
     response = gemini_call_with_retry(
-
         lambda: client.models.generate_content(
-        model=profil.systeme.gemini_model or "gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
-
+            model=_gemini_model or "gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
         )
-
     )
 
     text = getattr(response, "text", "") or ""

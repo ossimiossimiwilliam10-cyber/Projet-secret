@@ -450,20 +450,14 @@ def generate_schedule_from_ai(
     client = genai.Client(api_key=_gemini_key)
 
     response = gemini_call_with_retry(
-
-
         lambda: client.models.generate_content(
-        model=profil.systeme.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.2,
-        ),
-
-
+            model=_gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
         )
-
-
     )
 
     text_response = getattr(response, "text", "") or ""
@@ -717,17 +711,14 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
 
     client = genai.Client(api_key=_gemini_key)
     response = gemini_call_with_retry(
-
         lambda: client.models.generate_content(
-        model=profil.systeme.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
-
+            model=_gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
         )
-
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():
@@ -908,17 +899,14 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
 
     client = genai.Client(api_key=_gemini_key)
     response = gemini_call_with_retry(
-
         lambda: client.models.generate_content(
-        model=profil.systeme.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-        ),
-
+            model=_gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
         )
-
     )
     text = getattr(response, "text", "") or ""
     if not text.strip():

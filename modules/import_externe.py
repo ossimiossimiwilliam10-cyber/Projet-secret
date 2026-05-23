@@ -49,17 +49,14 @@ RETOURNE UNIQUEMENT UN JSON AU FORMAT SUIVANT :
 """
     client = genai.Client(api_key=api_key)
     response = gemini_call_with_retry(
-
         lambda: client.models.generate_content(
-        model=model,
-        contents=[prompt, image],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.1,
-        ),
-
+            model=model,
+            contents=[prompt, image],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
         )
-
     )
 
     text = getattr(response, "text", "") or ""
