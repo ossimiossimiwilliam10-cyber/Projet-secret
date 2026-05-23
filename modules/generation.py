@@ -513,7 +513,7 @@ def render() -> None:
             with st.spinner("🧠 Gemini construit ton planning… (15-30 secondes)"):
                 try:
                     resultat_json = generate_schedule_from_ai(
-                        session, semaine.id,
+                        semaine.id,
                         consignes_manuelles=consignes_manuelles,
                     )
                     nb_taches = _save_planning_to_db(semaine.id, resultat_json)
@@ -527,8 +527,18 @@ def render() -> None:
                     }
                     st.toast("Planning prêt !", icon="🎉")
                     st.rerun()
-                except Exception as exc:  # noqa: BLE001
+                except (ValueError, RuntimeError) as exc:
+                    # Erreurs métier connues : clé manquante, Gemini KO,
+                    # JSON cabossé, schéma invalide. Message clair à l'utilisateur.
                     st.error(f"❌ Erreur lors de la génération : {exc}")
+                except Exception as exc:  # noqa: BLE001
+                    # Filet de sécurité : on log pour debug mais on ne crash pas l'UI.
+                    import logging
+                    logging.getLogger("gemini").exception("planner_generate failed")
+                    st.error(
+                        f"❌ Erreur inattendue lors de la génération : {exc}. "
+                        "Consulte les logs pour le détail."
+                    )
 
         # === Bouton incrémental : intégrer les nouveautés sans tout casser ===
         # Visible uniquement si un planning existe ET qu'on détecte au moins un
@@ -571,8 +581,17 @@ def render() -> None:
                             st.rerun()
                         except ValueError as exc:
                             st.warning(f"ℹ️ {exc}")
+                        except RuntimeError as exc:
+                            st.error(f"❌ Configuration ou SDK manquant : {exc}")
                         except Exception as exc:  # noqa: BLE001
-                            st.error(f"❌ Erreur lors de l'intégration : {exc}")
+                            import logging
+                            logging.getLogger("gemini").exception(
+                                "planner_integrer_nouveautes failed"
+                            )
+                            st.error(
+                                f"❌ Erreur inattendue lors de l'intégration : {exc}. "
+                                "Consulte les logs pour le détail."
+                            )
 
         # Insights de la dernière génération (consignes / alertes / suggestions /
         # tâches écartées). On les garde en session_state pour qu'ils survivent

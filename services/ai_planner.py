@@ -422,29 +422,40 @@ RÈGLES JSON :
 # 2. Appel API & Parsing
 # ---------------------------------------------------------------------------
 def generate_schedule_from_ai(
-    session: Session,
     semaine_id: int,
     consignes_manuelles: str = "",
 ) -> dict[str, Any]:
-    """Orchestre la création du prompt, l'appel à Gemini et le renvoi du JSON."""
-    # 1. Récupération des données
-    semaine = session.get(Semaine, semaine_id)
-    if not semaine:
-        raise ValueError("Semaine introuvable.")
+    """Orchestre la création du prompt, l'appel à Gemini et le renvoi du JSON.
 
-    saisie = session.query(SaisieHebdo).filter_by(semaine_id=semaine_id).first()
-    if not saisie:
-        raise ValueError("Aucune saisie hebdomadaire trouvée pour cette semaine.")
+    Refonte de la lifecycle des sessions : la fonction ouvre sa propre
+    session pour la **phase de lecture** (construction du prompt à partir
+    de la DB), la **referme avant l'appel Gemini** (15-30s), et travaille
+    ensuite sur des données pures. Évite de tenir une connexion SQLite
+    ouverte pendant l'appel HTTP lent.
+    """
+    from database.db import session_scope as _session_scope
 
-    profil = session.query(Utilisateur).first()
-    _gemini_key, _gemini_model = get_gemini_credentials(session)
-    if not profil or not _gemini_key:
-        raise ValueError("Clé API Gemini introuvable dans le profil.")
+    # Phase 1 (avec session, rapide) : récupération des données + prompt
+    with _session_scope() as session:
+        semaine = session.get(Semaine, semaine_id)
+        if not semaine:
+            raise ValueError("Semaine introuvable.")
 
-    # 2. Construction du prompt
-    prompt = build_planner_prompt(session, semaine, saisie, profil, consignes_manuelles=consignes_manuelles)
+        saisie = session.query(SaisieHebdo).filter_by(semaine_id=semaine_id).first()
+        if not saisie:
+            raise ValueError("Aucune saisie hebdomadaire trouvée pour cette semaine.")
 
-    # 3. Appel à Gemini via le SDK google-genai
+        profil = session.query(Utilisateur).first()
+        _gemini_key, _gemini_model = get_gemini_credentials(session)
+        if not profil or not _gemini_key:
+            raise ValueError("Clé API Gemini introuvable dans le profil.")
+
+        prompt = build_planner_prompt(
+            session, semaine, saisie, profil,
+            consignes_manuelles=consignes_manuelles,
+        )
+
+    # Phase 2 (sans session, lente) : appel Gemini sur données pures
     try:
         from google import genai
         from google.genai import types
@@ -452,7 +463,6 @@ def generate_schedule_from_ai(
         raise RuntimeError("Package `google-genai` non installé.") from exc
 
     client = genai.Client(api_key=_gemini_key)
-
     response = gemini_call_with_retry(
         lambda: client.models.generate_content(
             model=_gemini_model,
