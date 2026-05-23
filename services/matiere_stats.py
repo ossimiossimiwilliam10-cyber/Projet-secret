@@ -141,15 +141,14 @@ def estimer_charge_minutes(
 def format_label_matiere(matiere: Matiere, stats: dict[str, Any]) -> str:
     """Libellé enrichi pour le multiselect de l'onglet Études.
 
-    Affiche le nom (+ UE entre parenthèses si rattachée) suivi d'icônes
-    indicatives :
-      - 🔥 N : N révisions dues aujourd'hui ou en retard
-      - 📑 N : N nouveaux chapitres jamais commencés
-      - 📊 X% : maîtrise moyenne
+    Affiche le nom (+ Semestre / UE si rattachée) suivi d'icônes indicatives.
     """
     base = matiere.nom
     if matiere.ue:
-        base += f" ({matiere.ue.nom})"
+        prefix = ""
+        if matiere.ue.semestre:
+            prefix = f"{matiere.ue.semestre.nom} ▸ "
+        base = f"{prefix}{matiere.ue.nom} ▸ {base}"
 
     if stats["nb_chapitres"] == 0:
         return f"{base}   ⚠️ aucun chapitre"
@@ -157,7 +156,7 @@ def format_label_matiere(matiere: Matiere, stats: dict[str, Any]) -> str:
     parts: list[str] = []
     if stats["nb_revisions_dues"] > 0:
         icon = "⚠️" if stats["nb_revisions_en_retard"] > 0 else "🔥"
-        parts.append(f"{icon} {stats['nb_revisions_dues']} révision(s) due(s)")
+        parts.append(f"{icon} {stats['nb_revisions_dues']} due(s)")
     if stats["nb_nouveaux"] > 0:
         parts.append(f"📑 {stats['nb_nouveaux']} nouveau(x)")
     parts.append(f"📊 {stats['maitrise_moyenne_pct']:.0f}%")
