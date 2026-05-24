@@ -1103,56 +1103,57 @@ def _test_google_maps(api_key: str) -> tuple[bool, str]:
 
 
 def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
-    """Appelle l'API Google Distance Matrix pour calculer les temps entre tous les lieux."""
+    """Appelle l'API Google Distance Matrix en UN SEUL appel pour tous les lieux."""
     import urllib.request
     import urllib.parse
     import json
-    import time
 
     noms = list(adresses.keys())
-    total_pairs = len(noms) * (len(noms) - 1) // 2
+    if len(noms) < 2:
+        return {}
+
+    # Encoder toutes les adresses
+    addrs_encoded = [urllib.parse.quote(adresses[n]) for n in noms]
+    origins = "|".join(addrs_encoded)
+    destinations = "|".join(addrs_encoded)
+
+    url = (
+        f"https://maps.googleapis.com/maps/api/distancematrix/json"
+        f"?origins={origins}&destinations={destinations}"
+        f"&mode={mode}&key={api_key}"
+    )
+
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Erreur API Google Maps : {e}")
+        return {}
+
+    if data.get("status") != "OK":
+        import streamlit as st
+        st.error(f"Google Maps : {data.get('status')} — {data.get('error_message', '')}")
+        return {}
+
     resultats: dict[str, dict] = {}
     erreurs: list[str] = []
-    done = 0
 
     for i, nom_a in enumerate(noms):
-        for nom_b in noms[i + 1:]:
-            addr_a = urllib.parse.quote(adresses[nom_a])
-            addr_b = urllib.parse.quote(adresses[nom_b])
-            url = (
-                f"https://maps.googleapis.com/maps/api/distancematrix/json"
-                f"?origins={addr_a}&destinations={addr_b}"
-                f"&mode={mode}&key={api_key}"
-            )
-            try:
-                with urllib.request.urlopen(url, timeout=15) as resp:
-                    data = json.loads(resp.read().decode())
-                api_status = data.get("status", "?")
-                if api_status == "OVER_QUERY_LIMIT":
-                    time.sleep(2)  # attendre et réessayer une fois
-                    with urllib.request.urlopen(url, timeout=15) as resp:
-                        data = json.loads(resp.read().decode())
-                    api_status = data.get("status", "?")
-                if api_status != "OK":
-                    erreurs.append(f"{nom_a}↔{nom_b}: API={api_status}")
-                    continue
-                elem = data["rows"][0]["elements"][0]
-                if elem["status"] != "OK":
-                    erreurs.append(f"{nom_a}↔{nom_b}: {elem['status']}")
-                    continue
-                duration_sec = elem["duration"]["value"]
-                key = f"{nom_a} ↔ {nom_b}"
-                resultats[key] = {"duree_min": int(duration_sec / 60)}
-            except Exception as e:
-                erreurs.append(f"{nom_a}↔{nom_b}: {e}")
-
-            done += 1
-            # Pause anti rate-limit : 0.2s entre chaque appel
-            if done < total_pairs:
-                time.sleep(0.2)
+        row = data["rows"][i]
+        for j, nom_b in enumerate(noms):
+            if j <= i:  # seulement le triangle supérieur
+                continue
+            elem = row["elements"][j]
+            if elem["status"] != "OK":
+                erreurs.append(f"{nom_a}↔{nom_b}: {elem['status']}")
+                continue
+            duration_sec = elem["duration"]["value"]
+            key = f"{nom_a} ↔ {nom_b}"
+            resultats[key] = {"duree_min": int(duration_sec / 60)}
 
     if erreurs:
         import streamlit as st
-        st.warning("Certains trajets n'ont pas pu être calculés :\n" + "\n".join(erreurs[:5]))
+        st.warning("Certains trajets non trouvés :\n" + "\n".join(erreurs[:5]))
 
     return resultats
