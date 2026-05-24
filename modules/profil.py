@@ -1183,7 +1183,11 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
             st.error("Le LLM n'a pas retourne de JSON valide.")
             st.caption(f"Reponse brute (300 premiers car.) : `{raw[:300]}`")
             return {}
-        for t in data.get("trajets", []):
+        trajets = data.get("trajets", [])
+        if not trajets:
+            st.warning(f"Le LLM a repondu mais sans trajets. Reponse : `{raw[:300]}`")
+            return {}
+        for t in trajets:
             key1 = f"{t['de']} \u2194 {t['vers']}"
             key2 = f"{t['vers']} \u2194 {t['de']}"
             minutes = int(t["minutes"])
