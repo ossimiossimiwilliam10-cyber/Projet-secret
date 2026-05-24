@@ -658,16 +658,21 @@ def render() -> None:
         # --- Bouton Calcul (LLM) ---
         temps_calcules: dict[str, dict] = st.session_state.get("gmaps_result", {}) or {}
         if len(nouveaux_lieux) >= 2:
-            if st.button("🧮 Estimer les temps avec le LLM", width="stretch",
-                         help="Utilise Gemini ou DeepSeek pour estimer les temps de trajet"):
-                with st.spinner(f"🧠 Le LLM estime les temps ({modes_dispo[mode_choisi]})..."):
-                    try:
-                        temps_calcules = _compute_distance_matrix(llm_key, adresses_pour_maps, mode_choisi)
-                        st.session_state["gmaps_result"] = temps_calcules
-                        st.success(f"✅ {len(temps_calcules)} trajets estimes par le LLM !")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur : {e}")
+            if st.button("🧮 Estimer les temps avec le LLM"):
+                if not llm_key.strip():
+                    st.error("Aucune cle LLM configuree. Va dans Parametres IA pour ajouter une cle Gemini ou DeepSeek.")
+                else:
+                    with st.spinner(f"🧠 Le LLM estime les temps ({modes_dispo.get(mode_choisi, mode_choisi)})..."):
+                        try:
+                            temps_calcules = _compute_distance_matrix(llm_key, adresses_pour_maps, mode_choisi)
+                            st.session_state["gmaps_result"] = temps_calcules
+                            if temps_calcules:
+                                st.success(f"✅ {len(temps_calcules)} trajets estimes !")
+                            else:
+                                st.warning("Aucun trajet estime. Verifie les adresses.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur : {e}")
 
         # --- Matrice de temps entre lieux ---
         trajets_dict = data["trajets_habituels"] or {}
