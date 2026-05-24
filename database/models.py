@@ -116,7 +116,7 @@ class SystemeConfig(Base):
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
     
     gemini_api_key = Column(String(500), default="")
-    gemini_model = Column(String(50), default="gemini-2.5-flash")
+    gemini_model = Column(String(50), default="deepseek-v4-pro")
     google_maps_api_key = Column(String(200), default="")
     replanning_auto_actif = Column(Boolean, default=True)
 

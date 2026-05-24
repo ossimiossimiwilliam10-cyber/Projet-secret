@@ -1,9 +1,9 @@
-"""Service centralisé d'accès aux credentials Gemini de l'utilisateur.
+"""Service centralise d'acces aux credentials LLM de l'utilisateur.
 
 Avant cette centralisation, **8 fichiers** lisaient ``profil.systeme.gemini_api_key``
-directement. Depuis la refonte sécurité (chiffrement Fernet), il faut
-TOUJOURS passer par :func:`get_gemini_credentials` qui s'occupe du
-déchiffrement transparent et de la gestion des cas dégradés.
+directement. Depuis la refonte securite (chiffrement Fernet), il faut
+TOUJOURS passer par :func:`get_llm_credentials` qui s'occupe du
+dechiffrement transparent et de la gestion des cas degrades.
 """
 
 from __future__ import annotations
@@ -17,16 +17,16 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "deepseek-v4-pro"
 
 
-def get_gemini_credentials(session: "Session") -> tuple[str, str]:
+def get_llm_credentials(session: "Session") -> tuple[str, str]:
     """Retourne ``(api_key_clair, model)`` pour l'utilisateur singleton.
 
-    - ``api_key_clair`` : chaîne vide si pas de profil ou pas de clé.
-    - ``model`` : le modèle configuré, ou ``gemini-2.5-flash`` par défaut.
+    - ``api_key_clair`` : chaine vide si pas de profil ou pas de cle.
+    - ``model`` : le modele configure, ou ``deepseek-v4-pro`` par defaut.
 
-    Cette fonction **déchiffre** la clé stockée (préfixe ``enc:v1:``) ou
+    Cette fonction **dechiffre** la cle stockee (prefixe ``enc:v1:``) ou
     la retourne telle quelle si elle est en legacy clair.
     """
     p = session.query(Utilisateur).first()
@@ -37,14 +37,21 @@ def get_gemini_credentials(session: "Session") -> tuple[str, str]:
     return api_key, model
 
 
-def has_gemini_credentials(session: "Session") -> bool:
-    """Vrai si l'utilisateur a une clé Gemini déchiffrable et non vide."""
-    api_key, _ = get_gemini_credentials(session)
+def has_llm_credentials(session: "Session") -> bool:
+    """Vrai si l'utilisateur a une cle LLM dechiffrable et non vide."""
+    api_key, _ = get_llm_credentials(session)
     return bool(api_key.strip())
+
+
+# Backward compat aliases
+get_gemini_credentials = get_llm_credentials
+has_gemini_credentials = has_llm_credentials
 
 
 __all__ = [
     "DEFAULT_MODEL",
+    "get_llm_credentials",
+    "has_llm_credentials",
     "get_gemini_credentials",
     "has_gemini_credentials",
 ]
