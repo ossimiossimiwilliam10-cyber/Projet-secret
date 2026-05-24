@@ -1133,7 +1133,15 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str =
                 st.error("Aucune cle LLM configuree.")
                 return {}
             api_key = decrypt_api_key(p.systeme.gemini_api_key)
+    # Toujours recuperer le modele depuis le profil
     model = "gemini-2.5-flash"
+    try:
+        with get_session() as s2:
+            p2 = s2.query(Utilisateur).first()
+            if p2 and p2.systeme.gemini_model:
+                model = p2.systeme.gemini_model
+    except Exception:
+        pass
 
     lieux_desc = "\n".join([f"- {nom} : {adr}" for nom, adr in adresses.items()])
     mode_labels = {"transit": "transports en commun", "walking": "a pied", "bicycling": "velo", "driving": "voiture"}
@@ -1155,8 +1163,13 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
             raw = call_llm(api_key, model, prompt, json_mode=True, temperature=0.2, context="distance_matrix")
             raw = raw.strip()
             if raw.startswith("```"):
-                lines = raw.split("\n")
-                raw = "\n".join(lines[1:-1])
+                # Retirer le bloc markdown
+                lines = raw.splitlines()
+                if lines[-1].startswith("```"):
+                    lines = lines[1:-1]
+                else:
+                    lines = lines[1:]
+                raw = "\n".join(lines) if lines else raw
             data = json.loads(raw)
             for t in data.get("trajets", []):
                 key1 = f"{t['de']} \u2194 {t['vers']}"
