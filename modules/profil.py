@@ -631,13 +631,28 @@ def render() -> None:
                 nouveaux_lieux.append(l)
                 nouvelles_adresses[l] = a
 
+        # --- Mode de transport ---
+        modes_dispo = {
+            "transit": "🚌 Transports en commun",
+            "walking": "🚶 À pied",
+            "bicycling": "🚲 Vélo",
+            "driving": "🚗 Voiture",
+        }
+        mode_choisi = st.selectbox(
+            "Mode de transport principal",
+            options=list(modes_dispo.keys()),
+            format_func=lambda k: modes_dispo[k],
+            index=0,  # transit par défaut
+            key="profil_mode_transport",
+        )
+
         # --- Bouton Google Maps ---
         temps_calcules: dict[str, dict] = {}
         if has_maps and len(nouveaux_lieux) >= 2:
             if st.button("🧮 Calculer les temps avec Google Maps", width="stretch"):
-                with st.spinner("🗺️ Google Maps calcule les distances…"):
+                with st.spinner(f"🗺️ Google Maps calcule ({modes_dispo[mode_choisi]})…"):
                     try:
-                        temps_calcules = _compute_distance_matrix(maps_key, nouvelles_adresses)
+                        temps_calcules = _compute_distance_matrix(maps_key, nouvelles_adresses, mode_choisi)
                         st.success(f"✅ {len(temps_calcules)} trajets calculés via Google Maps !")
                     except Exception as e:
                         st.error(f"Erreur Google Maps : {e}")
@@ -1069,12 +1084,13 @@ def _test_google_maps(api_key: str) -> tuple[bool, str]:
         return False, f"Erreur : {e}"
 
 
-def _compute_distance_matrix(api_key: str, adresses: dict[str, str]) -> dict[str, dict]:
+def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
     """Appelle l'API Google Distance Matrix pour calculer les temps entre tous les lieux.
 
     Args:
         api_key: Clé API Google Maps
         adresses: {nom_lieu: adresse_complete}
+        mode: Mode de transport (transit, walking, bicycling, driving)
 
     Returns:
         {f\"lieuA ↔ lieuB\": {\"duree_min\": int}}
@@ -1092,7 +1108,7 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str]) -> dict[str
             url = (
                 f"https://maps.googleapis.com/maps/api/distancematrix/json"
                 f"?origins={addr_a}&destinations={addr_b}"
-                f"&mode=transit&key={api_key}"
+                f"&mode={mode}&key={api_key}"
             )
             try:
                 with urllib.request.urlopen(url, timeout=10) as resp:
