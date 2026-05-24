@@ -22,7 +22,6 @@ _MODULES = [
     # Couche database
     "database.db",
     "database.models",
-    "database.achievements",
     # Couche services
     "services.ai_planner",
     "services.backup_service",

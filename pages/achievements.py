@@ -201,5 +201,3 @@ def _render_achievement_card(ach, unlocked: dict[str, str]) -> None:
         )
 
 
-# Exécution Streamlit
-render()

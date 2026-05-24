@@ -41,6 +41,7 @@ TYPE_COLORS: dict[str, str] = {
     "transport":   "#bdc3c7",
     "cours_presentiel": "#a29bfe",
     "travail":     "#d63031",
+    "meal_prep":   "#fbc531",
     "autre":       "#353b48",
 }
 
@@ -57,6 +58,7 @@ TYPE_LABELS: dict[str, str] = {
     "transport":   "🚇 Transport",
     "cours_presentiel": "🎓 Cours",
     "travail":     "💼 Travail",
+    "meal_prep":   "🍱 Meal Prep",
 }
 
 

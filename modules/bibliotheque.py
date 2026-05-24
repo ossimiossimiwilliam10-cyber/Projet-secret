@@ -22,6 +22,7 @@ from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, 
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
 from services.pdf_storage import (
     PdfValidationError,
+    cleanup_orphan_pdfs,
     compute_sha256,
     find_existing_upload,
     record_upload,
@@ -636,6 +637,10 @@ def _render_matiere_row(m: dict, ue_items: list[dict]) -> None:
                     m_db = s.get(Matiere, m["id"])
                     if m_db:
                         s.delete(m_db)
+                # Nettoyer les PDFs orphelins sur disque (les chapitres
+                # supprimés par CASCADE peuvent laisser des fichiers derrière).
+                with get_session() as s2:
+                    cleanup_orphan_pdfs(s2, dry_run=False)
                 st.toast(f"Matière '{m['nom']}' supprimée", icon="🗑️")
                 st.rerun()
 
@@ -1085,6 +1090,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                                 current_pdfs.pop(idx)
                                 ch_db.pdfs = current_pdfs
                                 session.commit()
+                                cleanup_orphan_pdfs(session, dry_run=False)
                                 st.rerun()
                         except Exception as e:
                             session.rollback()
@@ -1095,6 +1101,13 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
             new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document", key=f"pdf_label_{chap.id}")
             if st.button("📄 Ajouter", key=f"btn_add_pdf_{chap.id}"):
                 if new_pdf:
+                    # Validation de sécurité (taille ≤ 25 Mo, signature PDF, anti-path-traversal)
+                    try:
+                        validate_pdf_upload(new_pdf.getvalue(), new_pdf.name)
+                    except PdfValidationError as exc:
+                        st.error(f"❌ PDF refusé : {exc}")
+                        st.stop()
+                    label = (new_label or "").strip() or "Document sans titre"
                     pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
                     pdf_path.write_bytes(new_pdf.getvalue())
                     try:
@@ -1103,7 +1116,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                             current_pdfs = list(ch_db.pdfs or [])
                             current_pdfs.append({
                                 "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
-                                "label": new_label,
+                                "label": label,
                                 "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                             })
                             ch_db.pdfs = current_pdfs
@@ -1135,6 +1148,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                     if ch_db:
                         session.delete(ch_db)
                         session.commit()
+                        cleanup_orphan_pdfs(session, dry_run=False)
                     st.session_state.pop(confirm_key, None)
                     st.toast("Chapitre supprimé.", icon="🗑️")
                     st.rerun()
@@ -1321,9 +1335,10 @@ def _render_programme_section() -> None:
             for ch in matiere_chaps:
                 if search_lower and not (search_lower in ch.titre.lower() or search_lower in matiere.nom.lower() or (matiere.code and search_lower in matiere.code.lower())):
                     continue
-                expanded = view == "all"
-                if view == "urgent":
-                    expanded = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
+                ch_urgent = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
+                if view == "urgent" and not ch_urgent:
+                    continue
+                expanded = view == "all" or (view == "urgent" and ch_urgent)
                 with st.expander(_chapter_title_html(ch), expanded=expanded):
                     _render_carte_chapitre(ch, session)
 
@@ -1352,9 +1367,10 @@ def _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, vie
         for ch in matiere_chaps:
             if not _matches(ch, matiere, ue):
                 continue
-            expanded = view == "all"
-            if view == "urgent":
-                expanded = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
+            ch_urgent = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
+            if view == "urgent" and not ch_urgent:
+                continue
+            expanded = view == "all" or (view == "urgent" and ch_urgent)
             with st.expander(_chapter_title_html(ch), expanded=expanded):
                 _render_carte_chapitre(ch, session)
 
@@ -1377,6 +1393,14 @@ def render() -> None:
     )
 
     _render_kpis()
+
+    # Nettoyage des PDFs orphelins au démarrage (fichiers sur disque
+    # qui ne sont plus référencés par aucun chapitre).
+    with get_session() as s:
+        orphans = cleanup_orphan_pdfs(s, dry_run=False)
+    if orphans:
+        st.toast(f"🧹 {len(orphans)} PDF(s) orphelin(s) nettoyé(s)", icon="🧹")
+
     st.divider()
 
     tab_import, tab_programme, tab_admin = st.tabs(

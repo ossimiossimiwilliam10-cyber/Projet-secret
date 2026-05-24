@@ -55,6 +55,20 @@ def render() -> None:
 
         config_db: dict[str, Any] = saisie.ajustements or {}
 
+    # Reprendre S-1
+    col_prev, _ = st.columns([1, 3])
+    with col_prev:
+        if st.button("📋 Reprendre mes ajustements de la semaine dernière", width="stretch"):
+            prev = _get_prev_ajustements(session, offset_courant)
+            if prev:
+                with session_scope() as ws:
+                    s = ws.get(SaisieHebdo, saisie.id)
+                    s.ajustements = prev
+                st.toast("Ajustements repris !", icon="📋")
+                st.rerun()
+            else:
+                st.toast("Aucun ajustement la semaine dernière.", icon="ℹ️")
+
     # --- 1. Paramètres globaux ---
     st.subheader("1. Paramètres globaux")
     col1, col2 = st.columns(2)

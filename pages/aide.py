@@ -91,12 +91,12 @@ def _render_navigation() -> None:
             """
 **👤 Utilisateur** — Ton chronotype, plafond d'étude, objectif hebdo,
 trajets, clé API. À remplir une fois. La section 🤖 supporte
-**Gemini** (Google) et **DeepSeek** — choisis ton modèle préféré.
-Pense à télécharger un backup (section 💾 Sauvegarde & Restauration
-en bas de la page).
+**DeepSeek** (modèle deepseek-v4-pro pour l'analyse de PDF et la
+génération de planning). Pense à télécharger un backup (section
+💾 Sauvegarde & Restauration en bas de la page).
 
 **📚 Bibliothèque** — Hiérarchie **📅 Semestre ▸ 🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**.
-Importe un ou plusieurs PDFs → Gemini/DeepSeek détecte les chapitres.
+Importe un ou plusieurs PDFs → DeepSeek détecte les chapitres.
 Dans l'onglet ⚙️ Gérer, crée tes Semestres, UE et Matières.
 """
         )
@@ -115,7 +115,7 @@ lundi. Bandeau live : ta charge vs objectif hebdo.
 ces créneaux.
 
 **📸 Import Photo (IA)** — Photo de ton emploi du temps papier →
-Gemini extrait les créneaux.
+l'IA extrait les créneaux.
 """
         )
 
@@ -136,7 +136,7 @@ audio** (tu expliques à voix haute, l'IA évalue).
 **🏆 Achievements** — Badges débloqués et à venir.
 
 **🎯 Objectifs** — Objectifs long terme (« 15 au partiel d'algèbre »).
-Gemini/DeepSeek propose une stratégie qui booste les bons chapitres.
+DeepSeek propose une stratégie qui booste les bons chapitres.
 """
         )
 
@@ -267,7 +267,7 @@ def _render_faq() -> None:
     with st.expander("Pourquoi le planning ne change pas quand je clique « Régénérer » ?", expanded=expanded):
         st.markdown(
             """
-Il change ! Mais comme tes contraintes sont identiques, Gemini/DeepSeek
+Il change ! Mais comme tes contraintes sont identiques, DeepSeek
 sort un planning souvent proche. Vérifie le **bandeau vert** (« 🔄 Planning
 régénéré à HH:MM ») et la **stratégie de l'IA** — elle est régénérée à
 chaque fois.
@@ -302,18 +302,20 @@ Révisions, ou laisse l'IA répartir à la prochaine génération.
 """
         )
 
-    with st.expander("Gemini ou DeepSeek : lequel choisir ?", expanded=expanded):
+    with st.expander("Quel modèle d'IA est utilisé ?", expanded=expanded):
         st.markdown(
             """
-- **Gemini 2.5 Flash** : ultra-rapide, idéal pour les analyses PDF
-  et les générations quotidiennes.
-- **Gemini 2.5 Pro** : plus lent mais plus précis pour les stratégies
-  d'objectifs complexes.
-- **DeepSeek-V4-Pro** : raisonnement très profond, excellent pour les
-  stratégies long terme et les corrections détaillées.
+L'app utilise **DeepSeek-V4-Pro**, un modèle de raisonnement très
+profond, sélectionné pour sa qualité d'analyse et la précision de ses
+plannings. Il excelle pour :
 
-Tu changes de modèle à tout moment dans **👤 Utilisateur → 🤖 Paramètres IA**.
-Ta clé API reste chiffrée.
+- L'**analyse de PDF** (détection des chapitres dans tes cours).
+- La **génération de planning** (répartition intelligente de ta charge).
+- Les **stratégies d'objectifs** (plan d'action pour tes partiels).
+- Les **corrections détaillées** (QCM, fiches, méthode Feynman audio).
+
+Tu configures ta clé API une seule fois dans **👤 Utilisateur → 🤖 Paramètres IA**.
+Elle reste chiffrée (Fernet AES-128) dans la base de données.
 """
         )
 
@@ -349,7 +351,7 @@ def _render_tips() -> None:
         ("🧠", "Salle d'étude", "Accessible depuis la Bibliothèque (bouton 🧠 sur chaque chapitre) "
          "OU depuis la sidebar. Idéal pour réviser activement un chapitre."),
         ("📸", "Import photo", "Si ton prof donne un EDT papier, prends-le en photo → "
-         "Gemini extrait les créneaux automatiquement."),
+         "l'IA extrait les créneaux automatiquement."),
         ("📊", "Check-in quotidien", "Plus tu es honnête sur ta fatigue/charge mentale, "
          "plus l'IA ajuste intelligemment ton planning. 10 secondes par jour."),
     ]
@@ -391,5 +393,3 @@ def render() -> None:
         _render_tips()
 
 
-# Exécution Streamlit
-render()

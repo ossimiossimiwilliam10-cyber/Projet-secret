@@ -89,10 +89,30 @@ def render() -> None:
         if st.button("📋 Reprendre mes projets de la semaine dernière", width="stretch"):
             prev = _get_prev_projets(session, offset_courant)
             if prev:
-                with session_scope() as ws:
-                    s = ws.get(SaisieHebdo, saisie.id)
-                    s.projets_config = prev
-                st.toast("Projets repris !", icon="📋")
+                # Ne conserver que les projets « récurrents » : ceux déjà
+                # reportés d'une semaine antérieure (reportee_depuis_semaine_id).
+                # Les projets ponctuels (ex: "Rendre le dossier de Droit")
+                # sont probablement terminés et ne doivent pas être recopiés.
+                prev_filtre = [
+                    p for p in prev
+                    if isinstance(p, dict) and p.get("reportee_depuis_semaine_id")
+                ]
+                if prev_filtre:
+                    with session_scope() as ws:
+                        s = ws.get(SaisieHebdo, saisie.id)
+                        s.projets_config = prev_filtre
+                    nb_ignores = len(prev) - len(prev_filtre)
+                    st.toast(
+                        f"{len(prev_filtre)} projet(s) repris"
+                        + (f", {nb_ignores} ponctuel(s) ignoré(s)" if nb_ignores else ""),
+                        icon="📋",
+                    )
+                else:
+                    st.toast(
+                        f"Aucun projet récurrent la semaine dernière "
+                        f"({len(prev)} projet(s) ponctuel(s) ignoré(s)).",
+                        icon="ℹ️",
+                    )
                 st.rerun()
             else:
                 st.toast("Aucun projet la semaine dernière.", icon="ℹ️")

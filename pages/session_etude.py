@@ -146,7 +146,7 @@ def _render_back_button() -> None:
             st.session_state.pop("target_chapitre_id", None)
             # Tentative de redirection ; sinon on rerun sur cette page.
             try:
-                st.switch_page("modules/generation.py")
+                st.switch_page("generation")
             except Exception:
                 st.rerun()
 

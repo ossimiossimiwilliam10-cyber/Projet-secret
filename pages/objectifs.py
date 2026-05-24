@@ -363,5 +363,3 @@ def _render_form_creation() -> None:
                 st.rerun()
 
 
-# Exécution Streamlit
-render()

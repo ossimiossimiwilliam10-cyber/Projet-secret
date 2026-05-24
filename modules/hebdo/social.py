@@ -90,9 +90,12 @@ def render() -> None:
         for i, (col, jour) in enumerate(zip(cols, jours_abbr)):
             with col:
                 st.markdown(f"**{jour}**")
-                for s in by_jour.get(JOURS[i], [])[:2]:
+                sessions = by_jour.get(JOURS[i], [])
+                for s in sessions[:2]:
                     type_icon = s.get("type", "").split(" ")[0] if s.get("type") else "🍹"
                     st.caption(f"{type_icon} {s.get('duree_min', 0)}min")
+                if len(sessions) > 2:
+                    st.caption(f"└ +{len(sessions) - 2} autre(s)")
 
     edited_social = st.data_editor(
         df_social, num_rows="dynamic", width='stretch',

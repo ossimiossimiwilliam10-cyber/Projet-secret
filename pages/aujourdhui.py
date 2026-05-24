@@ -371,5 +371,3 @@ def render() -> None:
         )
 
 
-# Exécution Streamlit
-render()

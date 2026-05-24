@@ -79,56 +79,43 @@ def _compute_stats(sport_config: list[dict[str, Any]]) -> dict:
 
 
 def _render_grille_hebdo(sport_config: list[dict[str, Any]]) -> None:
-    """Affiche une mini-grille Lundi→Dimanche avec les séances positionnées."""
+    """Affiche une mini-grille par créneau (Matin / Midi / Après-midi / Soir).
+
+    L'utilisateur choisit un créneau préféré, pas un jour précis.
+    L'IA positionnera les séances lors de la génération du planning.
+    """
     if not sport_config:
         st.caption("Aucune séance prévue cette semaine.")
         return
 
-    # Regroupement par créneau préféré (approximation du jour)
-    # On affiche par créneau plutôt que par jour car on n'a pas de jour explicite
+    # Regroupement par créneau préféré
     by_creneau: dict[str, list[dict]] = {}
     for s in sport_config:
         creneau = s.get("creneau_pref", "Peu importe")
         by_creneau.setdefault(creneau, []).append(s)
 
-    cols = st.columns(len(JOURS))
-    jours_abbr = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"]
+    creneaux_ordre = ["Matin", "Midi", "Après-midi", "Soir"]
+    cols = st.columns(len(creneaux_ordre))
 
-    # Répartition simple : les séances sont distribuées sur les jours
-    # (l'IA les positionnera précisément lors de la génération)
-    all_sessions: list[dict] = []
-    for s in sport_config:
-        all_sessions.append(s)
-
-    for i, (col, jour) in enumerate(zip(cols, jours_abbr)):
+    for col, creneau in zip(cols, creneaux_ordre):
         with col:
-            st.markdown(f"**{jour}**")
-            # Affiche les séances dont le créneau correspond au moment de la journée
-            # Matin → plutôt Lu/Ma/Me, Soir → plutôt Je/Ve/Sa
-            # C'est une approximation visuelle
-            sessions_ce_jour = []
-            for s in all_sessions:
-                creneau = s.get("creneau_pref", "Peu importe")
-                if creneau == "Matin" and i < 2:
-                    sessions_ce_jour.append(s)
-                elif creneau == "Midi" and 1 <= i <= 3:
-                    sessions_ce_jour.append(s)
-                elif creneau == "Après-midi" and 2 <= i <= 5:
-                    sessions_ce_jour.append(s)
-                elif creneau == "Soir" and i >= 3:
-                    sessions_ce_jour.append(s)
-                elif creneau == "Peu importe":
-                    sessions_ce_jour.append(s)
+            st.markdown(f"**{creneau}**")
+            sessions = by_creneau.get(creneau, [])
+            # Inclure aussi les "Peu importe" dans chaque créneau (car non spécifique)
+            sessions += by_creneau.get("Peu importe", [])
 
-            if sessions_ce_jour:
-                # Dédupliquer
+            if sessions:
                 seen = set()
-                for s in sessions_ce_jour[:2]:  # max 2 par jour dans la grille
+                for s in sessions[:3]:  # max 3 par créneau
                     key = s.get("type", "")
                     if key not in seen:
                         seen.add(key)
                         duree = s.get("duree_min", 60)
-                        intensite_icon = "🔴" if "🔴" in s.get("intensite", "") else "🟡" if "🟡" in s.get("intensite", "") else "🟢"
+                        intensite_icon = (
+                            "🔴" if "🔴" in s.get("intensite", "")
+                            else "🟡" if "🟡" in s.get("intensite", "")
+                            else "🟢"
+                        )
                         type_icon = s.get("type", "🎯").split(" ")[0] if s.get("type") else "🎯"
                         st.caption(f"{type_icon} {intensite_icon} {duree//60}h{duree%60:02d}")
             else:
@@ -196,8 +183,8 @@ def render() -> None:
             f"{'bon équilibre avec ' + str(stats['nb_legere']) + ' récup(s)' if stats['nb_legere'] > 0 else 'pense à inclure une récupération active.'}"
         )
 
-    # Grille hebdo
-    st.caption("**📅 Aperçu quotidien** (indicatif — l'IA positionnera précisément) :")
+    # Grille par créneau
+    st.caption("**📅 Aperçu par créneau** (indicatif — l'IA positionnera précisément) :")
     _render_grille_hebdo(sport_config_db)
 
     # --- Bouton reprendre semaine précédente ---
@@ -255,7 +242,7 @@ def render() -> None:
                 "Créneau préféré", options=CRENEAUX, default="Peu importe",
             ),
         },
-        key="sport_editor_v5",
+        key=f"sport_editor_{saisie_id}",
     )
 
     st.divider()

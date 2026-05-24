@@ -40,11 +40,14 @@ MAITRISE_BUMP_PARTIEL = 2
 # Helpers
 # ---------------------------------------------------------------------------
 def _get_current_week(session: Session) -> Semaine | None:
-    """Récupère la semaine correspondant au ``semaine_target_offset`` (sync avec Études)."""
-    import streamlit as st
+    """Récupère la semaine EN COURS (toujours offset 0).
+
+    Le suivi quotidien est par définition ancré dans le présent.
+    On ignore ``semaine_target_offset`` qui peut avoir été positionné
+    sur « semaine prochaine » depuis l'onglet Génération IA.
+    """
     from utils.helpers import get_or_create_week_for_offset
-    offset = int(st.session_state.get("semaine_target_offset", 0))
-    semaine, _, _ = get_or_create_week_for_offset(session, offset_weeks=offset)
+    semaine, _, _ = get_or_create_week_for_offset(session, offset_weeks=0)
     return semaine
 
 
@@ -170,6 +173,19 @@ def _persist_weekly_score(semaine_id: int, score: float) -> None:
 def render() -> None:
     st.title("📊 Suivi quotidien")
     st.caption("Valide tes tâches au fil de la journée. L'IA peut redistribuer le reste de la semaine si tu prends du retard.")
+
+    # --- Afficher le gain stocké en session (Bug 1 : récompenses visibles) ---
+    gain = st.session_state.pop("suivi_gain", None)
+    if gain is not None:
+        if gain:
+            st.success(f"✨ **+{gain.xp_gagne} XP** : {gain.raison}")
+            if gain.level_up:
+                st.balloons()
+                st.info(f"🎊 NIVEAU SUPÉRIEUR ! Tu es maintenant niveau **{gain.niveau_apres}**")
+            for ach in gain.nouveaux_achievements:
+                st.toast(f"🏆 Badge débloqué : {ach.nom}", icon=ach.icone)
+        else:
+            st.toast("Tâche terminée", icon="✅")
 
     with get_session() as session:
         semaine = _get_current_week(session)
@@ -302,15 +318,10 @@ def _render_task_row(t: Tache) -> None:
         with col_a:
             if st.button("✅ Terminée", key=f"fait_{t.id}", width="stretch"):
                 gain = _update_task_status(t.id, "fait")
-                if gain:
-                    st.success(f"✨ **+{gain.xp_gagne} XP** : {gain.raison}")
-                    if gain.level_up:
-                        st.balloons()
-                        st.info(f"🎊 NIVEAU SUPÉRIEUR ! Tu es maintenant niveau **{gain.niveau_apres}**")
-                    for ach in gain.nouveaux_achievements:
-                        st.toast(f"🏆 Badge débloqué : {ach.nom}", icon=ach.icone)
-                else:
-                    st.toast("Tâche terminée", icon="✅")
+                # Stocker le gain dans la session pour l'afficher APRÈS le
+                # st.rerun() (sinon Streamlit vide le DOM avant que l'étudiant
+                # ne voie les confettis, le gain d'XP ou le badge débloqué).
+                st.session_state["suivi_gain"] = gain
                 st.rerun()
         with col_b:
             if st.button("⚠️ Partielle", key=f"partiel_{t.id}", width="stretch"):
@@ -375,7 +386,11 @@ def _render_replan_section(session: Session, semaine: Semaine) -> None:
             Tache.semaine_id == semaine.id,
             Tache.jour.in_(jours_passes),
             Tache.obligatoire.is_(False),
-            Tache.statut.in_(["a_faire", "non_fait", "partiellement"]),
+            # Seules les tâches « à faire » sont recyclables par l'IA
+            # (cf. taches_a_redistribuer dans ai_planner.py).
+            # Les tâches « non_fait » ou « partiellement » sont considérées
+            # comme tranchées par l'étudiant et ne sont pas redistribuées.
+            Tache.statut == "a_faire",
         )
         .count()
     )

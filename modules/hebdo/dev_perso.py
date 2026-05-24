@@ -76,10 +76,14 @@ def render() -> None:
                 st.toast("Aucune habitude la semaine dernière.", icon="ℹ️")
 
     st.subheader("Tes habitudes de croissance")
-    # KPI rapide
+    # KPI rapide — la fréquence étant un champ texte libre (ex: \"3x/semaine\"),
+    # on ne peut pas calculer un volume total exact. On affiche le nombre
+    # d'habitudes plutôt qu'un total trompeur.
     if config_db:
-        total_min = sum(int(h.get("duree_min", 0)) for h in config_db)
-        st.caption(f"⏱️ **{len(config_db)} habitude(s) · ~{total_min // 60}h{total_min % 60:02d}** investies sur toi cette semaine. 👏")
+        st.caption(
+            f"⏱️ **{len(config_db)} habitude(s) planifiée(s)** — "
+            f"l'IA intégrera ces sessions de croissance à ton planning. 👏"
+        )
 
     edited_dev = st.data_editor(
         df_dev, num_rows="dynamic", width='stretch',

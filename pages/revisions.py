@@ -476,9 +476,10 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
                                 f"&nbsp;&nbsp;_{d['raison']}_"
                             )
 
-                st.toast(f"Lissage : {nb_d} décalage(s)", icon="🪄")
-                if nb_d > 0:
-                    st.rerun()
+                # Stocker le résultat dans la session pour l'afficher APRÈS
+                # le st.rerun() (sinon le toast et les messages sont invisibles).
+                st.session_state["lissage_result"] = resultat
+                st.rerun()
             except (ValueError, KeyError) as exc:
                 st.error(f"❌ Erreur lors du lissage : {exc}")
             except Exception as exc:  # noqa: BLE001
@@ -630,6 +631,44 @@ def render() -> None:
         "J60 → J90 → J180 → …), et ce qui tombe les prochaines semaines."
     )
 
+    # --- Afficher le résultat du lissage stocké en session (Bug 3) ---
+    resultat = st.session_state.pop("lissage_result", None)
+    if resultat is not None:
+        nb_d = resultat["nb_decalages"]
+        nb_nd = resultat["nb_non_decalables"]
+        if nb_d == 0 and nb_nd == 0:
+            st.info("ℹ️ Aucun chapitre n'a eu besoin d'être décalé.")
+        elif nb_d > 0 and nb_nd == 0:
+            st.success(
+                f"✅ **{nb_d} chapitre(s) décalé(s)** dans la "
+                f"tolérance ±3 jours. Le calendrier ci-dessus va "
+                f"se rafraîchir."
+            )
+        else:
+            st.warning(
+                f"⚠️ **{nb_d} décalage(s) effectué(s)**, mais "
+                f"**{nb_nd} chapitre(s)** n'ont pas pu être lissés "
+                f"dans la fenêtre de tolérance."
+            )
+        st.toast(f"Lissage : {nb_d} décalage(s)", icon="🪄")
+        # Détail des décalages
+        if resultat["decalages"]:
+            with st.expander(f"📋 Détail des {nb_d} décalages", expanded=False):
+                for d in resultat["decalages"]:
+                    st.markdown(
+                        f"- **{d['titre']}** ({d['matiere']}) : "
+                        f"`{d['date_origine']}` → `{d['nouvelle_date']}`  \n"
+                        f"&nbsp;&nbsp;_{d['raison']}_"
+                    )
+        if resultat["non_decalables"]:
+            with st.expander(f"🚧 Détail des {nb_nd} chapitres non lissables", expanded=False):
+                for d in resultat["non_decalables"]:
+                    st.markdown(
+                        f"- **{d['titre']}** ({d['matiere']}) — "
+                        f"date d'origine `{d['date_origine']}`  \n"
+                        f"&nbsp;&nbsp;_{d['raison']}_"
+                    )
+
     with get_session() as session:
         # Filtre matière partagé par toutes les sections.
         matieres = (
@@ -680,5 +719,3 @@ def render() -> None:
         _render_jamais_commences(session, matiere_ids)
 
 
-# Exécution Streamlit
-render()

@@ -110,7 +110,7 @@ def render() -> None:
 
                         with session_scope() as write_session:
                             p = write_session.get(Utilisateur, profil.id)
-                            p.contraintes_fixes = contraintes_actuelles
+                            p.logistique.contraintes_fixes = contraintes_actuelles
 
                         st.success(f"✅ **{len(nouveaux_evenements)}** contrainte(s) ajoutée(s) à ton profil !")
                         st.json(nouveaux_evenements)

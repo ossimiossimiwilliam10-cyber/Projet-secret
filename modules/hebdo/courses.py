@@ -60,10 +60,14 @@ def render() -> None:
         if st.button("📋 Reprendre ma config de la semaine dernière", width="stretch"):
             prev = _get_previous_week_config(session, offset_courant)
             if prev:
+                # On vide le menu de la semaine précédente (les plats
+                # changent d'une semaine sur l'autre), mais on conserve
+                # les habitudes (fréquence, durée, créneau, meal prep).
+                prev.pop("menu_hebdo", None)
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.courses_config = prev
-                st.toast("Config reprise !", icon="📋")
+                st.toast("Config reprise (menu réinitialisé) !", icon="📋")
                 st.rerun()
             else:
                 st.toast("Aucune config la semaine dernière.", icon="ℹ️")
@@ -90,13 +94,13 @@ def render() -> None:
         duree_courses = st.number_input(
             "Durée estimée par session (min)", min_value=15, step=15,
             value=max(15, int(config_db.get("duree_min", 60) or 60)),
-            disabled=(frequence == "Aucune (déjà fait)"),
+            disabled=(frequence in ["Aucune (déjà fait)", "Livraison"]),
         )
 
     idx_creneau = CRENEAUX.index(config_db.get("creneau_pref", "Peu importe")) if config_db.get("creneau_pref") in CRENEAUX else 0
     creneau_pref = st.selectbox(
         "Créneau préféré pour les courses", options=CRENEAUX, index=idx_creneau,
-        disabled=(frequence == "Aucune (déjà fait)"),
+        disabled=(frequence in ["Aucune (déjà fait)", "Livraison"]),
     )
 
     # --- Meal Prep ---
@@ -129,7 +133,7 @@ def render() -> None:
             nouvelle_config = {
                 "menu_hebdo": menu_hebdo.strip(),
                 "frequence": frequence,
-                "duree_min": int(duree_courses),
+                "duree_min": 0 if frequence in ["Aucune (déjà fait)", "Livraison"] else int(duree_courses),
                 "creneau_pref": creneau_pref,
                 "meal_prep": meal_prep,
                 "duree_meal_prep_min": int(duree_meal_prep) if meal_prep else 0,

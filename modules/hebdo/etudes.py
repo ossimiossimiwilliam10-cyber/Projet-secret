@@ -205,12 +205,33 @@ def render() -> None:
             selected_sem_id = sem_choices[sem_filter]
 
         with col_quick:
-            sem_quick = st.selectbox(
-                "Sélection rapide",
-                options=["—"] + [f"✅ Tout {sem.nom}" for sem in semestres],
-                key="etudes_quick_select",
-                label_visibility="collapsed",
-            )
+            # Boutons de sélection rapide (un par semestre)
+            for sem in semestres:
+                if st.button(f"✅ Tout {sem.nom}", key=f"quick_sem_{sem.id}", width="stretch",
+                             help=f"Ajouter toutes les matières de {sem.nom}"):
+                    matiere_ids_in_sem = [
+                        m.id for ue in sem.ues
+                        for m in ue.matieres
+                        if m.actif
+                    ]
+                    if matiere_ids_in_sem:
+                        existing_ids = {m["matiere_id"] for m in matieres_selectionnees_db}
+                        new_ids = set(matiere_ids_in_sem) - existing_ids
+                        if new_ids:
+                            for mid in new_ids:
+                                matieres_selectionnees_db.append({
+                                    "matiere_id": mid,
+                                    "chapitre_ids": [],
+                                    "type_travail": TYPES_TRAVAIL[0],
+                                    "urgence": "Normale",
+                                    "note_ia": "",
+                                })
+                            with session_scope() as ws:
+                                s = ws.get(SaisieHebdo, saisie.id)
+                                s.matieres_selectionnees = matieres_selectionnees_db
+                            st.rerun()
+                        else:
+                            st.toast("Toutes les matières de ce semestre sont déjà sélectionnées.", icon="ℹ️")
 
         with col_reuse:
             if st.button("📋 Reprendre ma sélection précédente", width="stretch", key="reuse_prev",
@@ -226,32 +247,23 @@ def render() -> None:
                 else:
                     st.toast("Aucune sélection précédente trouvée.", icon="ℹ️")
 
-        # --- Application sélection rapide ---
-        if sem_quick != "—":
-            target_sem_name = sem_quick.replace("✅ Tout ", "")
-            target_sem = next((s for s in semestres if s.nom == target_sem_name), None)
-            if target_sem:
-                matiere_ids_in_sem = [
-                    m.id for ue in target_sem.ues
-                    for m in ue.matieres
-                    if m.actif
-                ]
-                if matiere_ids_in_sem:
-                    existing_ids = {m["matiere_id"] for m in matieres_selectionnees_db}
-                    new_ids = set(matiere_ids_in_sem) - existing_ids
-                    if new_ids:
-                        for mid in new_ids:
-                            matieres_selectionnees_db.append({
-                                "matiere_id": mid,
-                                "chapitre_ids": [],
-                                "type_travail": TYPES_TRAVAIL[0],
-                                "urgence": "Normale",
-                                "note_ia": "",
-                            })
-                        with session_scope() as ws:
-                            s = ws.get(SaisieHebdo, saisie.id)
-                            s.matieres_selectionnees = matieres_selectionnees_db
-                        st.rerun()
+        # --- Pré-sélection automatique ---
+        # Flag session_state pour éviter de ré-autosélectionner après un
+        # enregistrement volontairement vide (ex: semaine de vacances).
+        auto_key = f"etudes_auto_done_{saisie.id}"
+        auto_preselection = False
+        if not matieres_selectionnees_db and not st.session_state.get(auto_key):
+            ids_dus = set(matieres_avec_revisions_dues(session))
+            if ids_dus:
+                auto_preselection = True
+                matiere_ids_deja_selectionnees = list(ids_dus)
+                st.session_state[auto_key] = True
+            else:
+                matiere_ids_deja_selectionnees = []
+        else:
+            matiere_ids_deja_selectionnees = [
+                m["matiere_id"] for m in matieres_selectionnees_db
+            ]
 
         # --- Filtrage des matières par semestre ---
         if selected_sem_id:
@@ -260,21 +272,17 @@ def render() -> None:
                 if m.ue and m.ue.semestre_id == selected_sem_id
             ]
         else:
-            matieres_filtrees = toutes_matieres
+            matieres_filtrees = list(toutes_matieres)
 
-        # --- Pré-sélection automatique ---
-        auto_preselection = False
-        if not matieres_selectionnees_db:
-            ids_dus = set(matieres_avec_revisions_dues(session))
-            if ids_dus:
-                auto_preselection = True
-                matiere_ids_deja_selectionnees = list(ids_dus)
-            else:
-                matiere_ids_deja_selectionnees = []
-        else:
-            matiere_ids_deja_selectionnees = [
-                m["matiere_id"] for m in matieres_selectionnees_db
-            ]
+        # Protection : les matières déjà sélectionnées d'un autre semestre
+        # doivent rester dans les options pour éviter que Streamlit ne les
+        # supprime silencieusement du multiselect.
+        ids_filtrees = {m.id for m in matieres_filtrees}
+        for mid in matiere_ids_deja_selectionnees:
+            if mid not in ids_filtrees:
+                extra = next((m for m in toutes_matieres if m.id == mid), None)
+                if extra:
+                    matieres_filtrees.append(extra)
 
         matieres_pre_selectionnees = [
             m for m in matieres_filtrees if m.id in matiere_ids_deja_selectionnees
@@ -425,9 +433,8 @@ def render() -> None:
                     # Type de travail suggéré
                     chapitres_choisis_db = [chap_by_id[i] for i in chapitres_choisis]
                     type_suggere = _type_travail_suggere(chapitres_choisis_db)
-                    idx_type = TYPES_TRAVAIL.index(
-                        config_existante.get("type_travail") or type_suggere
-                    )
+                    val_type = config_existante.get("type_travail") or type_suggere
+                    idx_type = TYPES_TRAVAIL.index(val_type) if val_type in TYPES_TRAVAIL else 0
 
                     col1, col2 = st.columns(2)
                     with col1:

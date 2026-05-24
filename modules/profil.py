@@ -403,17 +403,6 @@ def render() -> None:
     with st.expander("💪 Capacite de travail", expanded=is_new):
         col1, col2 = st.columns(2)
         with col1:
-            duree_max_session = st.slider(
-                "Duree maximale d'une session sans pause (min)",
-                min_value=20, max_value=120,
-                value=data["duree_max_session_min"], step=5,
-            )
-            pause_entre_sessions = st.slider(
-                "Duree d'une pause entre sessions (min)",
-                min_value=5, max_value=20,
-                value=data["pause_entre_sessions_min"], step=1,
-            )
-        with col2:
             methode_travail = st.selectbox(
                 "Methode de travail preferee",
                 options=list(METHODES_TRAVAIL.keys()),
@@ -421,6 +410,26 @@ def render() -> None:
                 index=list(METHODES_TRAVAIL.keys()).index(data["methode_travail"])
                 if data.get("methode_travail") in METHODES_TRAVAIL else 0,
             )
+            # Si Pomodoro, force le slider a une valeur coherente (25 min)
+            if methode_travail == "pomodoro":
+                st.session_state["profil_duree_max_session"] = min(
+                    data.get("duree_max_session_min", 25), 30
+                )
+            duree_max_session = st.slider(
+                "Duree maximale d'une session sans pause (min)",
+                min_value=20, max_value=120,
+                value=st.session_state.get("profil_duree_max_session", data["duree_max_session_min"]),
+                step=5,
+                disabled=(methode_travail == "pomodoro"),
+                key="profil_duree_max_session",
+                help="Avec Pomodoro, la duree est bloquee a 25-30 min maximum.",
+            )
+            pause_entre_sessions = st.slider(
+                "Duree d'une pause entre sessions (min)",
+                min_value=5, max_value=20,
+                value=data["pause_entre_sessions_min"], step=1,
+            )
+        with col2:
             tolerance_fatigue = st.selectbox(
                 "Tolerance a la fatigue",
                 options=list(TOLERANCE_FATIGUE.keys()),
@@ -428,6 +437,8 @@ def render() -> None:
                 index=list(TOLERANCE_FATIGUE.keys()).index(data["tolerance_fatigue"])
                 if data.get("tolerance_fatigue") in TOLERANCE_FATIGUE else 0,
             )
+            if methode_travail == "pomodoro":
+                st.caption("🍅 Mode Pomodoro : sessions de 25-30 min, entrecoupees de courtes pauses.")
 
         capacite_weekend = st.radio(
             "Capacite de travail le week-end",
@@ -601,6 +612,9 @@ def render() -> None:
                             k = f"{a}↔{b}"
                             if k not in nouveaux_trajets or nouveaux_trajets.get(k, 0) == 0:
                                 nouveaux_trajets[k] = int(default_min)
+                                # Injecter dans le session_state pour que la valeur
+                                # survive au st.rerun() et s'affiche dans le widget.
+                                st.session_state[f"trajet_v4_{k}"] = int(default_min)
                     st.rerun()
 
             for i, lieu_a in enumerate(nouveaux_lieux):
@@ -619,6 +633,9 @@ def render() -> None:
                         if duree > 0:
                             nouveaux_trajets[key_ab] = int(duree)
                             nouveaux_trajets[key_ba] = int(duree)
+                        else:
+                            nouveaux_trajets.pop(key_ab, None)
+                            nouveaux_trajets.pop(key_ba, None)
                     else:
                         col_a, col_b = st.columns(2)
                         with col_a:
@@ -637,12 +654,28 @@ def render() -> None:
                             )
                         if d_ab > 0:
                             nouveaux_trajets[key_ab] = int(d_ab)
+                        else:
+                            nouveaux_trajets.pop(key_ab, None)
                         if d_ba > 0:
                             nouveaux_trajets[key_ba] = int(d_ba)
+                        else:
+                            nouveaux_trajets.pop(key_ba, None)
         else:
             if nouveaux_lieux:
                 st.info("Ajoute au moins 2 lieux pour definir des trajets.")
-            nouveaux_trajets = {k: v for k, v in trajets.items() if any(l in k for l in nouveaux_lieux)}
+            # Nettoyage : ne garder que les trajets X↔Y / X→Y dont les deux lieux existent
+            lieux_set = set(nouveaux_lieux)
+            nouveaux_trajets = {
+                k: v for k, v in trajets.items()
+                if _trajet_valide(k, lieux_set)
+            }
+
+        # Nettoyage final : supprimer tout trajet dont au moins un lieu est absent
+        lieux_set_final = set(nouveaux_lieux)
+        nouveaux_trajets = {
+            k: v for k, v in nouveaux_trajets.items()
+            if _trajet_valide(k, lieux_set_final)
+        }
 
         # Assembler la config transport
         transport_config = {
@@ -693,6 +726,7 @@ def render() -> None:
         )
 
         existing_key = data.get("deepseek_api_key", "")
+        delete_key = False
         if existing_key:
             st.markdown(
                 f"🔐 Cle configuree : `{mask_for_display(existing_key)}` - "
@@ -703,15 +737,20 @@ def render() -> None:
                     "⚠️ Cette cle etait stockee en clair (avant cette version). "
                     "Elle sera **chiffree automatiquement** au prochain << Enregistrer >>."
                 )
-            # Bouton pour révéler/masquer la clé
-            show_key = st.checkbox("👁️ Afficher la cle", key="show_api_key")
-            api_key_input = st.text_input(
-                "Cle API DeepSeek",
-                value=existing_key if show_key else "",
-                type="default" if show_key else "password",
-                placeholder="........ (laisser vide pour conserver)",
-                help="Recupere ta cle sur https://platform.deepseek.com",
-            )
+            delete_key = st.checkbox("🗑️ Supprimer la cle existante", key="delete_api_key")
+            if delete_key:
+                api_key_input = ""
+                st.caption("⚠️ La cle sera definitivement supprimee au prochain enregistrement.")
+            else:
+                # Bouton pour révéler/masquer la clé
+                show_key = st.checkbox("👁️ Afficher la cle", key="show_api_key")
+                api_key_input = st.text_input(
+                    "Cle API DeepSeek",
+                    value=existing_key if show_key else "",
+                    type="default" if show_key else "password",
+                    placeholder="........ (laisser vide pour conserver)",
+                    help="Recupere ta cle sur https://platform.deepseek.com",
+                )
         else:
             api_key_input = st.text_input(
                 "Cle API DeepSeek",
@@ -720,8 +759,11 @@ def render() -> None:
                 placeholder="sk-...",
                 help="Recupere ta cle sur https://platform.deepseek.com",
             )
-        # Logique : champ vide = on garde l'existante (mais en re-chiffrant si legacy)
-        api_key = api_key_input.strip() if api_key_input.strip() else existing_key
+        # Logique : suppression explicite => vide, sinon champ vide = on garde l'existante
+        if delete_key:
+            api_key = ""
+        else:
+            api_key = api_key_input.strip() if api_key_input.strip() else existing_key
 
         # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
         stored_model = data.get("deepseek_model", "deepseek-v4-pro")
@@ -735,16 +777,6 @@ def render() -> None:
             index=models_options.index(stored_model) if stored_model in models_options else 0,
             help="**DeepSeek-V4-Pro** = raisonnement tres profond.",
         )
-
-        st.divider()
-        test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
-        if test_clicked:
-            with st.spinner("Test DeepSeek..."):
-                ok, msg = _test_deepseek_connection(api_key, deepseek_model)
-            if ok:
-                st.success(msg)
-            else:
-                st.error(msg)
 
         st.divider()
         test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
@@ -957,7 +989,7 @@ def _defaults() -> dict[str, Any]:
         "heure_lever": time(7, 0),
         "heure_coucher": time(23, 30),
         "heures_sommeil_cible": 8.0,
-        "chronotype": "intermediaire",
+        "chronotype": "leve_tot",
         "pic_concentration": "matin",
         "duree_max_session_min": 50,
         "pause_entre_sessions_min": 10,
@@ -1006,6 +1038,13 @@ def _to_minutes(s: str) -> int:
     """Convertit ``\"HH:MM\"`` en minutes depuis minuit (suppose ``_is_valid_time`` OK)."""
     h, m = s.split(":")
     return int(h) * 60 + int(m)
+
+
+def _trajet_valide(key: str, lieux: set[str]) -> bool:
+    """Un trajet X↔Y ou X→Y est valide si X et Y sont dans ``lieux``."""
+    key_normalized = key.replace("→", "↔")
+    parts = key_normalized.split("↔")
+    return len(parts) == 2 and parts[0] in lieux and parts[1] in lieux
 
 
 def _load_transport_config(raw: dict) -> dict[str, Any]:
