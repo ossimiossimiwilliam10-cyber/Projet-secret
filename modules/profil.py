@@ -1198,24 +1198,24 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
 
 
 def _extract_json(raw: str) -> dict | None:
-    \"\"\"Extrait un objet JSON d'une reponse LLM, quoi qu'il y ait autour.\"\"\"
+    """Extrait un objet JSON d'une reponse LLM, quoi qu'il y ait autour."""
     import json as _json
     import re as _re
 
     strategies: list[str] = [raw.strip()]
 
     # Strategie 2 : strip markdown fences
-    if strategies[0].startswith(\"```\"):
+    if strategies[0].startswith("```"):
         lines = strategies[0].splitlines()
         last_fence = None
         for i in range(len(lines) - 1, -1, -1):
-            if lines[i].strip().startswith(\"```\"):
+            if lines[i].strip().startswith("```"):
                 last_fence = i
                 break
         if last_fence is not None and last_fence > 0:
-            strategies.append(\"\\n\".join(lines[1:last_fence]).strip())
+            strategies.append("\n".join(lines[1:last_fence]).strip())
         else:
-            strategies.append(\"\\n\".join(lines[1:]).strip())
+            strategies.append("\n".join(lines[1:]).strip())
 
     for candidate in strategies:
         try:
@@ -1224,7 +1224,7 @@ def _extract_json(raw: str) -> dict | None:
             pass
 
     # Strategie 3 : regex greedy pour extraire un bloc JSON
-    match = _re.search(r'\\{[\\s\\S]*\\}', raw)
+    match = _re.search(r'\{[\s\S]*\}', raw)
     if match:
         try:
             return _json.loads(match.group())
