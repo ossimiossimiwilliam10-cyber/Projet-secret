@@ -912,6 +912,21 @@ def render() -> None:
                 st.error(e)
         return
 
+    # --- Auto-calcul Google Maps (si clé + adresses, mais pas de temps saisis) ---
+    maps_ok = (google_maps_key or "").strip()
+    if maps_ok and nouvelles_adresses and len(nouvelles_adresses) >= 2:
+        has_manual_times = any(
+            t.get("duree_min", 0) > 0 for t in (trajets_brutes or [])
+        )
+        if not has_manual_times:
+            try:
+                temps_auto = _compute_distance_matrix(maps_ok, nouvelles_adresses, mode_choisi)
+                trajets_brutes = [{"nom": k, **v} for k, v in temps_auto.items()]
+                with col_save_msg:
+                    st.info(f"🗺️ {len(temps_auto)} trajets calculés automatiquement via Google Maps.")
+            except Exception:
+                pass  # fallback : on garde les saisies manuelles (même vides)
+
     # --- Validation des trajets (matrice lieux) ---
     trajets_valides: dict[str, Any] = {}
     doublons: list[str] = []
