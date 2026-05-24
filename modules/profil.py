@@ -434,22 +434,25 @@ def render() -> None:
         col1, col2 = st.columns(2)
         with col1:
             nom = st.text_input(
-                "Prénom", value=data["nom"], placeholder="Ton prénom"
+                "Nom", value=data["nom"], placeholder="Ex: Dupont"
+            )
+            prenom = st.text_input(
+                "Prénom", value=data.get("prenom", ""), placeholder="Ex: Jean"
             )
             heure_lever = st.time_input(
                 "Heure de lever habituelle", value=data["heure_lever"]
             )
+        with col2:
             heure_coucher = st.time_input(
                 "Heure de coucher habituelle", value=data["heure_coucher"]
             )
-        with col2:
             heures_sommeil = st.slider(
                 "Heures de sommeil cible",
                 min_value=5.0, max_value=10.0,
                 value=data["heures_sommeil_cible"], step=0.5,
             )
             chronotype = st.radio(
-                "Chronotype",
+                "Chronotype (plutôt matin ou soir ?)",
                 options=list(CHRONOTYPES.keys()),
                 format_func=lambda k: CHRONOTYPES[k],
                 index=list(CHRONOTYPES).index(data["chronotype"]),
@@ -550,7 +553,7 @@ def render() -> None:
         st.caption(
             "Créneaux bloqués **chaque semaine** : cours en présentiel, job étudiant, "
             "sport en club… Ces blocs seront verrouillés dans tous les plannings "
-            "générés. Utilise le ➕ en bas du tableau pour ajouter une ligne."
+            "générés. Indique le **lieu** pour que l'IA calcule automatiquement le trajet."
         )
 
         df_contraintes = _build_constraints_df(data["contraintes_fixes"])
@@ -575,56 +578,97 @@ def render() -> None:
                     "Libellé", required=True,
                     help="Ex. : « TD Droit », « Job étudiant »",
                 ),
+                "lieu": st.column_config.TextColumn(
+                    "Lieu", required=False,
+                    help="Ex. : « Fac », « Luxembourg » → correspond à un lieu défini dans Transport",
+                ),
             },
             key="profil_contraintes_editor",
         )
-        # On extrait ici (sera validé à l'enregistrement)
         contraintes_brutes = edited.to_dict(orient="records")
 
-    # === Section 4 — Transport ============================================
-    with st.expander("🚌 Transport", expanded=is_new):
-        temps_transport = st.number_input(
-            "Temps de trajet par défaut (aller simple, en minutes)",
-            min_value=0, max_value=300,
-            value=data["temps_transport_min"], step=5,
-            help="Utilisé si aucun trajet spécifique ne correspond au lieu.",
-        )
-        if temps_transport > 0:
-            st.caption(
-                f"⚙️ Si aucun trajet spécifique n'est défini, des blocs de "
-                f"**{temps_transport} min** seront utilisés."
-            )
-
-        st.markdown("##### 🗺️ Trajets habituels")
+    # === Section 4 — Transport (Système de lieux intelligent) ==============
+    with st.expander("🚌 Transport & Lieux", expanded=is_new):
         st.caption(
-            "Définis ici tes trajets récurrents et leur durée en minutes. "
-            "L'IA s'en servira pour planifier précisément. "
-            "Ex. : `Appartement-Fac` → 15, `Strasbourg-Luxembourg` → 150."
+            "Définis tes **lieux** habituels, puis indique le temps de trajet "
+            "entre chaque paire. L'IA utilisera ce graphe pour calculer "
+            "automatiquement les temps de déplacement selon ton planning."
         )
 
+        # Récupérer les lieux existants
         trajets_dict = data["trajets_habituels"] or {}
-        df_trajets = pd.DataFrame(
-            [{"nom": k, "duree_min": int(v)} for k, v in trajets_dict.items()]
-            or [{"nom": "", "duree_min": 0}]
+        lieux_existants: list[str] = []
+        for k in trajets_dict:
+            parts = k.split(" ↔ ")
+            for p in parts:
+                p = p.strip()
+                if p and p not in lieux_existants:
+                    lieux_existants.append(p)
+
+        # --- Gestion des lieux ---
+        st.markdown("##### 📍 Mes lieux")
+        st.caption("Ajoute tous les endroits où tu vas régulièrement :")
+
+        # data_editor pour les lieux
+        df_lieux = pd.DataFrame(
+            [{"lieu": l} for l in lieux_existants] or [{"lieu": ""}]
         )
-        edited_trajets = st.data_editor(
-            df_trajets,
+        edited_lieux = st.data_editor(
+            df_lieux,
             num_rows="dynamic",
             width="stretch",
             hide_index=True,
             column_config={
-                "nom": st.column_config.TextColumn(
-                    "Trajet", required=True,
-                    help="Ex. : « Appartement-Fac », « Strasbourg-Luxembourg »",
-                ),
-                "duree_min": st.column_config.NumberColumn(
-                    "Durée (minutes)", min_value=0, max_value=600, step=5,
-                    required=True,
+                "lieu": st.column_config.TextColumn(
+                    "Nom du lieu", required=True,
+                    help="Ex. : Appartement, Fac, Salle de sport, Luxembourg",
                 ),
             },
-            key="profil_trajets_editor",
+            key="profil_lieux_editor",
         )
-        trajets_brutes = edited_trajets.to_dict(orient="records")
+
+        # Extraire les lieux uniques
+        nouveaux_lieux: list[str] = []
+        for _, row in edited_lieux.iterrows():
+            l = (row.get("lieu") or "").strip()
+            if l and l not in nouveaux_lieux:
+                nouveaux_lieux.append(l)
+
+        # --- Matrice de temps entre lieux ---
+        if len(nouveaux_lieux) >= 2:
+            st.markdown("##### ⏱️ Temps de trajet entre les lieux")
+            st.caption(
+                "Remplis uniquement les paires que tu empruntes. "
+                "Les trajets non renseignés seront ignorés."
+            )
+
+            trajets_matrices: dict[str, dict[str, int]] = {}
+            for i, lieu_a in enumerate(nouveaux_lieux):
+                for lieu_b in nouveaux_lieux[i + 1:]:
+                    key = f"{lieu_a} ↔ {lieu_b}"
+                    val_existante = trajets_dict.get(key, {})
+                    duree_defaut = int(val_existante.get("duree_min", 0)) if isinstance(val_existante, dict) else int(val_existante) if isinstance(val_existante, (int, float)) else 0
+                    duree = st.number_input(
+                        f"{lieu_a} ↔ {lieu_b}",
+                        min_value=0, max_value=600, step=5,
+                        value=duree_defaut,
+                        key=f"trajet_{lieu_a}_{lieu_b}",
+                        help="Laisse 0 si tu ne fais jamais ce trajet.",
+                    )
+                    if duree > 0:
+                        trajets_matrices[key] = {
+                            "duree_min": int(duree),
+                            "mode": "Transport en commun",
+                            "fatigue": "Modérée",
+                            "etude_possible": False,
+                        }
+        else:
+            st.info("Ajoute au moins 2 lieux pour définir des trajets.")
+            trajets_matrices = {}
+
+        trajets_brutes: list[dict[str, Any]] = [
+            {"nom": k, **v} for k, v in trajets_matrices.items()
+        ]
 
     # === Section 5 — Santé & alimentation =================================
     with st.expander("🍽️ Santé & alimentation", expanded=is_new):
@@ -813,11 +857,12 @@ def render() -> None:
         hd = (c.get("heure_debut") or "").strip()
         hf = (c.get("heure_fin") or "").strip()
         lib = (c.get("libelle") or "").strip()
+        lieu = (c.get("lieu") or "").strip()
 
         if not any([jour, hd, hf, lib]):
             continue
         if not all([jour, hd, hf, lib]):
-            erreurs.append(f"Ligne {i} : tous les champs sont obligatoires.")
+            erreurs.append(f"Ligne {i} : jour, début, fin et libellé sont obligatoires.")
             continue
         if not _is_valid_time(hd) or not _is_valid_time(hf):
             erreurs.append(f"Ligne {i} ({lib}) : format d'heure invalide (HH:MM).")
@@ -826,7 +871,7 @@ def render() -> None:
             erreurs.append(f"Ligne {i} ({lib}) : l'heure de fin doit être après l'heure de début.")
             continue
         contraintes_validees.append(
-            {"jour": jour, "heure_debut": hd, "heure_fin": hf, "libelle": lib}
+            {"jour": jour, "heure_debut": hd, "heure_fin": hf, "libelle": lib, "lieu": lieu}
         )
 
     if erreurs:
@@ -835,13 +880,13 @@ def render() -> None:
                 st.error(e)
         return
 
-    # --- Validation des trajets habituels (avec déduplication explicite) ---
+    # --- Validation des trajets (matrice lieux) ---
     trajets_valides: dict[str, Any] = {}
     doublons: list[str] = []
-    for t in trajets_brutes:
+    for t in (trajets_brutes or []):
         nom_trajet = (t.get("nom") or "").strip()
-        duree = t.get("duree_min")
-        if not nom_trajet or duree in (None, ""):
+        duree = t.get("duree_min", 0)
+        if not nom_trajet:
             continue
         try:
             duree_int = int(duree)
@@ -867,7 +912,7 @@ def render() -> None:
 
     payload = {
         "nom": (nom or "").strip(),
-        "prenom": (nom or "").strip(),
+        "prenom": (prenom or "").strip(),
         "heure_lever": heure_lever,
         "heure_coucher": heure_coucher,
         "heures_sommeil_cible": float(heures_sommeil),
@@ -880,7 +925,7 @@ def render() -> None:
         "tolerance_fatigue": tolerance_fatigue,
         "heures_etude_cible_par_semaine": float(heures_etude_cible_par_semaine),
         "heures_etude_plafond_par_jour": float(heures_etude_plafond_par_jour),
-        "temps_transport_min": int(temps_transport),
+        "temps_transport_min": 0,  # obsolète — remplacé par la matrice de lieux
         "trajets_habituels": trajets_valides,
         "nb_repas_par_jour": int(nb_repas),
         "duree_repas_min": int(duree_repas),
@@ -925,6 +970,7 @@ def _defaults() -> dict[str, Any]:
     return {
         "id": None,
         "nom": "",
+        "prenom": "",
         "heure_lever": time(7, 0),
         "heure_coucher": time(23, 30),
         "heures_sommeil_cible": 8.0,
@@ -952,7 +998,7 @@ def _defaults() -> dict[str, Any]:
 
 def _build_constraints_df(contraintes: list[dict[str, str]]) -> pd.DataFrame:
     """DataFrame avec les colonnes attendues, même pour une liste vide."""
-    cols = ["jour", "heure_debut", "heure_fin", "libelle"]
+    cols = ["jour", "heure_debut", "heure_fin", "libelle", "lieu"]
     if not contraintes:
         return pd.DataFrame({c: pd.Series(dtype="string") for c in cols})
     df = pd.DataFrame(contraintes)
