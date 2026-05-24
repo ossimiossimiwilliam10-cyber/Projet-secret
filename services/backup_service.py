@@ -199,6 +199,22 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
         if db_content[:len(SQLITE_MAGIC)] != SQLITE_MAGIC:
             raise ValueError("Le planning.db du zip n'est pas une base SQLite valide.")
 
+        # Refuser un backup vide (aucun utilisateur)
+        import sqlite3 as _sqlite3, tempfile as _tempfile, os as _os
+        tmp = _tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        tmp.write(db_content); tmp.close()
+        try:
+            check = _sqlite3.connect(tmp.name)
+            try:
+                user_count = check.execute("SELECT COUNT(*) FROM utilisateurs").fetchone()[0]
+            except Exception:
+                user_count = check.execute("SELECT COUNT(*) FROM profil").fetchone()[0]
+            check.close()
+        finally:
+            _os.unlink(tmp.name)
+        if user_count == 0:
+            raise ValueError("Ce backup est vide (aucun profil). Refus de restaurer pour ne pas effacer tes donnees.")
+
         # Vérification hash DB (si présent dans le manifest)
         if "MANIFEST.txt" in noms:
             manifest_text = zf.read("MANIFEST.txt").decode("utf-8")
