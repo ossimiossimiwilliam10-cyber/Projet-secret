@@ -836,6 +836,7 @@ def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
             "jour_initial": t.jour,
             "heure_debut": t.heure_debut.strftime("%H:%M"),
             "heure_fin": t.heure_fin.strftime("%H:%M"),
+            "chapitre_ids": t.chapitre_ids or [],
         }
         if with_status:
             d["statut"] = t.statut

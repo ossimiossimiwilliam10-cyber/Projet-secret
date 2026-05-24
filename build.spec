@@ -39,8 +39,8 @@ a = Analysis(
     noarchive=False,
 )
 
-a.datas += Tree('C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\streamlit', 
-                prefix='streamlit')
+import streamlit as _st
+a.datas += Tree(str(_st.__path__[0]), prefix='streamlit')
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 

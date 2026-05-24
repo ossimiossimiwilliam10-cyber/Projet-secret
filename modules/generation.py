@@ -420,6 +420,9 @@ def render() -> None:
         st.session_state["semaine_target_offset"] = nouveau_offset
         st.rerun()
 
+    # La session reste ouverte pendant tout le rendu pour servir les lectures
+    # (checkin, détection chapitres manquants, stats). Les appels Gemini lents
+    # ouvrent LEUR PROPRE session via session_scope() → pas de lock concurrent.
     with get_session() as session:
         # On crée la semaine cible si elle n'existe pas encore — l'utilisateur
         # peut basculer en avance sur la semaine prochaine sans devoir d'abord

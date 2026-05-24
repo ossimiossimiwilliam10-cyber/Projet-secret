@@ -239,9 +239,7 @@ def initialiser_chapitre_pour_revision(
     """Pose une date_prochaine sur UN chapitre s'il n'en a pas encore.
 
     Utilisée par ``modules/bibliotheque._process_import_unifie`` après la
-    création d'un chapitre via ``apply_analysis_to_matiere``. Équivalent
-    Utilisée par l'import unifié de la bibliothèque, après création
-    individuelle d'un chapitre via ``apply_analysis_to_matiere``.
+    création d'un chapitre via ``apply_analysis_to_matiere``.
 
     Returns:
         ``True`` si le chapitre a reçu une date_prochaine, ``False`` s'il
@@ -936,7 +934,7 @@ def generer_qcm(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    api_key, model = _get_api_key_and_model(session)
+    api_key, model = get_gemini_credentials(session)
 
     current_sha = texte_sha256(texte)
     cache_ok = chap.qcm_cache and cache_is_valid(
@@ -1099,7 +1097,7 @@ def evaluer_quiz_ouvert(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    api_key, model = _get_api_key_and_model(session)
+    api_key, model = get_gemini_credentials(session)
 
     paires = "\n\n".join([
         f"Q{i+1} : {q}\nRéponse de l'étudiant : {r or '(pas de réponse)'}"

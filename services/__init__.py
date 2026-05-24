@@ -1,5 +1,47 @@
 """Package ``services`` — logiques métier (analyse PDF, planification IA, exports)."""
 
-from . import pdf_analyzer
+from . import (
+    ai_planner,
+    backup_service,
+    cache_versioning,
+    crypto,
+    data_integrity,
+    gamification_service,
+    gemini_utils,
+    ical_exporter,
+    matiere_stats,
+    objectif_service,
+    optimistic_lock,
+    pdf_analyzer,
+    pdf_storage,
+    planner_validator,
+    profil_service,
+    profil_validator,
+    qcm_validator,
+    report_service,
+    revision_service,
+    scheduler_engine,
+)
 
-__all__ = ["pdf_analyzer"]
+__all__ = [
+    "ai_planner",
+    "backup_service",
+    "cache_versioning",
+    "crypto",
+    "data_integrity",
+    "gamification_service",
+    "gemini_utils",
+    "ical_exporter",
+    "matiere_stats",
+    "objectif_service",
+    "optimistic_lock",
+    "pdf_analyzer",
+    "pdf_storage",
+    "planner_validator",
+    "profil_service",
+    "profil_validator",
+    "qcm_validator",
+    "report_service",
+    "revision_service",
+    "scheduler_engine",
+]

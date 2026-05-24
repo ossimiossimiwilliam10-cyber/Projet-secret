@@ -106,7 +106,11 @@ def call_llm(
     
     Retourne directement le texte généré.
     """
-    is_openai = model.startswith("deepseek") or model.startswith("gpt") or model.startswith("o1") or model.startswith("o3")
+    # Fournisseur LLM détecté au préfixe du modèle.
+    # Évite les faux positifs (ex. "deepseek-*" est OpenAI-compatible, pas Gemini).
+    _OPENAI_COMPATIBLE_PREFIXES = ("deepseek", "gpt", "o1", "o3", "o4")
+    _GEMINI_PREFIXES = ("gemini", "models/gemini", "palm")
+    is_openai = any(model.startswith(p) for p in _OPENAI_COMPATIBLE_PREFIXES)
 
     def _do_call() -> str:
         if is_openai:

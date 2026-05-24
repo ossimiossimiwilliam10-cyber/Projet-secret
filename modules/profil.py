@@ -369,10 +369,18 @@ def render() -> None:
             )
             # Mapping inverse : trouver la cle a partir des valeurs stockees
             default_key = "matin"
+            mapping_trouve = False
             for key, (chrono_val, pic_val) in PRODUCTIVITE.items():
                 if chrono_val == data.get("chronotype") and pic_val == data.get("pic_concentration"):
                     default_key = key
+                    mapping_trouve = True
                     break
+            if not mapping_trouve and data.get("chronotype"):
+                st.warning(
+                    f"⚠️ Combinaison chronotype/pic inconnue "
+                    f"({data.get('chronotype')}/{data.get('pic_concentration')}). "
+                    f"Réinitialisé sur « Matin ». Vérifie ton choix ci-dessous."
+                )
             productivite_choisie = st.radio(
                 "Je suis le plus productif...",
                 options=list(PRODUCTIVITE_LABELS.keys()),
@@ -860,7 +868,7 @@ def render() -> None:
         "trajets_habituels": transport_config,
         "gemini_api_key": (api_key or "").strip(),
         "gemini_model": deepseek_model,
-        "google_maps_api_key": "",
+        "google_maps_api_key": data.get("google_maps_api_key", ""),
     }
 
     # --- Validation biometrique stricte (6 invariants) ---

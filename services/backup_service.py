@@ -47,7 +47,10 @@ def _build_manifest() -> str:
     stats = {}
     if db_path.exists():
         try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            # Utiliser le chemin direct plutôt que l'URI file:...?mode=ro
+            # qui peut échouer sur Windows ou si SQLAlchemy verrouille déjà la DB.
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("PRAGMA query_only = ON")  # lecture seule
             c = conn.cursor()
             for table, label in [
                 ("utilisateurs", "Profil"), ("semestres", "Semestres"),
@@ -135,8 +138,26 @@ def auto_backup() -> bool:
     """Sauvegarde automatique silencieuse (sans interaction utilisateur).
     Stocke dans ``data/auto_backups/``. Nettoie les plus vieux.
     Retourne True si le backup a été créé.
+
+    Déduplication : si le hash SHA-256 de la DB n'a pas changé depuis le
+    dernier backup, on ne crée PAS de nouveau backup (économie d'espace).
     """
     try:
+        # Déduplication : comparer le hash de la DB actuelle avec celui
+        # du dernier backup. Si identique, rien à sauvegarder.
+        db_path = Path(DB_PATH)
+        if db_path.exists():
+            current_db_hash = _compute_sha256(db_path.read_bytes())
+            if _LAST_BACKUP_FILE.exists():
+                try:
+                    last_data = _LAST_BACKUP_FILE.read_text().strip()
+                    # Format : "ISO_TIMESTAMP\nSHA256_HASH"
+                    lines = last_data.split("\n")
+                    if len(lines) >= 2 and lines[1] == current_db_hash:
+                        return False  # DB inchangée, pas de nouveau backup
+                except Exception:
+                    pass  # fichier corrompu, on continue
+
         zip_bytes = create_backup_zip()
         filename = make_backup_filename()
         path = AUTO_BACKUP_DIR / filename
@@ -150,8 +171,10 @@ def auto_backup() -> bool:
             except OSError:
                 pass
 
-        # Tracer le timestamp
-        _LAST_BACKUP_FILE.write_text(datetime.datetime.now().isoformat())
+        # Tracer le timestamp + hash DB pour la prochaine déduplication
+        _LAST_BACKUP_FILE.write_text(
+            datetime.datetime.now().isoformat() + "\n" + current_db_hash
+        )
         return True
     except Exception:
         return False
@@ -166,7 +189,7 @@ def get_last_backup_age_days() -> int | None:
                 last_ts = datetime.datetime.fromtimestamp(backups[0].stat().st_mtime)
                 return (datetime.datetime.now() - last_ts).days
             return None
-        last_str = _LAST_BACKUP_FILE.read_text().strip()
+        last_str = _LAST_BACKUP_FILE.read_text().strip().split("\n")[0]
         last_dt = datetime.datetime.fromisoformat(last_str)
         return (datetime.datetime.now() - last_dt).days
     except Exception:
@@ -230,7 +253,11 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
                     hash_trouve = True
                     break
             if not hash_trouve:
-                raise ValueError("Le planning.db du zip n'est pas une base SQLite valide.")
+                raise ValueError(
+                    "Manifest présent mais sans hash SHA256 — "
+                    "backup potentiellement corrompu ou d'une ancienne version "
+                    "sans empreinte."
+                )
 
         backup_path: Path | None = None
         if db_path.exists():
