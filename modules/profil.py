@@ -1107,10 +1107,13 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str =
     import urllib.request
     import urllib.parse
     import json
+    import time
 
     noms = list(adresses.keys())
+    total_pairs = len(noms) * (len(noms) - 1) // 2
     resultats: dict[str, dict] = {}
     erreurs: list[str] = []
+    done = 0
 
     for i, nom_a in enumerate(noms):
         for nom_b in noms[i + 1:]:
@@ -1122,11 +1125,16 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str =
                 f"&mode={mode}&key={api_key}"
             )
             try:
-                with urllib.request.urlopen(url, timeout=10) as resp:
+                with urllib.request.urlopen(url, timeout=15) as resp:
                     data = json.loads(resp.read().decode())
                 api_status = data.get("status", "?")
+                if api_status == "OVER_QUERY_LIMIT":
+                    time.sleep(2)  # attendre et réessayer une fois
+                    with urllib.request.urlopen(url, timeout=15) as resp:
+                        data = json.loads(resp.read().decode())
+                    api_status = data.get("status", "?")
                 if api_status != "OK":
-                    erreurs.append(f"{nom_a}↔{nom_b}: API status={api_status}")
+                    erreurs.append(f"{nom_a}↔{nom_b}: API={api_status}")
                     continue
                 elem = data["rows"][0]["elements"][0]
                 if elem["status"] != "OK":
@@ -1138,10 +1146,13 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str =
             except Exception as e:
                 erreurs.append(f"{nom_a}↔{nom_b}: {e}")
 
+            done += 1
+            # Pause anti rate-limit : 0.2s entre chaque appel
+            if done < total_pairs:
+                time.sleep(0.2)
+
     if erreurs:
         import streamlit as st
         st.warning("Certains trajets n'ont pas pu être calculés :\n" + "\n".join(erreurs[:5]))
-
-    return resultats
 
     return resultats
