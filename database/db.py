@@ -160,8 +160,10 @@ _EXPECTED_COLUMNS = {
         "xp_attribue": "BOOLEAN DEFAULT 0",
     },
     "ues": {
-        # Rattachement optionnel à un Semestre (nouvelle hiérarchie).
         "semestre_id": "INTEGER REFERENCES semestres(id) ON DELETE SET NULL",
+    },
+    "systeme_config": {
+        "google_maps_api_key": "VARCHAR(200) DEFAULT ''",
     },
     # `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).

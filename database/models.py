@@ -117,6 +117,7 @@ class SystemeConfig(Base):
     
     gemini_api_key = Column(String(500), default="")
     gemini_model = Column(String(50), default="gemini-2.5-flash")
+    google_maps_api_key = Column(String(200), default="")
     replanning_auto_actif = Column(Boolean, default=True)
 
     utilisateur = relationship("Utilisateur", back_populates="systeme")

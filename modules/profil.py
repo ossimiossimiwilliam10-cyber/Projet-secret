@@ -146,6 +146,8 @@ def load_profil() -> dict[str, Any]:
                 bool(gemini_key_stored) and not is_encrypted(gemini_key_stored)
             ),
             "gemini_model": p.systeme.gemini_model or "gemini-2.5-flash",
+            "google_maps_api_key": p.systeme.google_maps_api_key or "",
+            "adresses": dict(p.logistique.trajets_habituels or {}),
         }
 
 
@@ -154,7 +156,7 @@ _GAMIFICATION_ATTRS = frozenset([
     "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total",
 ])
 _SYSTEME_ATTRS = frozenset([
-    "gemini_api_key", "gemini_model", "replanning_auto_actif",
+    "gemini_api_key", "gemini_model", "google_maps_api_key", "replanning_auto_actif",
 ])
 _BIOMETRIE_ATTRS = frozenset([
     "heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype",
@@ -590,88 +592,81 @@ def render() -> None:
         )
         contraintes_brutes = edited.to_dict(orient="records")
 
-    # === Section 4 — Transport (Système de lieux intelligent) ==============
+    # === Section 4 — Transport (Google Maps-ready) ========================
     with st.expander("🚌 Transport & Lieux", expanded=is_new):
+        maps_key = data.get("google_maps_api_key", "")
+        has_maps = bool(maps_key.strip())
+
         st.caption(
-            "Définis tes **lieux** habituels, puis indique le temps de trajet "
-            "entre chaque paire. L'IA utilisera ce graphe pour calculer "
-            "automatiquement les temps de déplacement selon ton planning."
+            "Définis tes **lieux** avec leur adresse. "
+            + ("🗺️ Google Maps calculera les temps automatiquement !" if has_maps else "⚠️ Ajoute une clé Google Maps dans Paramètres IA pour le calcul auto.")
         )
 
-        # Récupérer les lieux existants
-        trajets_dict = data["trajets_habituels"] or {}
-        lieux_existants: list[str] = []
-        for k in trajets_dict:
-            parts = k.split(" ↔ ")
-            for p in parts:
-                p = p.strip()
-                if p and p not in lieux_existants:
-                    lieux_existants.append(p)
+        # Récupérer les adresses existantes
+        adresses_dict = data.get("adresses", {}) or {}
+        lieux_existants: list[dict] = []
+        for nom, adr in adresses_dict.items():
+            lieux_existants.append({"lieu": nom, "adresse": adr if isinstance(adr, str) else adr.get("adresse", "")})
 
-        # --- Gestion des lieux ---
         st.markdown("##### 📍 Mes lieux")
-        st.caption("Ajoute tous les endroits où tu vas régulièrement :")
-
-        # data_editor pour les lieux
-        df_lieux = pd.DataFrame(
-            [{"lieu": l} for l in lieux_existants] or [{"lieu": ""}]
-        )
+        df_lieux = pd.DataFrame(lieux_existants or [{"lieu": "", "adresse": ""}])
         edited_lieux = st.data_editor(
             df_lieux,
             num_rows="dynamic",
             width="stretch",
             hide_index=True,
             column_config={
-                "lieu": st.column_config.TextColumn(
-                    "Nom du lieu", required=True,
-                    help="Ex. : Appartement, Fac, Salle de sport, Luxembourg",
-                ),
+                "lieu": st.column_config.TextColumn("Nom du lieu", required=True, help="Ex: Appartement, Fac, Salle de sport"),
+                "adresse": st.column_config.TextColumn("Adresse complète", help="Ex: 12 rue des Lilas, 75001 Paris"),
             },
-            key="profil_lieux_editor",
+            key="profil_lieux_editor_v2",
         )
 
-        # Extraire les lieux uniques
         nouveaux_lieux: list[str] = []
+        nouvelles_adresses: dict[str, str] = {}
         for _, row in edited_lieux.iterrows():
             l = (row.get("lieu") or "").strip()
+            a = (row.get("adresse") or "").strip()
             if l and l not in nouveaux_lieux:
                 nouveaux_lieux.append(l)
+                nouvelles_adresses[l] = a
+
+        # --- Bouton Google Maps ---
+        temps_calcules: dict[str, dict] = {}
+        if has_maps and len(nouveaux_lieux) >= 2:
+            if st.button("🧮 Calculer les temps avec Google Maps", width="stretch"):
+                with st.spinner("🗺️ Google Maps calcule les distances…"):
+                    try:
+                        temps_calcules = _compute_distance_matrix(maps_key, nouvelles_adresses)
+                        st.success(f"✅ {len(temps_calcules)} trajets calculés via Google Maps !")
+                    except Exception as e:
+                        st.error(f"Erreur Google Maps : {e}")
 
         # --- Matrice de temps entre lieux ---
+        trajets_dict = data["trajets_habituels"] or {}
         if len(nouveaux_lieux) >= 2:
-            st.markdown("##### ⏱️ Temps de trajet entre les lieux")
-            st.caption(
-                "Remplis uniquement les paires que tu empruntes. "
-                "Les trajets non renseignés seront ignorés."
-            )
-
-            trajets_matrices: dict[str, dict[str, int]] = {}
+            st.markdown("##### ⏱️ Temps de trajet")
+            trajets_matrices: dict[str, dict] = {}
             for i, lieu_a in enumerate(nouveaux_lieux):
                 for lieu_b in nouveaux_lieux[i + 1:]:
                     key = f"{lieu_a} ↔ {lieu_b}"
                     val_existante = trajets_dict.get(key, {})
                     duree_defaut = int(val_existante.get("duree_min", 0)) if isinstance(val_existante, dict) else int(val_existante) if isinstance(val_existante, (int, float)) else 0
+                    if key in temps_calcules:
+                        duree_defaut = temps_calcules[key]["duree_min"]
                     duree = st.number_input(
                         f"{lieu_a} ↔ {lieu_b}",
                         min_value=0, max_value=600, step=5,
                         value=duree_defaut,
-                        key=f"trajet_{lieu_a}_{lieu_b}",
-                        help="Laisse 0 si tu ne fais jamais ce trajet.",
+                        key=f"trajet_v3_{lieu_a}_{lieu_b}",
                     )
                     if duree > 0:
-                        trajets_matrices[key] = {
-                            "duree_min": int(duree),
-                            "mode": "Transport en commun",
-                            "fatigue": "Modérée",
-                            "etude_possible": False,
-                        }
+                        trajets_matrices[key] = {"duree_min": int(duree), "mode": "Transport en commun", "fatigue": "Modérée", "etude_possible": False}
         else:
             st.info("Ajoute au moins 2 lieux pour définir des trajets.")
             trajets_matrices = {}
 
-        trajets_brutes: list[dict[str, Any]] = [
-            {"nom": k, **v} for k, v in trajets_matrices.items()
-        ]
+        trajets_brutes: list[dict[str, Any]] = [{"nom": k, **v} for k, v in trajets_matrices.items()]
 
     # === Section 5 — Santé & alimentation =================================
     with st.expander("🍽️ Santé & alimentation", expanded=is_new):
@@ -743,6 +738,16 @@ def render() -> None:
             options=models_options,
             index=models_options.index(data["gemini_model"]),
             help="**Gemini Flash** = ultra-rapide. **DeepSeek-V4-Pro** = raisonnement très profond.",
+        )
+
+        st.divider()
+        st.caption("🗺️ **Google Maps** — optionnel. Calcule automatiquement les temps de trajet.")
+        google_maps_key = st.text_input(
+            "Clé API Google Maps",
+            value=data.get("google_maps_api_key", ""),
+            type="password",
+            placeholder="Facultatif — pour le calcul auto des trajets",
+            help="Sans cette clé, tu devras saisir les temps manuellement dans Transport.",
         )
 
         col_btn, col_msg = st.columns([1, 3])
@@ -938,6 +943,8 @@ def render() -> None:
         "contraintes_fixes": contraintes_validees,
         "gemini_api_key": (api_key or "").strip(),
         "gemini_model": gemini_model,
+        "google_maps_api_key": (google_maps_key or "").strip(),
+        "adresses": nouvelles_adresses,
     }
 
     # --- Validation biométrique stricte (6 invariants) ---
@@ -996,6 +1003,8 @@ def _defaults() -> dict[str, Any]:
         "contraintes_fixes": [],
         "gemini_api_key": "",
         "gemini_model": "gemini-2.5-flash",
+        "google_maps_api_key": "",
+        "adresses": {},
     }
 
 
@@ -1027,3 +1036,41 @@ def _to_minutes(s: str) -> int:
     """Convertit ``"HH:MM"`` en minutes depuis minuit (suppose ``_is_valid_time`` OK)."""
     h, m = s.split(":")
     return int(h) * 60 + int(m)
+
+
+def _compute_distance_matrix(api_key: str, adresses: dict[str, str]) -> dict[str, dict]:
+    """Appelle l'API Google Distance Matrix pour calculer les temps entre tous les lieux.
+
+    Args:
+        api_key: Clé API Google Maps
+        adresses: {nom_lieu: adresse_complete}
+
+    Returns:
+        {f\"lieuA ↔ lieuB\": {\"duree_min\": int}}
+    """
+    import urllib.request
+    import json
+
+    noms = list(adresses.keys())
+    resultats: dict[str, dict] = {}
+
+    for i, nom_a in enumerate(noms):
+        for nom_b in noms[i + 1:]:
+            addr_a = adresses[nom_a].replace(" ", "+")
+            addr_b = adresses[nom_b].replace(" ", "+")
+            url = (
+                f"https://maps.googleapis.com/maps/api/distancematrix/json"
+                f"?origins={addr_a}&destinations={addr_b}"
+                f"&mode=transit&key={api_key}"
+            )
+            try:
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    data = json.loads(resp.read().decode())
+                if data["status"] == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
+                    duration_sec = data["rows"][0]["elements"][0]["duration"]["value"]
+                    key = f"{nom_a} ↔ {nom_b}"
+                    resultats[key] = {"duree_min": int(duration_sec / 60)}
+            except Exception:
+                continue
+
+    return resultats
