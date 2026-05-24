@@ -147,7 +147,6 @@ def load_profil() -> dict[str, Any]:
             ),
             "gemini_model": p.systeme.gemini_model or "gemini-2.5-flash",
             "google_maps_api_key": p.systeme.google_maps_api_key or "",
-            "adresses": dict(p.logistique.trajets_habituels or {}),
         }
 
 
@@ -602,11 +601,14 @@ def render() -> None:
             + ("🗺️ Google Maps calculera les temps automatiquement !" if has_maps else "⚠️ Ajoute une clé Google Maps dans Paramètres IA pour le calcul auto.")
         )
 
-        # Récupérer les adresses existantes
-        adresses_dict = data.get("adresses", {}) or {}
+        # Récupérer les adresses existantes (stockées dans trajets_habituels)
+        trajets_dict = data["trajets_habituels"] or {}
+        adresses_dict = trajets_dict.pop("_adresses", {}) if isinstance(trajets_dict, dict) else {}
+        if not isinstance(adresses_dict, dict):
+            adresses_dict = {}
         lieux_existants: list[dict] = []
         for nom, adr in adresses_dict.items():
-            lieux_existants.append({"lieu": nom, "adresse": adr if isinstance(adr, str) else adr.get("adresse", "")})
+            lieux_existants.append({"lieu": nom, "adresse": adr if isinstance(adr, str) else ""})
 
         st.markdown("##### 📍 Mes lieux")
         df_lieux = pd.DataFrame(lieux_existants or [{"lieu": "", "adresse": ""}])
@@ -661,6 +663,7 @@ def render() -> None:
 
         # --- Matrice de temps entre lieux ---
         trajets_dict = data["trajets_habituels"] or {}
+        trajets_dict.pop("_adresses", None)  # ne pas afficher les adresses comme trajets
         if len(nouveaux_lieux) >= 2:
             st.markdown("##### ⏱️ Temps de trajet")
             trajets_matrices: dict[str, dict] = {}
@@ -975,7 +978,7 @@ def render() -> None:
         "heures_etude_cible_par_semaine": float(heures_etude_cible_par_semaine),
         "heures_etude_plafond_par_jour": float(heures_etude_plafond_par_jour),
         "temps_transport_min": 0,  # obsolète — remplacé par la matrice de lieux
-        "trajets_habituels": trajets_valides,
+        "trajets_habituels": {**trajets_valides, "_adresses": nouvelles_adresses},
         "nb_repas_par_jour": int(nb_repas),
         "duree_repas_min": int(duree_repas),
         "duree_prep_repas_min": int(duree_prep_repas),
@@ -985,7 +988,6 @@ def render() -> None:
         "gemini_api_key": (api_key or "").strip(),
         "gemini_model": gemini_model,
         "google_maps_api_key": (google_maps_key or "").strip(),
-        "adresses": nouvelles_adresses,
     }
 
     # --- Validation biométrique stricte (6 invariants) ---
@@ -1045,7 +1047,6 @@ def _defaults() -> dict[str, Any]:
         "gemini_api_key": "",
         "gemini_model": "gemini-2.5-flash",
         "google_maps_api_key": "",
-        "adresses": {},
     }
 
 
