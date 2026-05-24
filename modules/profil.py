@@ -648,13 +648,20 @@ def render() -> None:
             key="profil_mode_transport",
         )
 
+        # --- Persiste les adresses en session_state (survit au rerun) ---
+        if "cached_adresses" not in st.session_state:
+            st.session_state["cached_adresses"] = {}
+        if nouvelles_adresses:
+            st.session_state["cached_adresses"] = nouvelles_adresses
+        adresses_pour_maps = st.session_state["cached_adresses"] or nouvelles_adresses
+
         # --- Bouton Google Maps ---
         temps_calcules: dict[str, dict] = st.session_state.get("gmaps_result", {}) or {}
         if has_maps and len(nouveaux_lieux) >= 2:
             if st.button("🧮 Calculer les temps avec Google Maps", width="stretch"):
                 with st.spinner(f"🗺️ Google Maps calcule ({modes_dispo[mode_choisi]})…"):
                     try:
-                        temps_calcules = _compute_distance_matrix(maps_key, nouvelles_adresses, mode_choisi)
+                        temps_calcules = _compute_distance_matrix(maps_key, adresses_pour_maps, mode_choisi)
                         st.session_state["gmaps_result"] = temps_calcules
                         st.success(f"✅ {len(temps_calcules)} trajets calculés via Google Maps !")
                         st.rerun()
