@@ -431,6 +431,19 @@ def render() -> None:
         )
         data = _defaults()
 
+    # --- Afficher le diagnostic LLM s'il y en a un (survit au rerun) ---
+    gmaps_diag = st.session_state.pop("gmaps_diag", None)
+    if gmaps_diag:
+        level, msg = gmaps_diag
+        if level == "error":
+            st.error(msg)
+        elif level == "warning":
+            st.warning(msg)
+        elif level == "success":
+            st.success(msg)
+        else:
+            st.info(msg)
+
     # === Section 1 — Identité & rythme =====================================
     with st.expander("🌅 Identité & rythme", expanded=is_new):
         col1, col2 = st.columns(2)
@@ -660,21 +673,23 @@ def render() -> None:
         if len(nouveaux_lieux) >= 2:
             if st.button("🧮 Estimer les temps avec le LLM"):
                 if not llm_key.strip():
-                    st.error("Aucune cle LLM configuree. Va dans Parametres IA pour ajouter une cle Gemini ou DeepSeek.")
+                    st.session_state["gmaps_diag"] = ("error", "Aucune cle LLM configuree. Va dans Parametres IA.")
+                    st.rerun()
                 else:
                     try:
                         with st.spinner(f"🧠 Le LLM estime les temps ({modes_dispo.get(mode_choisi, mode_choisi)})..."):
                             temps_calcules = _estimate_travel_times_with_llm(llm_key, adresses_pour_maps, mode_choisi)
                         st.session_state["gmaps_result"] = temps_calcules
                         if temps_calcules:
-                            st.success(f"✅ {len(temps_calcules)} trajets estimes !")
-                            st.toast(f"✅ {len(temps_calcules)} trajets estimes !", icon="✅")
+                            st.session_state["gmaps_diag"] = ("success", f"✅ {len(temps_calcules)} trajets estimes !")
                         else:
-                            st.warning("Aucun trajet estime. Verifie les adresses.")
-                            st.toast("⚠️ Aucun trajet estime. Verifie les adresses.", icon="⚠️")
+                            # Le message d'erreur est deja dans gmaps_diag (pose par _estimate_travel_times_with_llm)
+                            if "gmaps_diag" not in st.session_state:
+                                st.session_state["gmaps_diag"] = ("warning", "Aucun trajet estime. Verifie les adresses.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erreur : {e}")
+                        st.session_state["gmaps_diag"] = ("error", f"Erreur : {e}")
+                        st.rerun()
 
         # --- Matrice de temps entre lieux ---
         trajets_dict = data["trajets_habituels"] or {}
@@ -1180,12 +1195,11 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
         # Extraction JSON multi-strategies (DeepSeek peut wrapper dans du markdown, du texte, etc.)
         data = _extract_json(raw)
         if data is None:
-            st.error("Le LLM n'a pas retourne de JSON valide.")
-            st.caption(f"Reponse brute (300 premiers car.) : `{raw[:300]}`")
+            st.session_state["gmaps_diag"] = ("error", f"Le LLM n'a pas retourne de JSON valide.\n\nReponse brute (300 premiers car.) : `{raw[:300]}`")
             return {}
         trajets = data.get("trajets", [])
         if not trajets:
-            st.warning(f"Le LLM a repondu mais sans trajets. Reponse : `{raw[:300]}`")
+            st.session_state["gmaps_diag"] = ("warning", f"Le LLM a repondu mais sans trajets.\n\nJSON parse : `{json.dumps(data, ensure_ascii=False)[:300]}`\n\nReponse brute : `{raw[:300]}`")
             return {}
         for t in trajets:
             key1 = f"{t['de']} \u2194 {t['vers']}"
@@ -1196,7 +1210,7 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
             if key2 not in resultats:
                 resultats[key2] = {"duree_min": minutes}
     except Exception as e:
-        st.error(f"Erreur LLM : {e}")
+        st.session_state["gmaps_diag"] = ("error", f"Erreur LLM : {e}")
 
     return resultats
 
