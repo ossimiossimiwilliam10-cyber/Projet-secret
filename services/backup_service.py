@@ -114,24 +114,18 @@ def create_backup_zip() -> bytes:
             for pdf_file in sorted(pdf_dir.iterdir()):
                 if pdf_file.is_file() and pdf_file.suffix.lower() == ".pdf":
                     zf.write(pdf_file, arcname=f"pdfs/{pdf_file.name}")
+
+        # Hash du contenu de la DB seulement (pas du zip entier — impossible en 1 passe)
+        db_hash = ""
+        if db_path.exists():
+            db_hash = _compute_sha256(db_path.read_bytes())
+
         manifest = _build_manifest()
+        if db_hash:
+            manifest += f"\nDB_SHA256 : {db_hash}"
         zf.writestr("MANIFEST.txt", manifest)
 
-    zip_bytes = buffer.getvalue()
-    sha = _compute_sha256(zip_bytes)
-
-    # Réécrire avec le hash dans le manifest
-    buffer2 = io.BytesIO()
-    with zipfile.ZipFile(buffer2, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        if db_path.exists():
-            zf.write(db_path, arcname="planning.db")
-        if pdf_dir.exists():
-            for pdf_file in sorted(pdf_dir.iterdir()):
-                if pdf_file.is_file() and pdf_file.suffix.lower() == ".pdf":
-                    zf.write(pdf_file, arcname=f"pdfs/{pdf_file.name}")
-        zf.writestr("MANIFEST.txt", manifest + f"\nSHA256 : {sha}")
-
-    return buffer2.getvalue()
+    return buffer.getvalue()
 
 
 # ===========================================================================
@@ -188,28 +182,6 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
     pdf_dir.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 0. Vérification intégrité SHA256 (si présent dans le manifest)
-    try:
-        zf_check = zipfile.ZipFile(io.BytesIO(zip_bytes))
-        with zf_check:
-            if "MANIFEST.txt" in zf_check.namelist():
-                manifest_text = zf_check.read("MANIFEST.txt").decode("utf-8")
-                for line in manifest_text.split("\n"):
-                    if line.startswith("SHA256 : "):
-                        expected_sha = line.replace("SHA256 : ", "").strip()
-                        actual_sha = _compute_sha256(zip_bytes)
-                        if expected_sha != actual_sha:
-                            raise ValueError(
-                                f"❌ Intégrité du backup compromise !\n"
-                                f"Attendu : {expected_sha[:16]}...\n"
-                                f"Reçu    : {actual_sha[:16]}...\n"
-                                f"Le fichier a peut-être été corrompu pendant le transfert."
-                            )
-                        break
-        zf_check.close()
-    except zipfile.BadZipFile as exc:
-        raise ValueError(f"Fichier zip invalide : {exc}") from exc
-
     try:
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
     except zipfile.BadZipFile as exc:
@@ -220,9 +192,25 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
         if "planning.db" not in noms:
             raise ValueError("Ce zip ne contient pas de planning.db.")
 
+        # 1. Lire la DB et vérifier son intégrité
         with zf.open("planning.db") as src:
-            head = src.read(len(SQLITE_MAGIC))
-        if head != SQLITE_MAGIC:
+            db_content = src.read()
+
+        if db_content[:len(SQLITE_MAGIC)] != SQLITE_MAGIC:
+            raise ValueError("Le planning.db du zip n'est pas une base SQLite valide.")
+
+        # Vérification hash DB (si présent dans le manifest)
+        if "MANIFEST.txt" in noms:
+            manifest_text = zf.read("MANIFEST.txt").decode("utf-8")
+            for line in manifest_text.split("\n"):
+                if line.startswith("DB_SHA256 : "):
+                    expected = line.replace("DB_SHA256 : ", "").strip()
+                    actual = _compute_sha256(db_content)
+                    if expected != actual:
+                        raise ValueError(
+                            f"❌ Base corrompue ! Hash DB attendu : {expected[:16]}..., reçu : {actual[:16]}..."
+                        )
+                    break
             raise ValueError("Le planning.db du zip n'est pas une base SQLite valide.")
 
         backup_path: Path | None = None
