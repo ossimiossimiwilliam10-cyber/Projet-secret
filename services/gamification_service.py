@@ -75,7 +75,7 @@ STREAK_MULTIPLICATEUR_CAP: float = 3.0
 # ===========================================================================
 # Catalogue des achievements
 # ===========================================================================
-@dataclass(frozen=True)
+@dataclass
 class AchievementDef:
     code: str
     icone: str
@@ -83,7 +83,7 @@ class AchievementDef:
     description: str
     rarete: str  # "commun" | "peu_commun" | "rare" | "epique" | "legendaire"
     # check(utilisateur, event_type, event_data) → True si débloquable maintenant
-    check: Any = field(repr=False)
+    check: Any = field(default=None, repr=False)
 
 
 RARETE_COULEURS: dict[str, str] = {

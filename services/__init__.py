@@ -1,47 +1,11 @@
-"""Package ``services`` — logiques métier (analyse PDF, planification IA, exports)."""
+"""Package ``services`` — logiques métier (analyse PDF, planification IA, exports).
 
-from . import (
-    ai_planner,
-    backup_service,
-    cache_versioning,
-    crypto,
-    data_integrity,
-    gamification_service,
-    gemini_utils,
-    ical_exporter,
-    matiere_stats,
-    objectif_service,
-    optimistic_lock,
-    pdf_analyzer,
-    pdf_storage,
-    planner_validator,
-    profil_service,
-    profil_validator,
-    qcm_validator,
-    report_service,
-    revision_service,
-    scheduler_engine,
-)
+Les imports sont volontairement limités à ``pdf_analyzer`` pour éviter
+de charger tout le graphe de dépendances au démarrage (google-genai,
+pdfplumber, PyMuPDF, etc.). Les autres services sont importés à la
+demande par les modules qui en ont besoin.
+"""
 
-__all__ = [
-    "ai_planner",
-    "backup_service",
-    "cache_versioning",
-    "crypto",
-    "data_integrity",
-    "gamification_service",
-    "gemini_utils",
-    "ical_exporter",
-    "matiere_stats",
-    "objectif_service",
-    "optimistic_lock",
-    "pdf_analyzer",
-    "pdf_storage",
-    "planner_validator",
-    "profil_service",
-    "profil_validator",
-    "qcm_validator",
-    "report_service",
-    "revision_service",
-    "scheduler_engine",
-]
+from . import pdf_analyzer
+
+__all__ = ["pdf_analyzer"]
