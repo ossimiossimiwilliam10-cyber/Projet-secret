@@ -507,7 +507,7 @@ def render() -> None:
 
         # --- Edition des lieux ---
         st.markdown("##### 📍 Mes lieux")
-        df_lieux = pd.DataFrame({"lieu": lieux} if lieux else {"lieu": []})
+        df_lieux = pd.DataFrame({"lieu": pd.Series(lieux, dtype="string")} if lieux else {"lieu": pd.Series([], dtype="string")})
         edited_lieux = st.data_editor(
             df_lieux,
             num_rows="dynamic",
