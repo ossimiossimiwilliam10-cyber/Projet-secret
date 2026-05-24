@@ -137,5 +137,7 @@ def render() -> None:
                 }
             st.success("✅ Ajustements enregistrés !")
             st.toast("Ajustements sauvegardés", icon="✅")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger("hebdo").exception("sauvegarde ajustements")
             st.error(f"Erreur : {e}")

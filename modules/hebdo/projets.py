@@ -151,7 +151,9 @@ def render() -> None:
                 st.success("✅ Projets enregistrés !")
                 st.toast("Projets sauvegardés", icon="✅")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Erreur : {e}")
+            except Exception as e:  # noqa: BLE001
+                import logging
+                logging.getLogger("hebdo").exception("sauvegarde projets")
+                st.error(f"Erreur lors de la sauvegarde : {e}")
     with col_info:
         st.info("💡 Les tâches 'Haute Priorité' rapportent un bonus d'XP lors de leur validation !")

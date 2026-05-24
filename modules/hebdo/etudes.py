@@ -476,11 +476,17 @@ def render() -> None:
         charge_min = estimer_charge_minutes(session, nouvelles_matieres_selectionnees)
         if charge_min > 0:
             profil = session.query(Utilisateur).first()
-            cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+            if profil is None:
+                cible_hebdo_min = 0
+                plafond_h = 0.0
+            else:
+                cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
+                plafond_h = float(
+                    getattr(profil.biometrie, "heures_etude_plafond_par_jour", 0) or 0
+                )
             pct = charge_min / cible_hebdo_min * 100 if cible_hebdo_min else 0
             heures_str = f"{charge_min / 60:.1f} h"
             cible_str = f"{cible_hebdo_min / 60:.1f} h"
-            plafond_h = float(getattr(profil.biometrie, "heures_etude_plafond_par_jour", 0) or 0)
             plafond_str = f"{plafond_h:.1f} h/jour" if plafond_h > 0 else "non défini"
 
             if charge_min < cible_hebdo_min * 0.6:
@@ -523,7 +529,9 @@ def render() -> None:
                     saisie_to_update.travaux_ponctuels = travaux_propres
                 st.success("✅ Tes objectifs d'études pour la semaine sont enregistrés !")
                 st.toast("Objectifs sauvegardés", icon="✅")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
+                import logging
+                logging.getLogger("hebdo").exception("sauvegarde objectifs études")
                 st.error(f"Erreur lors de la sauvegarde : {e}")
 
 
