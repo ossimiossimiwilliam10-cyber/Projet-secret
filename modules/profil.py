@@ -1100,26 +1100,19 @@ def _test_google_maps(api_key: str) -> tuple[bool, str]:
 
 
 def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
-    """Appelle l'API Google Distance Matrix pour calculer les temps entre tous les lieux.
-
-    Args:
-        api_key: Clé API Google Maps
-        adresses: {nom_lieu: adresse_complete}
-        mode: Mode de transport (transit, walking, bicycling, driving)
-
-    Returns:
-        {f\"lieuA ↔ lieuB\": {\"duree_min\": int}}
-    """
+    """Appelle l'API Google Distance Matrix pour calculer les temps entre tous les lieux."""
     import urllib.request
+    import urllib.parse
     import json
 
     noms = list(adresses.keys())
     resultats: dict[str, dict] = {}
+    erreurs: list[str] = []
 
     for i, nom_a in enumerate(noms):
         for nom_b in noms[i + 1:]:
-            addr_a = adresses[nom_a].replace(" ", "+")
-            addr_b = adresses[nom_b].replace(" ", "+")
+            addr_a = urllib.parse.quote(adresses[nom_a])
+            addr_b = urllib.parse.quote(adresses[nom_b])
             url = (
                 f"https://maps.googleapis.com/maps/api/distancematrix/json"
                 f"?origins={addr_a}&destinations={addr_b}"
@@ -1128,11 +1121,24 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str =
             try:
                 with urllib.request.urlopen(url, timeout=10) as resp:
                     data = json.loads(resp.read().decode())
-                if data["status"] == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
-                    duration_sec = data["rows"][0]["elements"][0]["duration"]["value"]
-                    key = f"{nom_a} ↔ {nom_b}"
-                    resultats[key] = {"duree_min": int(duration_sec / 60)}
-            except Exception:
-                continue
+                api_status = data.get("status", "?")
+                if api_status != "OK":
+                    erreurs.append(f"{nom_a}↔{nom_b}: API status={api_status}")
+                    continue
+                elem = data["rows"][0]["elements"][0]
+                if elem["status"] != "OK":
+                    erreurs.append(f"{nom_a}↔{nom_b}: {elem['status']}")
+                    continue
+                duration_sec = elem["duration"]["value"]
+                key = f"{nom_a} ↔ {nom_b}"
+                resultats[key] = {"duree_min": int(duration_sec / 60)}
+            except Exception as e:
+                erreurs.append(f"{nom_a}↔{nom_b}: {e}")
+
+    if erreurs:
+        import streamlit as st
+        st.warning("Certains trajets n'ont pas pu être calculés :\n" + "\n".join(erreurs[:5]))
+
+    return resultats
 
     return resultats
