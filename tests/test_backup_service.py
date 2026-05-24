@@ -2,21 +2,58 @@
 
 Sécurise le contrat : créer un zip, le restaurer, vérifier que le
 contenu est intact (round-trip).
+
+Le service `restore_from_zip` est strict :
+  1. zip valide
+  2. présence de planning.db
+  3. magic bytes SQLite
+  4. vrai fichier SQLite ouvrable avec ≥ 1 utilisateur
+  5. hash DB_SHA256 cohérent avec le MANIFEST
+
+Les tests construisent donc de VRAIES bases SQLite (pas du faux contenu)
+et passent par `create_backup_zip()` pour produire des zips au manifest
+valide.
 """
 
 from __future__ import annotations
 
 import io
+import sqlite3
 import zipfile
 from pathlib import Path
 
 import pytest
 
 
+def _make_real_sqlite_db(path: Path, marker: str = "X") -> None:
+    """Crée une vraie base SQLite minimale avec une table `utilisateurs`
+    contenant 1 ligne (pour passer le check 'backup vide').
+
+    Le `marker` est stocké dans la table pour pouvoir distinguer deux
+    bases dans les assertions de round-trip.
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS utilisateurs (id INTEGER PRIMARY KEY, nom TEXT)")
+        conn.execute("DELETE FROM utilisateurs")
+        conn.execute("INSERT INTO utilisateurs (nom) VALUES (?)", (marker,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _read_marker(path: Path) -> str:
+    conn = sqlite3.connect(str(path))
+    try:
+        return conn.execute("SELECT nom FROM utilisateurs LIMIT 1").fetchone()[0]
+    finally:
+        conn.close()
+
+
 @pytest.fixture
 def tmp_data_dir(tmp_path, monkeypatch):
     """Redirige BASE_DIR / DATA_DIR / DB_PATH / PDF_DIR vers un tmp_path
-    pour isoler les tests du vrai disque."""
+    pour isoler les tests du vrai disque. Crée une vraie DB SQLite."""
     import database.db as db_mod
     import services.backup_service as backup_mod
 
@@ -24,17 +61,12 @@ def tmp_data_dir(tmp_path, monkeypatch):
     pdf_dir = data_dir / "pdfs"
     pdf_dir.mkdir(parents=True)
     db_path = data_dir / "planning.db"
-    # Doit commencer par les magic bytes SQLite pour passer la validation
-    # de `restore_from_zip` (ajoutée pour empêcher la restauration de
-    # fichiers .db cabossés).
-    db_path.write_bytes(b"SQLite format 3\x00FAKE_SQLITE_CONTENT_FOR_TEST")
+    _make_real_sqlite_db(db_path, marker="ORIGINAL")
 
     monkeypatch.setattr(db_mod, "BASE_DIR", tmp_path)
     monkeypatch.setattr(db_mod, "DATA_DIR", data_dir)
     monkeypatch.setattr(db_mod, "DB_PATH", str(db_path))
     monkeypatch.setattr(db_mod, "PDF_DIR", pdf_dir)
-    # Le module backup_service utilise les valeurs au moment de l'import
-    # via Path() — on patch aussi directement ces noms.
     monkeypatch.setattr(backup_mod, "DB_PATH", str(db_path))
     monkeypatch.setattr(backup_mod, "PDF_DIR", pdf_dir)
 
@@ -45,7 +77,6 @@ def test_create_backup_zip_contient_db_et_pdfs(tmp_data_dir):
     from services.backup_service import create_backup_zip
     import services.backup_service as backup_mod
 
-    # Ajoute 2 PDFs factices.
     (Path(backup_mod.PDF_DIR) / "chap1.pdf").write_bytes(b"PDF1")
     (Path(backup_mod.PDF_DIR) / "chap2.pdf").write_bytes(b"PDF2")
 
@@ -59,11 +90,8 @@ def test_create_backup_zip_contient_db_et_pdfs(tmp_data_dir):
         assert "pdfs/chap1.pdf" in names
         assert "pdfs/chap2.pdf" in names
         assert "MANIFEST.txt" in names
-
-        # Vérifie l'intégrité du contenu.
-        assert zf.read("planning.db") == (
-            b"SQLite format 3\x00FAKE_SQLITE_CONTENT_FOR_TEST"
-        )
+        # La DB embarquée est un vrai SQLite (magic bytes).
+        assert zf.read("planning.db")[:16] == b"SQLite format 3\x00"
         assert zf.read("pdfs/chap1.pdf") == b"PDF1"
 
 
@@ -75,18 +103,16 @@ def test_restore_from_zip_round_trip(tmp_data_dir):
     (Path(backup_mod.PDF_DIR) / "original.pdf").write_bytes(b"ORIGINAL")
     backup = create_backup_zip()
 
-    # Pollue la base avec du contenu différent (toujours valide SQLite-magic-wise).
-    Path(backup_mod.DB_PATH).write_bytes(b"SQLite format 3\x00AFTER_MODIFICATION")
+    # Pollue la base avec un AUTRE vrai SQLite + un PDF intrus.
+    _make_real_sqlite_db(Path(backup_mod.DB_PATH), marker="MODIFIE")
     (Path(backup_mod.PDF_DIR) / "intrus.pdf").write_bytes(b"INTRUS")
 
     resultat = restore_from_zip(backup)
     assert resultat["db_restauree"] is True
-    assert resultat["nb_pdfs"] == 1  # seulement original.pdf après restauration.
+    assert resultat["nb_pdfs"] == 1  # seulement original.pdf après restauration
 
-    # L'état initial est rétabli.
-    assert Path(backup_mod.DB_PATH).read_bytes() == (
-        b"SQLite format 3\x00FAKE_SQLITE_CONTENT_FOR_TEST"
-    )
+    # L'état initial est rétabli (marqueur ORIGINAL de la DB sauvegardée).
+    assert _read_marker(Path(backup_mod.DB_PATH)) == "ORIGINAL"
     assert (Path(backup_mod.PDF_DIR) / "original.pdf").read_bytes() == b"ORIGINAL"
     # Le PDF intrus a été supprimé (pas dans la sauvegarde).
     assert not (Path(backup_mod.PDF_DIR) / "intrus.pdf").exists()
@@ -96,8 +122,7 @@ def test_restore_from_zip_round_trip(tmp_data_dir):
 
 
 def test_restore_rejette_zip_sans_db(tmp_data_dir):
-    """Si le zip ne contient pas planning.db, on lève une erreur claire
-    plutôt que de corrompre la base."""
+    """Si le zip ne contient pas planning.db, on lève une erreur claire."""
     from services.backup_service import restore_from_zip
 
     buffer = io.BytesIO()
@@ -116,15 +141,34 @@ def test_restore_rejette_fichier_invalide(tmp_data_dir):
 
 
 def test_restore_rejette_db_sans_magic_bytes(tmp_data_dir):
-    """Un planning.db qui n'a pas les magic bytes SQLite est rejeté pour
-    éviter de corrompre l'app au prochain démarrage."""
+    """Un planning.db sans magic bytes SQLite est rejeté pour éviter de
+    corrompre l'app au prochain démarrage."""
     from services.backup_service import restore_from_zip
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w") as zf:
-        # Pas les magic bytes SQLite — un .exe renommé .db par exemple.
         zf.writestr("planning.db", b"MZ\x90\x00This is an executable not a DB")
-    with pytest.raises(ValueError, match="magic bytes SQLite"):
+    with pytest.raises(ValueError, match="SQLite"):
+        restore_from_zip(buffer.getvalue())
+
+
+def test_restore_rejette_backup_vide(tmp_data_dir):
+    """Une DB SQLite valide mais SANS utilisateur est refusée (protège
+    contre l'écrasement des données par un backup vide)."""
+    from services.backup_service import restore_from_zip
+
+    # Vraie DB SQLite avec table utilisateurs VIDE.
+    empty_db = tmp_data_dir / "empty.db"
+    conn = sqlite3.connect(str(empty_db))
+    conn.execute("CREATE TABLE utilisateurs (id INTEGER PRIMARY KEY, nom TEXT)")
+    conn.commit()
+    conn.close()
+    db_bytes = empty_db.read_bytes()
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as zf:
+        zf.writestr("planning.db", db_bytes)
+    with pytest.raises(ValueError, match="vide"):
         restore_from_zip(buffer.getvalue())
 
 
@@ -133,17 +177,19 @@ def test_restore_cree_backup_defensif_de_la_db_actuelle(tmp_data_dir):
     from services.backup_service import create_backup_zip, restore_from_zip
     import services.backup_service as backup_mod
 
-    # État A (l'état actuel à backuper avant restauration).
-    contenu_actuel = b"SQLite format 3\x00CURRENT_STATE_AVANT_RESTORE"
-    Path(backup_mod.DB_PATH).write_bytes(contenu_actuel)
+    # État actuel = DB avec marqueur ORIGINAL (posé par la fixture).
+    # On en fait un backup valide AVANT de polluer.
+    backup = create_backup_zip()
+    contenu_actuel = Path(backup_mod.DB_PATH).read_bytes()
 
-    # Construit un zip de restauration avec un contenu différent.
-    sauvegarde = io.BytesIO()
-    with zipfile.ZipFile(sauvegarde, mode="w") as zf:
-        zf.writestr("planning.db", b"SQLite format 3\x00OLDER_STATE")
+    # On pollue avec un autre état pour vérifier que le .bak garde l'actuel.
+    _make_real_sqlite_db(Path(backup_mod.DB_PATH), marker="POLLUTION")
+    contenu_avant_restore = Path(backup_mod.DB_PATH).read_bytes()
 
-    resultat = restore_from_zip(sauvegarde.getvalue())
+    resultat = restore_from_zip(backup)
     backup_path = Path(resultat["backup_path"])
     assert backup_path.exists()
-    # Le backup contient bien l'état AVANT la restauration.
-    assert backup_path.read_bytes() == contenu_actuel
+    # Le .bak contient l'état AVANT la restauration (POLLUTION), pas l'original.
+    assert backup_path.read_bytes() == contenu_avant_restore
+    # Et la DB restaurée a bien retrouvé le marqueur ORIGINAL.
+    assert _read_marker(Path(backup_mod.DB_PATH)) == "ORIGINAL"
