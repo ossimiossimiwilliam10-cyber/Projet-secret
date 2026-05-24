@@ -43,16 +43,17 @@ JOURS: list[str] = [
     "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
 ]
 
-CHRONOTYPES: dict[str, str] = {
-    "leve_tot": "Lève-tôt",
-    "couche_tard": "Couche-tard",
-    "intermediaire": "Intermédiaire",
+# Fusion chronotype + pic de concentration en un seul champ intuitif.
+# Mapping : clé → (chronotype, pic_concentration)
+PRODUCTIVITE: dict[str, tuple[str, str]] = {
+    "matin":       ("leve_tot",       "matin"),
+    "apres_midi":  ("intermediaire",  "apres_midi"),
+    "soir":        ("couche_tard",    "soir"),
 }
-
-PIC_CONCENTRATION: dict[str, str] = {
-    "matin": "Matin",
-    "apres_midi": "Après-midi",
-    "soir": "Soir",
+PRODUCTIVITE_LABELS: dict[str, str] = {
+    "matin":       "🌅 Matin (lève-tôt)",
+    "apres_midi":  "☀️ Après-midi",
+    "soir":        "🌙 Soir (couche-tard)",
 }
 
 METHODES_TRAVAIL: dict[str, str] = {
@@ -451,19 +452,21 @@ def render() -> None:
                 min_value=5.0, max_value=10.0,
                 value=data["heures_sommeil_cible"], step=0.5,
             )
-            chronotype = st.radio(
-                "Chronotype (plutôt matin ou soir ?)",
-                options=list(CHRONOTYPES.keys()),
-                format_func=lambda k: CHRONOTYPES[k],
-                index=list(CHRONOTYPES).index(data["chronotype"]),
-            )
-            pic_concentration = st.radio(
-                "Pic de concentration",
-                options=list(PIC_CONCENTRATION.keys()),
-                format_func=lambda k: PIC_CONCENTRATION[k],
-                index=list(PIC_CONCENTRATION).index(data["pic_concentration"]),
+            # Mapping inverse : trouver la clé à partir des valeurs stockées
+            default_key = "matin"
+            for key, (chrono_val, pic_val) in PRODUCTIVITE.items():
+                if chrono_val == data.get("chronotype") and pic_val == data.get("pic_concentration"):
+                    default_key = key
+                    break
+            productivite_choisie = st.radio(
+                "Je suis le plus productif...",
+                options=list(PRODUCTIVITE_LABELS.keys()),
+                format_func=lambda k: PRODUCTIVITE_LABELS[k],
+                index=list(PRODUCTIVITE_LABELS.keys()).index(default_key),
                 horizontal=True,
             )
+            # Dériver les deux valeurs
+            chronotype, pic_concentration = PRODUCTIVITE[productivite_choisie]
 
     # === Section 2 — Capacité de travail ===================================
     with st.expander("💪 Capacité de travail", expanded=is_new):
