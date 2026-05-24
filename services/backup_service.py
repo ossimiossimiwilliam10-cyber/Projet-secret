@@ -202,16 +202,19 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
         # Vérification hash DB (si présent dans le manifest)
         if "MANIFEST.txt" in noms:
             manifest_text = zf.read("MANIFEST.txt").decode("utf-8")
+            hash_trouve = False
             for line in manifest_text.split("\n"):
                 if line.startswith("DB_SHA256 : "):
                     expected = line.replace("DB_SHA256 : ", "").strip()
                     actual = _compute_sha256(db_content)
                     if expected != actual:
                         raise ValueError(
-                            f"❌ Base corrompue ! Hash DB attendu : {expected[:16]}..., reçu : {actual[:16]}..."
+                            f"❌ Base corrompue ! Hash DB attendu : {expected[:16]}..., recu : {actual[:16]}..."
                         )
+                    hash_trouve = True
                     break
-            raise ValueError("Le planning.db du zip n'est pas une base SQLite valide.")
+            if not hash_trouve:
+                raise ValueError("Le planning.db du zip n'est pas une base SQLite valide.")
 
         backup_path: Path | None = None
         if db_path.exists():
