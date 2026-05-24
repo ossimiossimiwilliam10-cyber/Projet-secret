@@ -86,6 +86,16 @@ def main() -> None:
     nav = st.navigation(pages, position="sidebar")
     nav.run()
 
+    # Auto-backup silencieux (après le rendu, en arrière-plan)
+    import threading
+    def _silent_backup():
+        try:
+            from services.backup_service import auto_backup
+            auto_backup()
+        except Exception:
+            pass
+    threading.Thread(target=_silent_backup, daemon=True).start()
+
 
 if __name__ == "__main__":
     main()

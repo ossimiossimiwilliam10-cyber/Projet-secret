@@ -93,6 +93,14 @@ def render() -> None:
         "charge de travail et examens à venir."
     )
 
+    # Rappel de backup
+    from services.backup_service import get_last_backup_age_days
+    days = get_last_backup_age_days()
+    if days is None:
+        st.warning("💾 **Aucun backup automatique détecté.** Va dans 👤 Utilisateur → Sauvegarde pour en créer un.")
+    elif days >= 7:
+        st.warning(f"⚠️ Dernier backup automatique il y a **{days} jours**. Pense à sauvegarder dans 👤 Utilisateur !")
+
     with get_session() as session:
         # NEW F3a — Barre XP / niveau / streak
         _render_xp_bar(session)
