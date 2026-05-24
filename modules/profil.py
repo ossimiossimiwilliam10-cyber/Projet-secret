@@ -1110,57 +1110,42 @@ def _test_google_maps(api_key: str) -> tuple[bool, str]:
 
 
 def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
-    """Appelle l'API Google Distance Matrix en UN SEUL appel pour tous les lieux."""
-    import urllib.request
-    import urllib.parse
-    import json
-
+    """Appels individuels fiables avec barre de progression."""
+    import urllib.request, urllib.parse, json, time, streamlit as st
     noms = list(adresses.keys())
     if len(noms) < 2:
         return {}
-
-    # Encoder toutes les adresses
-    addrs_encoded = [urllib.parse.quote(adresses[n]) for n in noms]
-    origins = "|".join(addrs_encoded)
-    destinations = "|".join(addrs_encoded)
-
-    url = (
-        f"https://maps.googleapis.com/maps/api/distancematrix/json"
-        f"?origins={origins}&destinations={destinations}"
-        f"&mode={mode}&key={api_key}"
-    )
-
-    try:
-        with urllib.request.urlopen(url, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
-    except Exception as e:
-        import streamlit as st
-        st.error(f"Erreur API Google Maps : {e}")
-        return {}
-
-    if data.get("status") != "OK":
-        import streamlit as st
-        st.error(f"Google Maps : {data.get('status')} — {data.get('error_message', '')}")
-        return {}
-
-    resultats: dict[str, dict] = {}
-    erreurs: list[str] = []
-
+    total = len(noms) * (len(noms) - 1) // 2
+    resultats = {}
+    erreurs = []
+    progress = st.progress(0, text=f"Calcul 0/{total}...")
+    done = 0
     for i, nom_a in enumerate(noms):
-        row = data["rows"][i]
-        for j, nom_b in enumerate(noms):
-            if j <= i:  # seulement le triangle supérieur
-                continue
-            elem = row["elements"][j]
-            if elem["status"] != "OK":
-                erreurs.append(f"{nom_a}↔{nom_b}: {elem['status']}")
-                continue
-            duration_sec = elem["duration"]["value"]
-            key = f"{nom_a} ↔ {nom_b}"
-            resultats[key] = {"duree_min": int(duration_sec / 60)}
-
+        for nom_b in noms[i + 1:]:
+            url = (
+                f"https://maps.googleapis.com/maps/api/distancematrix/json"
+                f"?origins={urllib.parse.quote(adresses[nom_a])}"
+                f"&destinations={urllib.parse.quote(adresses[nom_b])}"
+                f"&mode={mode}&key={api_key}"
+            )
+            try:
+                with urllib.request.urlopen(url, timeout=15) as resp:
+                    data = json.loads(resp.read().decode())
+                if data.get("status") == "OK":
+                    elem = data["rows"][0]["elements"][0]
+                    if elem["status"] == "OK":
+                        resultats[f"{nom_a} ↔ {nom_b}"] = {"duree_min": int(elem["duration"]["value"] / 60)}
+                    else:
+                        erreurs.append(f"{nom_a}↔{nom_b}: {elem['status']}")
+                else:
+                    erreurs.append(f"{nom_a}↔{nom_b}: API={data.get('status')}")
+            except Exception as e:
+                erreurs.append(f"{nom_a}↔{nom_b}: {str(e)[:80]}")
+            done += 1
+            progress.progress(done / total, text=f"Calcul {done}/{total}...")
+            if done < total:
+                time.sleep(0.6)
+    progress.empty()
     if erreurs:
-        import streamlit as st
-        st.warning("Certains trajets non trouvés :\n" + "\n".join(erreurs[:5]))
-
+        st.warning("Non trouves : " + " | ".join(erreurs[:5]))
     return resultats
