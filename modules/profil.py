@@ -625,8 +625,8 @@ def render() -> None:
         nouveaux_lieux: list[str] = []
         nouvelles_adresses: dict[str, str] = {}
         for _, row in edited_lieux.iterrows():
-            l = (row.get("lieu") or "").strip()
-            a = (row.get("adresse") or "").strip()
+            l = str(row.get("lieu") or "").strip()
+            a = str(row.get("adresse") or "").strip()
             if l and l not in nouveaux_lieux:
                 nouveaux_lieux.append(l)
                 nouvelles_adresses[l] = a
