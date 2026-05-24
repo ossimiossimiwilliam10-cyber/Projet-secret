@@ -594,11 +594,11 @@ def render() -> None:
     # === Section 4 — Transport (Google Maps-ready) ========================
     with st.expander("🚌 Transport & Lieux", expanded=is_new):
         maps_key = data.get("google_maps_api_key", "")
-        has_maps = bool(maps_key.strip())
+        llm_key = data.get("gemini_api_key", "")
 
         st.caption(
             "Définis tes **lieux** avec leur adresse. "
-            + ("🗺️ Google Maps calculera les temps automatiquement !" if has_maps else "⚠️ Ajoute une clé Google Maps dans Paramètres IA pour le calcul auto.")
+            + ("🧠 Le LLM estimera les temps automatiquement !" if llm_key else "⚠️ Configure une clé LLM dans Paramètres IA.")
         )
 
         # Récupérer les adresses existantes (stockées dans trajets_habituels)
@@ -655,18 +655,19 @@ def render() -> None:
             st.session_state["cached_adresses"] = nouvelles_adresses
         adresses_pour_maps = st.session_state["cached_adresses"] or nouvelles_adresses
 
-        # --- Bouton Google Maps ---
+        # --- Bouton Calcul (LLM) ---
         temps_calcules: dict[str, dict] = st.session_state.get("gmaps_result", {}) or {}
-        if has_maps and len(nouveaux_lieux) >= 2:
-            if st.button("🧮 Calculer les temps avec Google Maps", width="stretch"):
-                with st.spinner(f"🗺️ Google Maps calcule ({modes_dispo[mode_choisi]})…"):
+        if len(nouveaux_lieux) >= 2:
+            if st.button("🧮 Estimer les temps avec le LLM", width="stretch",
+                         help="Utilise Gemini ou DeepSeek pour estimer les temps de trajet"):
+                with st.spinner(f"🧠 Le LLM estime les temps ({modes_dispo[mode_choisi]})..."):
                     try:
-                        temps_calcules = _compute_distance_matrix(maps_key, adresses_pour_maps, mode_choisi)
+                        temps_calcules = _compute_distance_matrix(llm_key, adresses_pour_maps, mode_choisi)
                         st.session_state["gmaps_result"] = temps_calcules
-                        st.success(f"✅ {len(temps_calcules)} trajets calculés via Google Maps !")
+                        st.success(f"✅ {len(temps_calcules)} trajets estimes par le LLM !")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erreur Google Maps : {e}")
+                        st.error(f"Erreur : {e}")
 
         # --- Matrice de temps entre lieux ---
         trajets_dict = data["trajets_habituels"] or {}
@@ -924,20 +925,20 @@ def render() -> None:
                 st.error(e)
         return
 
-    # --- Auto-calcul Google Maps (si clé + adresses, mais pas de temps saisis) ---
-    maps_ok = (google_maps_key or "").strip()
-    if maps_ok and nouvelles_adresses and len(nouvelles_adresses) >= 2:
+    # --- Auto-calcul LLM (si clé + adresses, mais pas de temps saisis) ---
+    llm_key_save = (api_key or "").strip()  # api_key = clé LLM (déjà déchiffrée)
+    if llm_key_save and nouvelles_adresses and len(nouvelles_adresses) >= 2:
         has_manual_times = any(
             t.get("duree_min", 0) > 0 for t in (trajets_brutes or [])
         )
         if not has_manual_times:
             try:
-                temps_auto = _compute_distance_matrix(maps_ok, nouvelles_adresses, mode_choisi)
+                temps_auto = _compute_distance_matrix(llm_key_save, nouvelles_adresses, mode_choisi)
                 trajets_brutes = [{"nom": k, **v} for k, v in temps_auto.items()]
                 with col_save_msg:
-                    st.info(f"🗺️ {len(temps_auto)} trajets calculés automatiquement via Google Maps.")
+                    st.info(f"🧠 {len(temps_auto)} trajets estimes automatiquement par le LLM.")
             except Exception:
-                pass  # fallback : on garde les saisies manuelles (même vides)
+                pass
 
     # --- Validation des trajets (matrice lieux) ---
     trajets_valides: dict[str, Any] = {}
@@ -1110,42 +1111,57 @@ def _test_google_maps(api_key: str) -> tuple[bool, str]:
 
 
 def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
-    """Appels individuels fiables avec barre de progression."""
-    import urllib.request, urllib.parse, json, time, streamlit as st
+    """Utilise le LLM (Gemini/DeepSeek) pour estimer les temps de trajet."""
+    import json, streamlit as st
+    from services.gemini_utils import call_llm
+    from database import get_session, Utilisateur
+    from services.crypto import decrypt_api_key
+
     noms = list(adresses.keys())
     if len(noms) < 2:
         return {}
-    total = len(noms) * (len(noms) - 1) // 2
+
+    if not api_key.strip():
+        with get_session() as s:
+            p = s.query(Utilisateur).first()
+            if not p or not p.systeme.gemini_api_key:
+                st.error("Aucune cle LLM configuree.")
+                return {}
+            api_key = decrypt_api_key(p.systeme.gemini_api_key)
+    model = "gemini-2.5-flash"
+
+    lieux_desc = "\n".join([f"- {nom} : {adr}" for nom, adr in adresses.items()])
+    mode_labels = {"transit": "transports en commun", "walking": "a pied", "bicycling": "velo", "driving": "voiture"}
+    mode_label = mode_labels.get(mode, "transports en commun")
+
+    prompt = f"""Estime le temps de trajet en {mode_label} entre chaque paire de lieux.
+
+LIEUX :
+{lieux_desc}
+
+Retourne UNIQUEMENT ce JSON :
+{{"trajets": [{{"de":"A","vers":"B","minutes":45}}]}}
+
+Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=temps inter-ville."""
+
     resultats = {}
-    erreurs = []
-    progress = st.progress(0, text=f"Calcul 0/{total}...")
-    done = 0
-    for i, nom_a in enumerate(noms):
-        for nom_b in noms[i + 1:]:
-            url = (
-                f"https://maps.googleapis.com/maps/api/distancematrix/json"
-                f"?origins={urllib.parse.quote(adresses[nom_a])}"
-                f"&destinations={urllib.parse.quote(adresses[nom_b])}"
-                f"&mode={mode}&key={api_key}"
-            )
-            try:
-                with urllib.request.urlopen(url, timeout=15) as resp:
-                    data = json.loads(resp.read().decode())
-                if data.get("status") == "OK":
-                    elem = data["rows"][0]["elements"][0]
-                    if elem["status"] == "OK":
-                        resultats[f"{nom_a} ↔ {nom_b}"] = {"duree_min": int(elem["duration"]["value"] / 60)}
-                    else:
-                        erreurs.append(f"{nom_a}↔{nom_b}: {elem['status']}")
-                else:
-                    erreurs.append(f"{nom_a}↔{nom_b}: API={data.get('status')}")
-            except Exception as e:
-                erreurs.append(f"{nom_a}↔{nom_b}: {str(e)[:80]}")
-            done += 1
-            progress.progress(done / total, text=f"Calcul {done}/{total}...")
-            if done < total:
-                time.sleep(0.6)
-    progress.empty()
-    if erreurs:
-        st.warning("Non trouves : " + " | ".join(erreurs[:5]))
+    with st.spinner(f"Le LLM estime les temps ({mode_label})..."):
+        try:
+            raw = call_llm(api_key, model, prompt, json_mode=True, temperature=0.2, context="distance_matrix")
+            raw = raw.strip()
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                raw = "\n".join(lines[1:-1])
+            data = json.loads(raw)
+            for t in data.get("trajets", []):
+                key1 = f"{t['de']} \u2194 {t['vers']}"
+                key2 = f"{t['vers']} \u2194 {t['de']}"
+                minutes = int(t["minutes"])
+                if key1 not in resultats:
+                    resultats[key1] = {"duree_min": minutes}
+                if key2 not in resultats:
+                    resultats[key2] = {"duree_min": minutes}
+        except Exception as e:
+            st.error(f"Erreur LLM : {e}")
+
     return resultats
