@@ -116,9 +116,7 @@ def call_llm(
                 base_url="https://api.deepseek.com/v1" if model.startswith("deepseek") else None
             )
             kwargs = {}
-            if json_mode and not model.startswith("deepseek"):
-                # DeepSeek-V4-Pro supports json mode via response_format? If so, we can add it,
-                # but standard openai expects response_format={"type": "json_object"}.
+            if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             
             resp = client.chat.completions.create(
@@ -127,7 +125,11 @@ def call_llm(
                 temperature=temperature,
                 **kwargs
             )
-            return resp.choices[0].message.content or ""
+            text = resp.choices[0].message.content or ""
+            # DeepSeek reasoners (v4-pro) peuvent mettre la reponse dans reasoning_content
+            if not text.strip():
+                text = getattr(resp.choices[0].message, "reasoning_content", "") or ""
+            return text
         else:
             from google import genai
             from google.genai import types

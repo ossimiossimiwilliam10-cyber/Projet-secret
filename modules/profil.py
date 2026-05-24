@@ -1200,6 +1200,9 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
                 resultats[key1] = {"duree_min": minutes}
             if key2 not in resultats:
                 resultats[key2] = {"duree_min": minutes}
+    except json.JSONDecodeError as e:
+        st.error(f"Erreur parsing JSON : {e}")
+        st.caption(f"Reponse brute (200 premiers car.) : `{raw[:200]}...`")
     except Exception as e:
         st.error(f"Erreur LLM : {e}")
 
