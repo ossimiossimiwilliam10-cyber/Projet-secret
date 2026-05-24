@@ -86,28 +86,6 @@ def main() -> None:
     nav = st.navigation(pages, position="sidebar")
     nav.run()
 
-    # Rappel de backup silencieux — visible sur toutes les pages
-    from services.backup_service import get_last_backup_age_days
-    days = get_last_backup_age_days()
-    if days is None:
-        st.sidebar.warning("💾 Aucun backup détecté. Va dans 👤 Utilisateur → Sauvegarde.")
-    elif days >= 7:
-        st.sidebar.warning(f"⚠️ Dernier backup : il y a {days} jours. Pense à sauvegarder !")
-
-    # Auto-backup silencieux (après le rendu, en arrière-plan).
-    # Gater via session_state pour éviter de spawner un thread à chaque rerun
-    # Streamlit (sinon les 5 slots de backup sont écrasés en quelques clics).
-    if not st.session_state.get("_auto_backup_done"):
-        st.session_state["_auto_backup_done"] = True
-        import threading
-        def _silent_backup():
-            try:
-                from services.backup_service import auto_backup
-                auto_backup()
-            except Exception:
-                pass
-        threading.Thread(target=_silent_backup, daemon=True).start()
-
 
 if __name__ == "__main__":
     main()

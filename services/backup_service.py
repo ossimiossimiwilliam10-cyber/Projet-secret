@@ -267,6 +267,12 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
             except OSError:
                 backup_path = None
 
+        # ── Libérer le moteur SQLAlchemy AVANT de toucher au fichier DB ──
+        # Sans ça, engine garde un lock sur planning.db et Path.replace()
+        # échoue silencieusement sur Windows → la DB n'est jamais remplacée.
+        from database.db import engine as _engine
+        _engine.dispose()
+
         for f in pdf_dir.glob("*.pdf"):
             try:
                 f.unlink()
@@ -277,6 +283,10 @@ def restore_from_zip(zip_bytes: bytes) -> dict[str, int | str]:
         try:
             with zf.open("planning.db") as src, tmp_path.open("wb") as dst:
                 dst.write(src.read())
+            # Sur Windows, si le fichier cible existe encore (verrou legacy),
+            # on le supprime d'abord pour garantir le remplacement.
+            if db_path.exists():
+                db_path.unlink()
             tmp_path.replace(db_path)
         except Exception:
             tmp_path.unlink(missing_ok=True)

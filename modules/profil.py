@@ -782,6 +782,11 @@ def render() -> None:
                     try:
                         from services.backup_service import restore_from_zip
                         resultat = restore_from_zip(uploaded.getvalue())
+                        # Vider TOUS les caches Streamlit pour que le rechargement
+                        # lise bien la nouvelle DB (sinon l'ancien profil fantôme
+                        # reste affiché).
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
                         st.session_state["restore_msg"] = ("success",
                             f"✅ Sauvegarde restauree - DB retablie, "
                             f"{resultat['nb_pdfs']} PDF(s) restaure(s). "
