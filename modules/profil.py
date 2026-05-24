@@ -331,6 +331,20 @@ def render() -> None:
         )
         data = _defaults()
 
+    # --- Afficher les messages persistants (restauration, etc.) ---
+    for msg_key in ("restore_msg",):
+        msg = st.session_state.pop(msg_key, None)
+        if msg:
+            level, text = msg
+            if level == "error":
+                st.error(text)
+            elif level == "warning":
+                st.warning(text)
+            elif level == "success":
+                st.success(text)
+            else:
+                st.info(text)
+
     # === Section 1 - Identite & rythme =====================================
     with st.expander("🌅 Identite & rythme", expanded=is_new):
         col1, col2 = st.columns(2)
@@ -760,17 +774,18 @@ def render() -> None:
                     try:
                         from services.backup_service import restore_from_zip
                         resultat = restore_from_zip(uploaded.getvalue())
-                        st.success(
+                        st.session_state["restore_msg"] = ("success",
                             f"✅ Sauvegarde restauree - DB retablie, "
                             f"{resultat['nb_pdfs']} PDF(s) restaure(s). "
                             "L'app va se recharger."
                         )
-                        st.toast("Restauration reussie", icon="✅")
                         st.rerun()
                     except ValueError as exc:
-                        st.error(f"❌ Fichier invalide : {exc}")
-                    except Exception as exc:  # noqa: BLE001
-                        st.error(f"❌ Erreur lors de la restauration : {exc}")
+                        st.session_state["restore_msg"] = ("error", f"❌ Fichier invalide : {exc}")
+                        st.rerun()
+                    except Exception as exc:
+                        st.session_state["restore_msg"] = ("error", f"❌ Erreur lors de la restauration : {exc}")
+                        st.rerun()
 
     # === Zone de danger (Phase de test) ===================================
     st.divider()
