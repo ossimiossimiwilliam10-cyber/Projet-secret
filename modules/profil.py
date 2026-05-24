@@ -1177,21 +1177,12 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
     try:
         raw = call_llm(llm_api_key, model, prompt, json_mode=True, temperature=0.2, context="distance_matrix")
         raw = raw.strip()
-        # Nettoyer le bloc markdown eventuel (```json ... ```)
-        if raw.startswith("```"):
-            lines = raw.splitlines()
-            # Chercher la derniere ligne qui est un fermant ``` (ignore les trailing empty lines)
-            last_fence = None
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip().startswith("```"):
-                    last_fence = i
-                    break
-            if last_fence is not None and last_fence > 0:
-                lines = lines[1:last_fence]
-            else:
-                lines = lines[1:]
-            raw = "\n".join(lines).strip() if lines else raw
-        data = json.loads(raw)
+        # Extraction JSON multi-strategies (DeepSeek peut wrapper dans du markdown, du texte, etc.)
+        data = _extract_json(raw)
+        if data is None:
+            st.error("Le LLM n'a pas retourne de JSON valide.")
+            st.caption(f"Reponse brute (300 premiers car.) : `{raw[:300]}`")
+            return {}
         for t in data.get("trajets", []):
             key1 = f"{t['de']} \u2194 {t['vers']}"
             key2 = f"{t['vers']} \u2194 {t['de']}"
@@ -1200,10 +1191,44 @@ Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=
                 resultats[key1] = {"duree_min": minutes}
             if key2 not in resultats:
                 resultats[key2] = {"duree_min": minutes}
-    except json.JSONDecodeError as e:
-        st.error(f"Erreur parsing JSON : {e}")
-        st.caption(f"Reponse brute (200 premiers car.) : `{raw[:200]}...`")
     except Exception as e:
         st.error(f"Erreur LLM : {e}")
 
     return resultats
+
+
+def _extract_json(raw: str) -> dict | None:
+    \"\"\"Extrait un objet JSON d'une reponse LLM, quoi qu'il y ait autour.\"\"\"
+    import json as _json
+    import re as _re
+
+    strategies: list[str] = [raw.strip()]
+
+    # Strategie 2 : strip markdown fences
+    if strategies[0].startswith(\"```\"):
+        lines = strategies[0].splitlines()
+        last_fence = None
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip().startswith(\"```\"):
+                last_fence = i
+                break
+        if last_fence is not None and last_fence > 0:
+            strategies.append(\"\\n\".join(lines[1:last_fence]).strip())
+        else:
+            strategies.append(\"\\n\".join(lines[1:]).strip())
+
+    for candidate in strategies:
+        try:
+            return _json.loads(candidate)
+        except (_json.JSONDecodeError, ValueError):
+            pass
+
+    # Strategie 3 : regex greedy pour extraire un bloc JSON
+    match = _re.search(r'\\{[\\s\\S]*\\}', raw)
+    if match:
+        try:
+            return _json.loads(match.group())
+        except (_json.JSONDecodeError, ValueError):
+            pass
+
+    return None
