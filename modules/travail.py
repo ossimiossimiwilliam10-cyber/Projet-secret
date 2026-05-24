@@ -29,8 +29,11 @@ def render() -> None:
         semaine, _, _ = get_or_create_current_week(session, transfer_reported=False)
 
         # Liste des trajets habituels pour offrir un selecteur de lieu cohérent.
+        # Défensif : profil OU sa sous-config logistique peuvent manquer
+        # (DB fraîche, ou données legacy sans sous-config).
         profil = session.query(Utilisateur).first()
-        trajets_habituels = dict(profil.logistique.trajets_habituels or {}) if profil else {}
+        logistique = getattr(profil, "logistique", None) if profil else None
+        trajets_habituels = dict(getattr(logistique, "trajets_habituels", None) or {})
 
         # 1. Formulaire d'ajout
         with st.expander("➕ Enregistrer une activité professionnelle", expanded=True):
@@ -317,6 +320,8 @@ def _render_edit_form_job(j: Job, trajets_habituels: dict, semaine) -> None:
             st.toast("Job mis à jour", icon="✅")
             st.rerun()
         except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger("travail").exception("mise à jour job")
             st.error(f"Erreur lors de la mise à jour : {exc}")
 
 

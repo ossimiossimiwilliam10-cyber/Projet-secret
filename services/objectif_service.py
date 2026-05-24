@@ -37,8 +37,16 @@ def _build_etat_chapitres(session: Session, matiere_id: int | None) -> list[dict
     Sinon → tous les chapitres actifs de toutes les matières.
     """
     from database.models import Matiere
-    
-    query = session.query(Chapitre).join(Matiere, Chapitre.matiere_id == Matiere.id).filter(Matiere.actif.is_(True))
+    from sqlalchemy.orm import selectinload
+
+    # Eager-load matiere_obj : la boucle ci-dessous lit `chap.matiere_obj.nom`,
+    # ce qui sans selectinload déclencherait 1 requête par chapitre (N+1).
+    query = (
+        session.query(Chapitre)
+        .options(selectinload(Chapitre.matiere_obj))
+        .join(Matiere, Chapitre.matiere_id == Matiere.id)
+        .filter(Matiere.actif.is_(True))
+    )
     if matiere_id is not None:
         query = query.filter(Matiere.id == matiere_id)
 
@@ -272,6 +280,19 @@ def _valider_strategie(strategie: dict, chapitres: list[dict]) -> dict:
     # Conseils
     raw_conseils = strategie.get("conseils", []) or []
     out["conseils"] = [str(c).strip() for c in raw_conseils if str(c).strip()][:6]
+
+    # Garde-fou : si Gemini a renvoyé une coquille vide (pas de justification,
+    # pas de conseils, 0 heure estimée), la stratégie n'a aucune valeur. On
+    # refuse plutôt que d'afficher une stratégie creuse à l'utilisateur.
+    if (
+        not out["justification"]
+        and not out["conseils"]
+        and out["heures_total_estimees"] == 0
+    ):
+        raise ValueError(
+            "Gemini a renvoyé une stratégie vide (ni justification, ni "
+            "conseils, ni estimation horaire). Réessaie la génération."
+        )
 
     return out
 

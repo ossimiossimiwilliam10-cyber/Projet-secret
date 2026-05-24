@@ -54,6 +54,11 @@ _MODULES = [
     "modules.hebdo.etudes",
     "modules.hebdo.projets",
     "modules.hebdo.ajustements",
+    "modules.hebdo.courses",
+    "modules.hebdo.dev_perso",
+    "modules.hebdo.intendance",
+    "modules.hebdo.social",
+    "modules.hebdo.sport",
     "modules._widgets_checkin",
     # Couche pages
     "pages.achievements",
