@@ -296,7 +296,7 @@ def render() -> None:
             st.metric("🏆 Niveau", prog["niveau"])
         with col_xp:
             ratio = prog["ratio"]
-            st.write(f"✨ {prog['xp_dans_palier']:,} / {prog['xp_palier_taille']:,} XP")
+            st.caption(f"✨ {prog['xp_dans_palier']:,} / {prog['xp_palier_taille']:,} XP")
             st.progress(ratio)
         with col_sport:
             st.metric("🏋️ Seances Sport", nb_seances_sport)
@@ -319,8 +319,12 @@ def render() -> None:
                 f"{velocite_result.message}"
             )
         else:
-            color = "green" if pct >= 100 else "orange" if pct >= 80 else "red"
-            st.info(f"**Velocite historique : :{color}[{pct}%]** - {velocite_result.message}")
+            if pct >= 100:
+                st.success(f"**Velocite historique : {pct}%** - {velocite_result.message}")
+            elif pct >= 80:
+                st.warning(f"**Velocite historique : {pct}%** - {velocite_result.message}")
+            else:
+                st.error(f"**Velocite historique : {pct}%** - {velocite_result.message}")
 
     data = load_profil()
     is_new = not data  # profil vide -> premiere utilisation
@@ -381,6 +385,10 @@ def render() -> None:
                     f"({data.get('chronotype')}/{data.get('pic_concentration')}). "
                     f"Réinitialisé sur « Matin ». Vérifie ton choix ci-dessous."
                 )
+                default_key = "matin"
+            # Sécurité : si la clé n'est pas dans le mapping (corruption DB)
+            if default_key not in PRODUCTIVITE_LABELS:
+                default_key = "matin"
             productivite_choisie = st.radio(
                 "Je suis le plus productif...",
                 options=list(PRODUCTIVITE_LABELS.keys()),
@@ -410,20 +418,23 @@ def render() -> None:
                 "Methode de travail preferee",
                 options=list(METHODES_TRAVAIL.keys()),
                 format_func=lambda k: METHODES_TRAVAIL[k],
-                index=list(METHODES_TRAVAIL).index(data["methode_travail"]),
+                index=list(METHODES_TRAVAIL.keys()).index(data["methode_travail"])
+                if data.get("methode_travail") in METHODES_TRAVAIL else 0,
             )
             tolerance_fatigue = st.selectbox(
                 "Tolerance a la fatigue",
                 options=list(TOLERANCE_FATIGUE.keys()),
                 format_func=lambda k: TOLERANCE_FATIGUE[k],
-                index=list(TOLERANCE_FATIGUE).index(data["tolerance_fatigue"]),
+                index=list(TOLERANCE_FATIGUE.keys()).index(data["tolerance_fatigue"])
+                if data.get("tolerance_fatigue") in TOLERANCE_FATIGUE else 0,
             )
 
         capacite_weekend = st.radio(
             "Capacite de travail le week-end",
             options=list(CAPACITE_WEEKEND.keys()),
             format_func=lambda k: CAPACITE_WEEKEND[k],
-            index=list(CAPACITE_WEEKEND).index(data["capacite_weekend"]),
+            index=list(CAPACITE_WEEKEND.keys()).index(data["capacite_weekend"])
+            if data.get("capacite_weekend") in CAPACITE_WEEKEND else 0,
         )
 
         st.divider()
@@ -475,6 +486,7 @@ def render() -> None:
             )
 
     # === Section 3 - Contraintes fixes recurrentes =========================
+    contraintes_brutes: list[dict] = []  # défini même si expander fermé
     with st.expander("📌 Contraintes fixes recurrentes", expanded=is_new):
         st.caption(
             "Creneaux bloques **chaque semaine** : cours en presentiel, job etudiant, "
@@ -514,6 +526,7 @@ def render() -> None:
         contraintes_brutes = edited.to_dict(orient="records")
 
     # === Section 4 - Transport & Lieux ======================================
+    transport_config: dict[str, Any] = data.get("transport", {})  # défini même si expander fermé
     with st.expander("🚌 Transport & Lieux", expanded=is_new):
         st.caption(
             "Definis tes lieux et les temps de trajet entre eux. "
@@ -573,7 +586,8 @@ def render() -> None:
                 lieu_principal = ""
 
         # --- Matrice des temps ---
-        nouveaux_trajets: dict[str, int] = {}
+        # Fusion : partir des valeurs existantes, surchargées par les widgets.
+        nouveaux_trajets: dict[str, int] = dict(trajets)
         if len(nouveaux_lieux) >= 2:
             st.markdown("##### ⏱️ Temps de trajet (minutes)")
 
@@ -585,14 +599,15 @@ def render() -> None:
                     for i, a in enumerate(nouveaux_lieux):
                         for b in nouveaux_lieux[i+1:]:
                             k = f"{a}↔{b}"
-                            if k not in trajets or trajets.get(k, 0) == 0:
-                                trajets[k] = int(default_min)
+                            if k not in nouveaux_trajets or nouveaux_trajets.get(k, 0) == 0:
+                                nouveaux_trajets[k] = int(default_min)
+                    st.rerun()
 
             for i, lieu_a in enumerate(nouveaux_lieux):
                 for lieu_b in nouveaux_lieux[i+1:]:
                     key_ab = f"{lieu_a}↔{lieu_b}"
                     key_ba = f"{lieu_b}↔{lieu_a}"
-                    existing = trajets.get(key_ab, 0)
+                    existing = nouveaux_trajets.get(key_ab, 0)
 
                     if bidirectionnel:
                         duree = st.number_input(
@@ -603,20 +618,21 @@ def render() -> None:
                         )
                         if duree > 0:
                             nouveaux_trajets[key_ab] = int(duree)
+                            nouveaux_trajets[key_ba] = int(duree)
                     else:
                         col_a, col_b = st.columns(2)
                         with col_a:
                             d_ab = st.number_input(
                                 f"{lieu_a} → {lieu_b}",
                                 min_value=0, max_value=600, step=5,
-                                value=int(trajets.get(key_ab, 0)),
+                                value=int(nouveaux_trajets.get(key_ab, 0)),
                                 key=f"trajet_v4_{key_ab}",
                             )
                         with col_b:
                             d_ba = st.number_input(
                                 f"{lieu_b} → {lieu_a}",
                                 min_value=0, max_value=600, step=5,
-                                value=int(trajets.get(key_ba, 0)),
+                                value=int(nouveaux_trajets.get(key_ba, 0)),
                                 key=f"trajet_v4_{key_ba}",
                             )
                         if d_ab > 0:
@@ -626,12 +642,12 @@ def render() -> None:
         else:
             if nouveaux_lieux:
                 st.info("Ajoute au moins 2 lieux pour definir des trajets.")
-            nouveaux_trajets = {}
+            nouveaux_trajets = {k: v for k, v in trajets.items() if any(l in k for l in nouveaux_lieux)}
 
         # Assembler la config transport
         transport_config = {
             "lieux": nouveaux_lieux,
-            "trajets": nouveaux_trajets if not bidirectionnel else nouveaux_trajets,
+            "trajets": nouveaux_trajets,
             "mode": mode_principal,
             "bidirectionnel": bidirectionnel,
             "lieu_principal": lieu_principal,
@@ -644,27 +660,27 @@ def render() -> None:
             nb_repas = st.number_input(
                 "Nombre de repas par jour",
                 min_value=1, max_value=5,
-                value=data["nb_repas_par_jour"], step=1,
+                value=data.get("nb_repas_par_jour", 3), step=1,
             )
             duree_repas = st.number_input(
                 "Duree moyenne d'un repas (min)",
                 min_value=10, max_value=120,
-                value=data["duree_repas_min"], step=5,
+                value=data.get("duree_repas_min", 30), step=5,
             )
             duree_prep_repas = st.number_input(
                 "Temps de preparation des repas par jour (min)",
                 min_value=0, max_value=180,
-                value=data["duree_prep_repas_min"], step=5,
+                value=data.get("duree_prep_repas_min", 30), step=5,
             )
         with col2:
             besoin_sieste = st.checkbox(
                 "Besoin d'une sieste quotidienne",
-                value=data["besoin_sieste"],
+                value=data.get("besoin_sieste", False),
             )
             duree_sieste = st.number_input(
                 "Duree de la sieste (min)",
                 min_value=10, max_value=90,
-                value=data["duree_sieste_min"], step=5,
+                value=data.get("duree_sieste_min", 20), step=5,
                 disabled=not besoin_sieste,
             )
 
@@ -676,7 +692,7 @@ def render() -> None:
             "(analyse de PDF et generation de planning)."
         )
 
-        existing_key = data["deepseek_api_key"]
+        existing_key = data.get("deepseek_api_key", "")
         if existing_key:
             st.markdown(
                 f"🔐 Cle configuree : `{mask_for_display(existing_key)}` - "
@@ -687,27 +703,48 @@ def render() -> None:
                     "⚠️ Cette cle etait stockee en clair (avant cette version). "
                     "Elle sera **chiffree automatiquement** au prochain << Enregistrer >>."
                 )
-        api_key_input = st.text_input(
-            "Cle API DeepSeek",
-            value="",
-            type="password",
-            placeholder="sk-..." if not existing_key else "........ (laisser vide pour conserver)",
-            help="Recupere ta cle sur https://platform.deepseek.com",
-        )
+            # Bouton pour révéler/masquer la clé
+            show_key = st.checkbox("👁️ Afficher la cle", key="show_api_key")
+            api_key_input = st.text_input(
+                "Cle API DeepSeek",
+                value=existing_key if show_key else "",
+                type="default" if show_key else "password",
+                placeholder="........ (laisser vide pour conserver)",
+                help="Recupere ta cle sur https://platform.deepseek.com",
+            )
+        else:
+            api_key_input = st.text_input(
+                "Cle API DeepSeek",
+                value="",
+                type="password",
+                placeholder="sk-...",
+                help="Recupere ta cle sur https://platform.deepseek.com",
+            )
         # Logique : champ vide = on garde l'existante (mais en re-chiffrant si legacy)
         api_key = api_key_input.strip() if api_key_input.strip() else existing_key
 
         # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
+        stored_model = data.get("deepseek_model", "deepseek-v4-pro")
         models_options = list(MODELES_IA)
-        if data["deepseek_model"] not in models_options:
-            models_options.insert(0, data["deepseek_model"])
+        if stored_model not in models_options:
+            models_options.insert(0, stored_model)
 
         deepseek_model = st.selectbox(
             "Modele IA",
             options=models_options,
-            index=models_options.index(data["deepseek_model"]),
+            index=models_options.index(stored_model) if stored_model in models_options else 0,
             help="**DeepSeek-V4-Pro** = raisonnement tres profond.",
         )
+
+        st.divider()
+        test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
+        if test_clicked:
+            with st.spinner("Test DeepSeek..."):
+                ok, msg = _test_deepseek_connection(api_key, deepseek_model)
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
 
         st.divider()
         test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
@@ -808,9 +845,15 @@ def render() -> None:
             "ton profil, tes cours, tes PDFs importes et tous les plannings generes. "
             "Action irreversible."
         )
-        if st.button("🗑️ Reinitialiser toute l'application", type="primary", width='stretch'):
+        confirm_reset = st.checkbox(
+            "⚠️ Je confirme vouloir TOUT effacer",
+            key="reset_confirm",
+        )
+        if confirm_reset and st.button("🗑️ Reinitialiser toute l'application", type="primary", width='stretch'):
             from database.db import reset_db
             reset_db()
+            st.cache_data.clear()
+            st.cache_resource.clear()
             st.success("💥 Base de donnees et PDFs effaces avec succes. L'application redemarre...")
             st.rerun()
 

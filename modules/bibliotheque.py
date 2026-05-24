@@ -16,9 +16,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy.orm import Session
-
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, session_scope, PDF_DIR
 from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
@@ -1006,7 +1004,7 @@ def _render_ue_header_html(ue: UE, pct: float) -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
-    st.progress(int(pct) / 100.0, text=f"  ")
+    st.progress(int(pct) / 100.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1093,29 +1091,28 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                             st.error(f"Erreur : {e}")
 
         with st.expander("➕ Ajouter un PDF"):
-            with st.form(f"form_pdf_{chap.id}", clear_on_submit=True, border=False):
-                new_pdf = st.file_uploader("Fichier", type=["pdf"])
-                new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document")
-                if st.form_submit_button("Ajouter"):
-                    if new_pdf:
-                        pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
-                        pdf_path.write_bytes(new_pdf.getvalue())
-                        try:
-                            ch_db = session.get(Chapitre, chap.id)
-                            if ch_db:
-                                current_pdfs = list(ch_db.pdfs or [])
-                                current_pdfs.append({
-                                    "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
-                                    "label": new_label,
-                                    "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                                })
-                                ch_db.pdfs = current_pdfs
-                                session.commit()
-                                st.toast("PDF ajouté !", icon="📄")
-                                st.rerun()
-                        except Exception as e:
-                            session.rollback()
-                            st.error(f"Erreur : {e}")
+            new_pdf = st.file_uploader("Fichier", type=["pdf"], key=f"pdf_upload_{chap.id}")
+            new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document", key=f"pdf_label_{chap.id}")
+            if st.button("📄 Ajouter", key=f"btn_add_pdf_{chap.id}"):
+                if new_pdf:
+                    pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
+                    pdf_path.write_bytes(new_pdf.getvalue())
+                    try:
+                        ch_db = session.get(Chapitre, chap.id)
+                        if ch_db:
+                            current_pdfs = list(ch_db.pdfs or [])
+                            current_pdfs.append({
+                                "path": str(pdf_path.relative_to(PDF_DIR.parent.parent)),
+                                "label": new_label,
+                                "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            })
+                            ch_db.pdfs = current_pdfs
+                            session.commit()
+                            st.toast("PDF ajouté !", icon="📄")
+                            st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Erreur : {e}")
 
     # Zone danger — avec confirmation
     st.divider()
@@ -1301,7 +1298,7 @@ def _render_programme_section() -> None:
                 f"<span style='color:#6b7280;'>{sem_total} chap. · 🎯 {ects_sem:.0f} ECTS · Complétion {int(sem_pct)}%</span>"
                 f"</div>", unsafe_allow_html=True,
             )
-            st.progress(int(sem_pct) / 100.0, text=f"  ")
+            st.progress(int(sem_pct) / 100.0)
 
             for ue in sem_ues:
                 _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, view, _matches)
