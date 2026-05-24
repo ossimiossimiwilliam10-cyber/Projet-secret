@@ -750,19 +750,28 @@ def render() -> None:
             help="Sans cette clé, tu devras saisir les temps manuellement dans Transport.",
         )
 
-        col_btn, col_msg = st.columns([1, 3])
-        with col_btn:
-            test_clicked = st.button(
-                "🔌 Tester la connexion", width="stretch"
-            )
-        if test_clicked:
-            with col_msg:
-                with st.spinner("Test en cours…"):
+        col_test_llm, col_test_maps = st.columns(2)
+        with col_test_llm:
+            test_clicked = st.button("🔌 Tester LLM", width="stretch")
+        with col_test_maps:
+            test_maps_clicked = st.button("🗺️ Tester Google Maps", width="stretch")
+
+        col_msg_llm, col_msg_maps = st.columns(2)
+        with col_msg_llm:
+            if test_clicked:
+                with st.spinner("Test LLM…"):
                     ok, msg = test_llm_connection(api_key, gemini_model)
-                if ok:
-                    st.success(msg)
+                if ok: st.success(msg)
+                else: st.error(msg)
+        with col_msg_maps:
+            if test_maps_clicked:
+                if not google_maps_key.strip():
+                    st.error("Clé Google Maps vide.")
                 else:
-                    st.error(msg)
+                    with st.spinner("Test Google Maps…"):
+                        ok, msg = _test_google_maps(google_maps_key)
+                    if ok: st.success(msg)
+                    else: st.error(msg)
 
     # === Bouton enregistrer ===============================================
     st.divider()
@@ -1036,6 +1045,28 @@ def _to_minutes(s: str) -> int:
     """Convertit ``"HH:MM"`` en minutes depuis minuit (suppose ``_is_valid_time`` OK)."""
     h, m = s.split(":")
     return int(h) * 60 + int(m)
+
+
+def _test_google_maps(api_key: str) -> tuple[bool, str]:
+    """Teste la clé Google Maps avec un appel simple (Paris → Lyon)."""
+    import urllib.request, json
+    try:
+        url = (
+            "https://maps.googleapis.com/maps/api/distancematrix/json"
+            "?origins=Paris&destinations=Lyon"
+            f"&mode=transit&key={api_key.strip()}"
+        )
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        if data["status"] == "OK":
+            duree = data["rows"][0]["elements"][0]["duration"]["text"]
+            return True, f"✅ Google Maps OK — Paris→Lyon : {duree}"
+        elif data["status"] == "REQUEST_DENIED":
+            return False, "Clé refusée. Vérifie que l'API Distance Matrix est activée."
+        else:
+            return False, f"Erreur : {data['status']}"
+    except Exception as e:
+        return False, f"Erreur : {e}"
 
 
 def _compute_distance_matrix(api_key: str, adresses: dict[str, str]) -> dict[str, dict]:
