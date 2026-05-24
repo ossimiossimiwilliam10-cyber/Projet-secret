@@ -1150,6 +1150,15 @@ def _estimate_travel_times_with_llm(llm_api_key: str, adresses: dict[str, str], 
     except Exception:
         pass
 
+    # Auto-correction : aligner le modele sur le type de cle si incompatible.
+    # Sans ca, cle DeepSeek + modele Gemini → erreur 400 INVALID_ARGUMENT.
+    is_deepseek_key = llm_api_key.strip().startswith("sk-")
+    is_gemini_key = llm_api_key.strip().startswith("AIza")
+    if is_deepseek_key and not model.startswith("deepseek"):
+        model = "deepseek-v4-pro"
+    elif is_gemini_key and model.startswith("deepseek"):
+        model = "gemini-2.5-flash"
+
     lieux_desc = "\n".join([f"- {nom} : {adr}" for nom, adr in adresses.items()])
     mode_labels = {"transit": "transports en commun", "walking": "a pied", "bicycling": "velo", "driving": "voiture"}
     mode_label = mode_labels.get(mode, "transports en commun")
