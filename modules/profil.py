@@ -662,17 +662,19 @@ def render() -> None:
                 if not llm_key.strip():
                     st.error("Aucune cle LLM configuree. Va dans Parametres IA pour ajouter une cle Gemini ou DeepSeek.")
                 else:
-                    with st.spinner(f"🧠 Le LLM estime les temps ({modes_dispo.get(mode_choisi, mode_choisi)})..."):
-                        try:
-                            temps_calcules = _compute_distance_matrix(llm_key, adresses_pour_maps, mode_choisi)
-                            st.session_state["gmaps_result"] = temps_calcules
-                            if temps_calcules:
-                                st.success(f"✅ {len(temps_calcules)} trajets estimes !")
-                            else:
-                                st.warning("Aucun trajet estime. Verifie les adresses.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur : {e}")
+                    try:
+                        with st.spinner(f"🧠 Le LLM estime les temps ({modes_dispo.get(mode_choisi, mode_choisi)})..."):
+                            temps_calcules = _estimate_travel_times_with_llm(llm_key, adresses_pour_maps, mode_choisi)
+                        st.session_state["gmaps_result"] = temps_calcules
+                        if temps_calcules:
+                            st.success(f"✅ {len(temps_calcules)} trajets estimes !")
+                            st.toast(f"✅ {len(temps_calcules)} trajets estimes !", icon="✅")
+                        else:
+                            st.warning("Aucun trajet estime. Verifie les adresses.")
+                            st.toast("⚠️ Aucun trajet estime. Verifie les adresses.", icon="⚠️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur : {e}")
 
         # --- Matrice de temps entre lieux ---
         trajets_dict = data["trajets_habituels"] or {}
@@ -938,7 +940,7 @@ def render() -> None:
         )
         if not has_manual_times:
             try:
-                temps_auto = _compute_distance_matrix(llm_key_save, nouvelles_adresses, mode_choisi)
+                temps_auto = _estimate_travel_times_with_llm(llm_key_save, nouvelles_adresses, mode_choisi)
                 trajets_brutes = [{"nom": k, **v} for k, v in temps_auto.items()]
                 with col_save_msg:
                     st.info(f"🧠 {len(temps_auto)} trajets estimes automatiquement par le LLM.")
@@ -1115,8 +1117,13 @@ def _test_google_maps(api_key: str) -> tuple[bool, str]:
         return False, f"Erreur : {e}"
 
 
-def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
-    """Utilise le LLM (Gemini/DeepSeek) pour estimer les temps de trajet."""
+def _estimate_travel_times_with_llm(llm_api_key: str, adresses: dict[str, str], mode: str = "transit") -> dict[str, dict]:
+    """Estime les temps de trajet entre lieux via le LLM (Gemini/DeepSeek).
+
+    Attention : cette fonction utilise le **LLM** (Gemini ou DeepSeek), PAS l'API
+    Google Maps Distance Matrix. La clé attendue est donc une clé LLM
+    (``AIza...`` ou ``sk-...``), pas une clé Google Maps.
+    """
     import json, streamlit as st
     from services.gemini_utils import call_llm
     from database import get_session, Utilisateur
@@ -1126,13 +1133,13 @@ def _compute_distance_matrix(api_key: str, adresses: dict[str, str], mode: str =
     if len(noms) < 2:
         return {}
 
-    if not api_key.strip():
+    if not llm_api_key.strip():
         with get_session() as s:
             p = s.query(Utilisateur).first()
             if not p or not p.systeme.gemini_api_key:
                 st.error("Aucune cle LLM configuree.")
                 return {}
-            api_key = decrypt_api_key(p.systeme.gemini_api_key)
+            llm_api_key = decrypt_api_key(p.systeme.gemini_api_key)
     # Toujours recuperer le modele depuis le profil
     model = "gemini-2.5-flash"
     try:
@@ -1158,28 +1165,33 @@ Retourne UNIQUEMENT ce JSON :
 Regles : temps en minutes, conservateur, meme ville=5-30min, villes differentes=temps inter-ville."""
 
     resultats = {}
-    with st.spinner(f"Le LLM estime les temps ({mode_label})..."):
-        try:
-            raw = call_llm(api_key, model, prompt, json_mode=True, temperature=0.2, context="distance_matrix")
-            raw = raw.strip()
-            if raw.startswith("```"):
-                # Retirer le bloc markdown
-                lines = raw.splitlines()
-                if lines[-1].startswith("```"):
-                    lines = lines[1:-1]
-                else:
-                    lines = lines[1:]
-                raw = "\n".join(lines) if lines else raw
-            data = json.loads(raw)
-            for t in data.get("trajets", []):
-                key1 = f"{t['de']} \u2194 {t['vers']}"
-                key2 = f"{t['vers']} \u2194 {t['de']}"
-                minutes = int(t["minutes"])
-                if key1 not in resultats:
-                    resultats[key1] = {"duree_min": minutes}
-                if key2 not in resultats:
-                    resultats[key2] = {"duree_min": minutes}
-        except Exception as e:
-            st.error(f"Erreur LLM : {e}")
+    try:
+        raw = call_llm(llm_api_key, model, prompt, json_mode=True, temperature=0.2, context="distance_matrix")
+        raw = raw.strip()
+        # Nettoyer le bloc markdown eventuel (```json ... ```)
+        if raw.startswith("```"):
+            lines = raw.splitlines()
+            # Chercher la derniere ligne qui est un fermant ``` (ignore les trailing empty lines)
+            last_fence = None
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip().startswith("```"):
+                    last_fence = i
+                    break
+            if last_fence is not None and last_fence > 0:
+                lines = lines[1:last_fence]
+            else:
+                lines = lines[1:]
+            raw = "\n".join(lines).strip() if lines else raw
+        data = json.loads(raw)
+        for t in data.get("trajets", []):
+            key1 = f"{t['de']} \u2194 {t['vers']}"
+            key2 = f"{t['vers']} \u2194 {t['de']}"
+            minutes = int(t["minutes"])
+            if key1 not in resultats:
+                resultats[key1] = {"duree_min": minutes}
+            if key2 not in resultats:
+                resultats[key2] = {"duree_min": minutes}
+    except Exception as e:
+        st.error(f"Erreur LLM : {e}")
 
     return resultats
