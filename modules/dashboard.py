@@ -137,6 +137,11 @@ def render() -> None:
         # 5. Heatmap de productivité
         _render_heatmap_productivite(session)
 
+        st.divider()
+
+        # 6. Rapport de semaine IA
+        _render_rapport_semaine(session)
+
 
 # ===========================================================================
 # Chantier 4 — Check-in biomécanique quotidien
@@ -1049,6 +1054,115 @@ def _render_heatmap_productivite(session: Session) -> None:
                 )
     except Exception:
         st.caption("Données indisponibles.")
+
+
+def _render_rapport_semaine(session) -> None:
+    """Bilan IA de la semaine — génère un rapport personnalisé."""
+    st.subheader("📊 Rapport de semaine IA")
+
+    if "rapport_cache" not in st.session_state:
+        st.session_state["rapport_cache"] = None
+
+    col_gen, _ = st.columns([1, 3])
+    with col_gen:
+        if st.button("🧠 Générer mon bilan de semaine", type="primary", width="stretch"):
+            with st.spinner("🧠 L'IA analyse ta semaine… (~20s)"):
+                try:
+                    rapport = _generer_rapport_semaine(session)
+                    st.session_state["rapport_cache"] = rapport
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+
+    rapport = st.session_state["rapport_cache"]
+    if rapport:
+        score = rapport.get("score", 0)
+        color = "#00B894" if score >= 80 else "#FDCB6E" if score >= 50 else "#E17055"
+        emoji = "⭐" * min(5, max(1, score // 20))
+
+        st.markdown(
+            f"<div style='background:rgba(255,255,255,0.03);border:1px solid rgba(108,92,231,0.15);"
+            f"border-radius:16px;padding:24px;margin:12px 0;'>"
+            f"<div style='text-align:center;margin-bottom:16px;'>"
+            f"<div style='font-size:3rem;font-weight:900;color:{color};'>{score}<span style='font-size:1rem;opacity:0.6;'>/100</span></div>"
+            f"<div style='font-size:1.5rem;'>{emoji}</div></div>",
+            unsafe_allow_html=True,
+        )
+        if rapport.get("reussites"):
+            st.markdown("##### ✅ Ce qui a marché")
+            for r in rapport["reussites"][:4]:
+                st.markdown(f"- {r}")
+        if rapport.get("progres"):
+            st.markdown("##### 📈 En progrès")
+            for p in rapport["progres"][:3]:
+                st.markdown(f"- {p}")
+        if rapport.get("semaine_prochaine"):
+            st.markdown("##### 🎯 Focus semaine prochaine")
+            for s in rapport["semaine_prochaine"][:3]:
+                st.markdown(f"- {s}")
+        if rapport.get("citation"):
+            st.markdown(
+                f"<div style='margin-top:16px;padding:12px 18px;background:rgba(108,92,231,0.06);"
+                f"border-left:3px solid #6C5CE7;border-radius:0 8px 8px 0;font-style:italic;color:#6B7280;'>"
+                f"💬 « {rapport['citation']} »</div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _generer_rapport_semaine(session) -> dict:
+    """Appelle le LLM pour générer le rapport de la semaine."""
+    from services.gemini_utils import call_llm
+    from services.profil_service import get_gemini_credentials
+    from database.models import Semaine, Tache, Utilisateur
+    from utils.helpers import get_or_create_week_for_offset
+
+    api_key, model = get_gemini_credentials(session)
+    if not api_key:
+        raise ValueError("Clé API manquante.")
+
+    offset = int(st.session_state.get("semaine_target_offset", 0))
+    semaine, saisie, _ = get_or_create_week_for_offset(session, offset_weeks=offset)
+    profil = session.query(Utilisateur).first()
+    taches = session.query(Tache).filter_by(semaine_id=semaine.id).all()
+
+    total = len(taches)
+    fait = sum(1 for t in taches if t.statut == "fait")
+    partiel = sum(1 for t in taches if t.statut == "partiellement")
+    non_fait = sum(1 for t in taches if t.statut == "non_fait")
+    etude_min = sum(t.duree_min or 0 for t in taches if (t.type or "").lower() == "etude")
+    sport_count = sum(1 for t in taches if (t.type or "").lower() == "sport")
+
+    prompt = f"""Tu es un coach bienveillant. Analyse la semaine d'un étudiant et rédige un bilan ultra-court.
+
+DONNÉES :
+- Semaine {semaine.numero_semaine} ({semaine.date_debut}->{semaine.date_fin})
+- {total} tâches : {fait} faites, {partiel} partielles, {non_fait} non faites
+- {etude_min / 60:.1f}h d'étude, {sport_count} séances de sport
+- Objectif hebdo: {profil.biometrie.heures_etude_cible_par_semaine if profil else '?'}h
+- Streak: {profil.gamification.streak_jours if profil and profil.gamification else '?'} jours
+
+RETOURNE UNIQUEMENT ce JSON:
+{{"score":85,"reussites":["..."],"progres":["..."],"semaine_prochaine":["..."],"citation":"..."}}
+Règles: score 0-100, max 4 réussites, 3 progrès, 3 priorités, citation courte. En français."""
+
+    import json
+    try:
+        raw = call_llm(api_key, model, prompt, json_mode=True, temperature=0.7, context="rapport_semaine")
+        raw = raw.strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:-1])
+        return json.loads(raw)
+    except (json.JSONDecodeError, Exception):
+        pct = int(fait / max(total, 1) * 100)
+        return {
+            "score": pct,
+            "reussites": [f"{fait}/{total} tâches accomplies", f"{etude_min / 60:.1f}h d'étude"],
+            "progres": ["Continue sur ta lancée !"],
+            "semaine_prochaine": ["Maintenir le rythme", "Viser 100% de complétion"],
+            "citation": "Petit à petit, l'oiseau fait son nid.",
+        }
 
 
 __all__ = ["render"]
