@@ -6,8 +6,9 @@ Le formulaire est divise en 5 sections expansibles :
 1. Identite & rythme
 2. Capacite de travail
 3. Contraintes fixes recurrentes
-4. Sante & alimentation
-5. Parametres IA (DeepSeek)
+4. Transport & Lieux
+5. Sante & alimentation
+6. Parametres IA (DeepSeek)
 
 La cle API DeepSeek est chiffree (Fernet AES-128) avant stockage en base.
 """
@@ -129,6 +130,7 @@ def load_profil() -> dict[str, Any]:
             "besoin_sieste": bool(p.biometrie.besoin_sieste),
             "duree_sieste_min": int(p.biometrie.duree_sieste_min or 20),
             "contraintes_fixes": list(p.logistique.contraintes_fixes or []),
+            "transport": _load_transport_config(dict(p.logistique.trajets_habituels or {})),
             "deepseek_api_key": key_clear,
             "deepseek_api_key_encrypted_was_legacy": (
                 bool(key_stored) and not is_encrypted(key_stored)
@@ -189,6 +191,9 @@ def save_profil(data: dict[str, Any]) -> None:
             # Chiffrement transparent de la cle DeepSeek avant persistance.
             if key == "gemini_api_key":
                 value = encrypt_api_key(value)
+            # Mapping : cle UI "transport" → colonne DB "trajets_habituels"
+            if key == "transport":
+                key = "trajets_habituels"
             if key in _GAMIFICATION_ATTRS:
                 setattr(p.gamification, key, value)
             elif key in _SYSTEME_ATTRS:
@@ -486,7 +491,131 @@ def render() -> None:
         )
         contraintes_brutes = edited.to_dict(orient="records")
 
-    # === Section 4 - Sante & alimentation =================================
+    # === Section 4 - Transport & Lieux ======================================
+    with st.expander("🚌 Transport & Lieux", expanded=is_new):
+        st.caption(
+            "Definis tes lieux et les temps de trajet entre eux. "
+            "L'IA utilisera ces durees pour caler tes deplacements dans le planning."
+        )
+
+        transport = data.get("transport", {})
+        lieux: list[str] = transport.get("lieux", [])
+        trajets: dict[str, int] = transport.get("trajets", {})
+        bidirectionnel: bool = transport.get("bidirectionnel", True)
+        mode_principal: str = transport.get("mode", "transit")
+        lieu_principal: str = transport.get("lieu_principal", "")
+
+        # --- Edition des lieux ---
+        st.markdown("##### 📍 Mes lieux")
+        df_lieux = pd.DataFrame({"lieu": lieux} if lieux else {"lieu": []})
+        edited_lieux = st.data_editor(
+            df_lieux,
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "lieu": st.column_config.TextColumn(
+                    "Nom du lieu", required=True,
+                    help="Ex: Appartement, Fac, Salle de sport, Gare",
+                ),
+            },
+            key="profil_lieux_v3",
+        )
+        nouveaux_lieux: list[str] = []
+        for _, row in edited_lieux.iterrows():
+            l = str(row.get("lieu") or "").strip()
+            if l and l not in nouveaux_lieux:
+                nouveaux_lieux.append(l)
+
+        # --- Options ---
+        col_opt1, col_opt2, col_opt3 = st.columns(3)
+        with col_opt1:
+            modes = {"transit": "🚌 Transports", "driving": "🚗 Voiture", "bicycling": "🚲 Velo", "walking": "🚶 A pied"}
+            mode_principal = st.selectbox(
+                "Mode principal", options=list(modes.keys()),
+                format_func=lambda k: modes[k],
+                index=list(modes.keys()).index(mode_principal) if mode_principal in modes else 0,
+                key="transport_mode",
+            )
+        with col_opt2:
+            bidirectionnel = st.checkbox("🔄 Bidirectionnel (A→B = B→A)", value=bidirectionnel, key="transport_bidi")
+        with col_opt3:
+            lieu_options = ["(aucun)"] + nouveaux_lieux
+            lieu_idx = 0
+            if lieu_principal and lieu_principal in nouveaux_lieux:
+                lieu_idx = nouveaux_lieux.index(lieu_principal) + 1
+            lieu_principal = st.selectbox(
+                "⭐ Lieu principal", options=lieu_options, index=lieu_idx, key="transport_home",
+            )
+            if lieu_principal == "(aucun)":
+                lieu_principal = ""
+
+        # --- Matrice des temps ---
+        nouveaux_trajets: dict[str, int] = {}
+        if len(nouveaux_lieux) >= 2:
+            st.markdown("##### ⏱️ Temps de trajet (minutes)")
+
+            # Quick-fill
+            col_fill, _ = st.columns([1, 3])
+            with col_fill:
+                default_min = st.number_input("Remplissage rapide (min)", min_value=1, max_value=300, value=20, step=5, key="transport_fill_val")
+                if st.button("⚡ Appliquer aux trajets non definis", key="transport_fill_btn"):
+                    for i, a in enumerate(nouveaux_lieux):
+                        for b in nouveaux_lieux[i+1:]:
+                            k = f"{a}↔{b}"
+                            if k not in trajets or trajets.get(k, 0) == 0:
+                                trajets[k] = int(default_min)
+
+            for i, lieu_a in enumerate(nouveaux_lieux):
+                for lieu_b in nouveaux_lieux[i+1:]:
+                    key_ab = f"{lieu_a}↔{lieu_b}"
+                    key_ba = f"{lieu_b}↔{lieu_a}"
+                    existing = trajets.get(key_ab, 0)
+
+                    if bidirectionnel:
+                        duree = st.number_input(
+                            f"{lieu_a} ↔ {lieu_b}",
+                            min_value=0, max_value=600, step=5,
+                            value=int(existing) if existing else 0,
+                            key=f"trajet_v4_{key_ab}",
+                        )
+                        if duree > 0:
+                            nouveaux_trajets[key_ab] = int(duree)
+                    else:
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            d_ab = st.number_input(
+                                f"{lieu_a} → {lieu_b}",
+                                min_value=0, max_value=600, step=5,
+                                value=int(trajets.get(key_ab, 0)),
+                                key=f"trajet_v4_{key_ab}",
+                            )
+                        with col_b:
+                            d_ba = st.number_input(
+                                f"{lieu_b} → {lieu_a}",
+                                min_value=0, max_value=600, step=5,
+                                value=int(trajets.get(key_ba, 0)),
+                                key=f"trajet_v4_{key_ba}",
+                            )
+                        if d_ab > 0:
+                            nouveaux_trajets[key_ab] = int(d_ab)
+                        if d_ba > 0:
+                            nouveaux_trajets[key_ba] = int(d_ba)
+        else:
+            if nouveaux_lieux:
+                st.info("Ajoute au moins 2 lieux pour definir des trajets.")
+            nouveaux_trajets = {}
+
+        # Assembler la config transport
+        transport_config = {
+            "lieux": nouveaux_lieux,
+            "trajets": nouveaux_trajets if not bidirectionnel else nouveaux_trajets,
+            "mode": mode_principal,
+            "bidirectionnel": bidirectionnel,
+            "lieu_principal": lieu_principal,
+        }
+
+    # === Section 5 - Sante & alimentation =================================
     with st.expander("🍽️ Sante & alimentation", expanded=is_new):
         col1, col2 = st.columns(2)
         with col1:
@@ -517,7 +646,7 @@ def render() -> None:
                 disabled=not besoin_sieste,
             )
 
-    # === Section 5 - Parametres IA (DeepSeek) ==============================
+    # === Section 6 - Parametres IA (DeepSeek) ==============================
     with st.expander("🤖 Parametres IA (DeepSeek)", expanded=is_new):
         st.caption(
             "🔒 La cle API est **chiffree** (Fernet AES-128) avant stockage en base. "
@@ -713,6 +842,7 @@ def render() -> None:
         "besoin_sieste": bool(besoin_sieste),
         "duree_sieste_min": int(duree_sieste),
         "contraintes_fixes": contraintes_validees,
+        "trajets_habituels": transport_config,
         "gemini_api_key": (api_key or "").strip(),
         "gemini_model": deepseek_model,
         "google_maps_api_key": "",
@@ -771,6 +901,7 @@ def _defaults() -> dict[str, Any]:
         "besoin_sieste": False,
         "duree_sieste_min": 20,
         "contraintes_fixes": [],
+        "transport": {"lieux": [], "trajets": {}, "mode": "transit", "bidirectionnel": True, "lieu_principal": ""},
         "deepseek_api_key": "",
         "deepseek_model": "deepseek-v4-pro",
     }
@@ -804,3 +935,14 @@ def _to_minutes(s: str) -> int:
     """Convertit ``\"HH:MM\"`` en minutes depuis minuit (suppose ``_is_valid_time`` OK)."""
     h, m = s.split(":")
     return int(h) * 60 + int(m)
+
+
+def _load_transport_config(raw: dict) -> dict[str, Any]:
+    """Normalise la config transport stockee en base."""
+    return {
+        "lieux": raw.get("lieux", []),
+        "trajets": {str(k): int(v) for k, v in raw.get("trajets", {}).items()},
+        "mode": raw.get("mode", "transit"),
+        "bidirectionnel": bool(raw.get("bidirectionnel", True)),
+        "lieu_principal": raw.get("lieu_principal", ""),
+    }
