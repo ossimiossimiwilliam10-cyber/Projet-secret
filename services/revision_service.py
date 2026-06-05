@@ -101,25 +101,49 @@ def appliquer_resultat_quiz(
     score_num = max(0.0, min(1.0, float(score_num)))
     today = date.today()
 
+    # --- FSRS-lite : Calcul du retard réel ---
+    jours_ecoules = 0
+    if chap.historique_quiz and len(chap.historique_quiz) > 0:
+        dernier_quiz = chap.historique_quiz[-1]
+        if "date" in dernier_quiz:
+            try:
+                jours_ecoules = (today - date.fromisoformat(dernier_quiz["date"])).days
+            except ValueError:
+                pass
+                
+    intervalle_cible = INTERVALLES_J[min(niveau_avant, MAX_NIVEAU)]
+    if jours_ecoules == 0:
+        jours_ecoules = intervalle_cible
+        
+    ratio_attente = jours_ecoules / max(1, intervalle_cible)
+
     if score_num >= 0.9:
-        # 🏆 Excellent — on monte d'un cran
-        niveau_apres = min(niveau_avant + 1, MAX_NIVEAU)
+        # 🏆 Excellent
+        # Bonus si rappel réussi malgré un grand retard (FSRS-lite)
+        bonus = 1
+        if ratio_attente >= 3.0:
+            bonus = 3
+        elif ratio_attente >= 2.0:
+            bonus = 2
+            
+        niveau_apres = min(niveau_avant + bonus, MAX_NIVEAU)
         prochaine = today + timedelta(days=INTERVALLES_J[niveau_apres])
-        label = "🏆 Excellent"
+        label = f"🏆 Excellent (+{bonus})" if bonus > 1 else "🏆 Excellent"
         color = "green"
         reussi = True
     elif score_num >= 0.5:
         # ⚡ Correct — niveau stagne, on revient à mi-chemin
         niveau_apres = niveau_avant
-        interval = INTERVALLES_J[niveau_avant] if niveau_avant < len(INTERVALLES_J) else INTERVALLES_J[-1]
-        demi = max(interval // 2, 1)
+        demi = max(intervalle_cible // 2, 1)
         prochaine = today + timedelta(days=demi)
         label = "⚡ Correct"
         color = "orange"
         reussi = True
     else:
-        # 📚 À retravailler — on recule d'un cran
-        niveau_apres = max(niveau_avant - 1, 0)
+        # 📚 À retravailler
+        # Malus accru si oubli très rapide (ratio < 0.5)
+        malus = 2 if ratio_attente < 0.5 and niveau_avant > 1 else 1
+        niveau_apres = max(niveau_avant - malus, 0)
         prochaine = today + timedelta(days=INTERVALLES_J[niveau_apres])
         label = "📚 À retravailler"
         color = "red"

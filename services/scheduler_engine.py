@@ -357,7 +357,11 @@ def lisser_revisions_leitner(
     quota_par_jour_min: int,
     charges_etude_existantes: dict[str, int],
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
-    """Répartit les révisions Leitner sur la semaine avec tolérance ±1 jour.
+    """Répartit les révisions Leitner sur la semaine avec tolérance dynamique.
+    
+    La tolérance de lissage (décalage autorisé) est proportionnelle à l'intervalle J
+    de la révision : `max(1, intervalle // 10)`. Une carte J30 pourra être décalée
+    de ±3 jours pour équilibrer parfaitement la semaine sans impacter la mémoire.
 
     Args:
         chapitres_dus: liste fournie par
@@ -381,17 +385,28 @@ def lisser_revisions_leitner(
     repartition: dict[str, list[dict[str, Any]]] = {j: [] for j in JOURS}
     charges: dict[str, int] = {j: int(charges_etude_existantes.get(j, 0)) for j in JOURS}
 
-    for chap in chapitres_dus or []:
+    # Priorisation : on place en premier les plus urgents (petits intervalles = mémoire volatile)
+    # et on garde l'ordre de la date_due initiale.
+    chapitres_tries = sorted(
+        chapitres_dus or [],
+        key=lambda c: (c.get("date_due", ""), c.get("intervalle_j", 999))
+    )
+
+    for chap in chapitres_tries:
         date_due = chap.get("date_due")
         jour_cible_idx = _date_iso_to_jour_idx(date_due, semaine)
         jour_cible = JOURS[jour_cible_idx]
+        
+        intervalle = chap.get("intervalle_j", 1)
+        tolerance = max(1, intervalle // 10)
 
-        # Ordre de préférence : jour cible, puis +1, puis -1.
+        # Ordre de préférence : jour cible, puis on s'écarte en spirale (+1, -1, +2, -2...)
         candidats: list[int] = [jour_cible_idx]
-        if jour_cible_idx < 6:
-            candidats.append(jour_cible_idx + 1)
-        if jour_cible_idx > 0:
-            candidats.append(jour_cible_idx - 1)
+        for t in range(1, tolerance + 1):
+            if jour_cible_idx + t <= 6:
+                candidats.append(jour_cible_idx + t)
+            if jour_cible_idx - t >= 0:
+                candidats.append(jour_cible_idx - t)
 
         revision: dict[str, Any] = {
             "chapitre_id": chap.get("chapitre_id"),

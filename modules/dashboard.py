@@ -102,6 +102,9 @@ def render() -> None:
         # Chantier 4 — Check-in biomécanique du jour
         _render_checkin_quotidien(session)
 
+        # Auto-Healing : Pousser le retard à aujourd'hui
+        _render_auto_healing(session)
+
         # 0. Grille visuelle de la semaine
         _render_planning_grid(session)
 
@@ -158,6 +161,51 @@ def _render_checkin_quotidien(session: Session) -> None:
     from modules._widgets_checkin import render_checkin_quotidien_widget
     render_checkin_quotidien_widget(session, key_prefix="dashboard_checkin")
 
+
+# ===========================================================================
+# Auto-Healing : Report des tâches en retard
+# ===========================================================================
+def _render_auto_healing(session: Session) -> None:
+    """Permet de décaler toutes les tâches non-faites passées à aujourd'hui."""
+    from database.models import Semaine, Tache
+    from datetime import date
+    
+    today = date.today()
+    semaine_courante = (
+        session.query(Semaine)
+        .filter(Semaine.date_debut <= today, Semaine.date_fin >= today)
+        .first()
+    )
+    if not semaine_courante:
+        return
+        
+    JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+    jour_actuel_idx = today.weekday()
+    jour_actuel_str = JOURS[jour_actuel_idx]
+    
+    if jour_actuel_idx == 0:
+        return # Pas de retard possible le lundi de la semaine courante
+        
+    jours_passes = JOURS[:jour_actuel_idx]
+    
+    taches_en_retard = (
+        session.query(Tache)
+        .filter(
+            Tache.semaine_id == semaine_courante.id,
+            Tache.jour.in_(jours_passes),
+            Tache.statut == "a_faire"
+        )
+        .all()
+    )
+    
+    if taches_en_retard:
+        st.warning(f"⚠️ Vous avez **{len(taches_en_retard)} tâche(s)** en retard depuis le début de la semaine.")
+        if st.button("🔄 Décaler mon retard à aujourd'hui (Auto-Healing)", use_container_width=True):
+            for t in taches_en_retard:
+                t.jour = jour_actuel_str
+            session.commit()
+            st.success("Tâches repoussées à aujourd'hui avec succès !")
+            st.rerun()
 
 # ===========================================================================
 # F3a — Barre XP / Niveau / Streak

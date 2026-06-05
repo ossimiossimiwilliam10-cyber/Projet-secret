@@ -16,6 +16,8 @@ import re
 from datetime import date
 from typing import Any
 
+from pydantic import BaseModel, Field, ValidationError
+
 from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
@@ -65,7 +67,7 @@ def _get_chapitres_dus_pour_semaine(session: Session, semaine: Semaine) -> list[
         ``[{"chapitre_id", "matiere", "titre", "niveau_leitner", "date_due", "etat"}, ...]``
     """
     # Import local : évite tout risque de cycle d'import au démarrage
-    from services.revision_service import chapitres_a_reviser, MAX_NIVEAU
+    from services.revision_service import chapitres_a_reviser, MAX_NIVEAU, INTERVALLES_J
 
     chaps = chapitres_a_reviser(
         session,
@@ -85,12 +87,16 @@ def _get_chapitres_dus_pour_semaine(session: Session, semaine: Semaine) -> list[
             etat = f"⏰ à réviser dans {delta} jour(s)"
 
         matiere_nom = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
+        niveau = chap.niveau_actuel or 0
+        intervalle = INTERVALLES_J[min(niveau, len(INTERVALLES_J)-1)]
 
         items.append({
             "chapitre_id": chap.id,
             "matiere": matiere_nom,
             "titre": chap.titre,
-            "niveau_leitner": f"{chap.niveau_actuel or 0}/{MAX_NIVEAU}",
+            "niveau_leitner": f"{niveau}/{MAX_NIVEAU}",
+            "niveau": niveau,
+            "intervalle_j": intervalle,
             "date_due": chap.date_prochaine.isoformat(),
             "etat": etat,
         })
@@ -470,29 +476,53 @@ def generate_schedule_from_ai(
     return validate_planning(parsed)
 
 
+class TacheOutput(BaseModel):
+    heure_debut: str
+    heure_fin: str
+    titre: str
+    type: str
+    chapitre_ids: list[int] = Field(default_factory=list)
+    obligatoire: bool = False
+    justification: str = ""
+
+class PlanningSemaineOutput(BaseModel):
+    lundi: list[TacheOutput] = Field(default_factory=list)
+    mardi: list[TacheOutput] = Field(default_factory=list)
+    mercredi: list[TacheOutput] = Field(default_factory=list)
+    jeudi: list[TacheOutput] = Field(default_factory=list)
+    vendredi: list[TacheOutput] = Field(default_factory=list)
+    samedi: list[TacheOutput] = Field(default_factory=list)
+    dimanche: list[TacheOutput] = Field(default_factory=list)
+
+class PlanningFinalOutput(BaseModel):
+    score_realisme: int = 100
+    alertes: list[str] = Field(default_factory=list)
+    justification_globale: str = ""
+    taches_ecartees: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+    planning: PlanningSemaineOutput
+
+
 def _parse_gemini_json(text: str) -> dict[str, Any]:
-    """Parse la réponse de Gemini en s'assurant d'enlever les balises markdown si présentes."""
+    """Parse et valide la réponse de l'IA via Pydantic pour garantir le schéma."""
     s = text.strip()
 
-    if s.startswith("```"):
-        lines = s.split("\n")
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        s = "\n".join(lines).strip()
+    if s.startswith("```json"):
+        s = s[7:]
+    elif s.startswith("```"):
+        s = s[3:]
+    if s.endswith("```"):
+        s = s[:-3]
+    s = s.strip()
 
     try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        # Tentative de regex en dernier recours
-        match = re.search(r"\{.*\}", s, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Impossible de décoder le JSON généré par l'IA : {exc}") from exc
-        raise ValueError("Aucun JSON valide trouvé dans la réponse de l'IA.")
+        validated = PlanningFinalOutput.model_validate_json(s)
+        return validated.model_dump()
+    except ValidationError as e:
+        logger.error(f"Erreur Pydantic de validation du planning IA : {e}\nJSON brut: {s}")
+        raise ValueError(f"Le format généré par l'IA est invalide ou incomplet : {e}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Impossible de décoder le JSON : {e}")
 
 
 # ===========================================================================
