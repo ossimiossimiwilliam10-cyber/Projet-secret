@@ -131,6 +131,9 @@ _EXPECTED_COLUMNS = {
         "quiz_cache_model":         "VARCHAR(100)",
         "quiz_cache_prompt_version":"INTEGER",
         "quiz_cache_texte_sha":     "VARCHAR(64)",
+        # Flashcards & Corbeille (V2)
+        "flashcards_cache":         "JSON",
+        "trashed":                  "BOOLEAN DEFAULT 0",
         # Notes perso
         "notes":           "TEXT DEFAULT ''",
         # Versioning optimiste pour éviter les écrasements multi-onglets.
@@ -167,6 +170,8 @@ _EXPECTED_COLUMNS = {
     },
     "systeme_config": {
         "google_maps_api_key": "VARCHAR(200) DEFAULT ''",
+        "deepseek_api_key": "VARCHAR(500) DEFAULT ''",
+        "deepseek_model": "VARCHAR(50) DEFAULT 'deepseek-chat'",
     },
     # `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).

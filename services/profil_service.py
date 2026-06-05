@@ -32,9 +32,17 @@ def get_llm_credentials(session: "Session") -> tuple[str, str]:
     p = session.query(Utilisateur).first()
     if p is None or p.systeme is None:
         return "", DEFAULT_MODEL
-    api_key = decrypt_api_key(p.systeme.gemini_api_key or "")
+    api_key_deepseek = decrypt_api_key(p.systeme.deepseek_api_key or "")
+    api_key_gemini = decrypt_api_key(p.systeme.gemini_api_key or "")
+    
+    # Tout passer sur DeepSeek par défaut comme demandé par l'utilisateur
+    if api_key_deepseek:
+        model = p.systeme.deepseek_model or "deepseek-chat"
+        return api_key_deepseek, model
+    
+    # Fallback sur Gemini
     model = p.systeme.gemini_model or DEFAULT_MODEL
-    return api_key, model
+    return api_key_gemini, model
 
 
 def has_llm_credentials(session: "Session") -> bool:

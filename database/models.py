@@ -117,6 +117,8 @@ class SystemeConfig(Base):
     
     gemini_api_key = Column(String(500), default="")
     gemini_model = Column(String(50), default="deepseek-v4-pro")
+    deepseek_api_key = Column(String(500), default="")
+    deepseek_model = Column(String(50), default="deepseek-chat")
     google_maps_api_key = Column(String(200), default="")
     replanning_auto_actif = Column(Boolean, default=True)
 
@@ -350,6 +352,10 @@ class Chapitre(Base):
     quiz_cache_model = Column(String(100), nullable=True)
     quiz_cache_prompt_version = Column(Integer, nullable=True)
     quiz_cache_texte_sha = Column(String(64), nullable=True)
+
+    # --- Flashcards & Corbeille (V2) -------------------------------------
+    flashcards_cache = Column(JSON, nullable=True)
+    trashed = Column(Boolean, default=False)
 
     # --- Notes personnelles ----------------------------------------------
     notes = Column(Text, default="")

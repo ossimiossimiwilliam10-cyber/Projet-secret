@@ -630,6 +630,14 @@ def render() -> None:
         "où ils en sont dans le cycle Leitner (J1 → J3 → J7 → J14 → J30 → "
         "J60 → J90 → J180 → …), et ce qui tombe les prochaines semaines."
     )
+    
+    col_rev, col_exam = st.columns(2)
+    with col_rev:
+        if st.button("⚡ Lancer la révision rapide", use_container_width=True, type="primary"):
+            st.switch_page("pages/revision_rapide.py")
+    with col_exam:
+        if st.button("📝 Lancer un examen blanc", use_container_width=True):
+            st.switch_page("pages/examen_blanc.py")
 
     # --- Afficher le résultat du lissage stocké en session (Bug 3) ---
     resultat = st.session_state.pop("lissage_result", None)

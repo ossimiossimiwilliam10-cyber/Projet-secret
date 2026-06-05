@@ -34,6 +34,8 @@ from services.revision_service import (
     initialiser_chapitre_pour_revision,
     label_couleur_status,
     MAX_NIVEAU,
+    trash_chapitre,
+    restore_chapitre,
 )
 
 
@@ -1144,14 +1146,15 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
         with col_yes:
             if st.button("✅ Oui, supprimer", key=f"confirm_yes_{chap.id}", type="primary"):
                 try:
-                    ch_db = session.get(Chapitre, chap.id)
-                    if ch_db:
-                        session.delete(ch_db)
+                    from services.revision_service import trash_chapitre
+                    success = trash_chapitre(session, chap.id)
+                    if success:
                         session.commit()
-                        cleanup_orphan_pdfs(session, dry_run=False)
-                    st.session_state.pop(confirm_key, None)
-                    st.toast("Chapitre supprimé.", icon="🗑️")
-                    st.rerun()
+                        st.session_state.pop(confirm_key, None)
+                        st.toast("Chapitre mis à la corbeille.", icon="🗑️")
+                        st.rerun()
+                    else:
+                        st.error("Impossible de mettre ce chapitre à la corbeille.")
                 except Exception as e:
                     session.rollback()
                     st.error(f"Erreur : {e}")
@@ -1403,8 +1406,8 @@ def render() -> None:
 
     st.divider()
 
-    tab_import, tab_programme, tab_admin = st.tabs(
-        ["📥 Importer", "📚 Mon Programme", "⚙️ Gérer"]
+    tab_import, tab_programme, tab_admin, tab_trash = st.tabs(
+        ["📥 Importer", "📚 Mon Programme", "⚙️ Gérer", "🗑️ Corbeille"]
     )
 
     with tab_import:
@@ -1419,3 +1422,67 @@ def render() -> None:
         _render_ues_section()
         st.divider()
         _render_matieres_section()
+        
+    with tab_trash:
+        _render_corbeille_section()
+
+# ---------------------------------------------------------------------------
+# Corbeille
+# ---------------------------------------------------------------------------
+def _render_corbeille_section() -> None:
+    st.subheader("🗑️ Corbeille")
+    st.caption("Les chapitres supprimés sont conservés ici. Vous pouvez les restaurer ou les exporter.")
+
+    with get_session() as session:
+        trashed_chaps = session.query(Chapitre).filter(Chapitre.trashed == True).all()
+        
+    if not trashed_chaps:
+        st.info("La corbeille est vide.")
+        return
+
+    import csv
+    import io
+    
+    # Export Anki
+    all_flashcards = []
+    for chap in trashed_chaps:
+        if chap.flashcards_cache:
+            for fc in chap.flashcards_cache:
+                all_flashcards.append([fc.get("front", ""), fc.get("back", "")])
+                
+    if all_flashcards:
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';')
+        writer.writerows(all_flashcards)
+        csv_data = output.getvalue()
+        
+        st.download_button(
+            label="📥 Exporter toutes les flashcards (CSV Anki)",
+            data=csv_data.encode("utf-8"),
+            file_name="flashcards_corbeille.csv",
+            mime="text/csv",
+            help="Importez ce fichier CSV dans Anki (séparateur: point-virgule)",
+        )
+
+    for chap in trashed_chaps:
+        with st.container(border=True):
+            col1, col2, col3 = st.columns([5, 1, 1])
+            with col1:
+                st.markdown(f"**{chap.titre}**")
+                if chap.matiere_obj:
+                    st.caption(f"Matière: {chap.matiere_obj.nom}")
+            with col2:
+                if st.button("🔄 Restaurer", key=f"restore_{chap.id}"):
+                    with session_scope() as s:
+                        from services.revision_service import restore_chapitre
+                        restore_chapitre(s, chap.id)
+                    st.toast("Chapitre restauré", icon="✅")
+                    st.rerun()
+            with col3:
+                if st.button("❌ Supprimer définitivement", key=f"perm_del_{chap.id}"):
+                    with session_scope() as s:
+                        ch_db = s.get(Chapitre, chap.id)
+                        if ch_db:
+                            s.delete(ch_db)
+                    st.toast("Chapitre supprimé définitivement", icon="🗑️")
+                    st.rerun()

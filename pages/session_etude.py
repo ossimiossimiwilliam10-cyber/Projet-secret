@@ -57,11 +57,16 @@ def main() -> None:
 
     _render_back_button()
     _render_header(chap_snapshot)
+    
+    st.divider()
+    _render_pomodoro()
     st.divider()
 
-    tab_fiche, tab_qcm, tab_quiz, tab_feynman = st.tabs(["📋 Fiche IA", "🔘 QCM", "✍️ Quiz ouvert", "🎙️ Feynman"])
+    tab_fiche, tab_flashcards, tab_qcm, tab_quiz, tab_feynman = st.tabs(["📋 Fiche IA", "🗂️ Flashcards", "🔘 QCM", "✍️ Quiz ouvert", "🎙️ Feynman"])
     with tab_fiche:
         _render_fiche_tab(chap_id, chap_snapshot)
+    with tab_flashcards:
+        _render_flashcards_tab(chap_id, chap_snapshot)
     with tab_qcm:
         _render_qcm_tab(chap_id)
     with tab_quiz:
@@ -136,6 +141,47 @@ def _render_header(snap: dict) -> None:
         f"{snap['status_label']}</span></div>",
         unsafe_allow_html=True,
     )
+
+def _render_pomodoro() -> None:
+    """Affiche le timer Pomodoro intégré."""
+    from datetime import datetime
+    
+    with st.expander("⏱️ Pomodoro (25 min travail / 5 min pause)", expanded=False):
+        if "pomodoro_start" not in st.session_state:
+            st.session_state.pomodoro_start = None
+            st.session_state.pomodoro_mode = "work"
+            
+        c1, c2, c3 = st.columns([1, 1, 2])
+        with c1:
+            if st.button("▶️ Démarrer", key="pomo_start"):
+                st.session_state.pomodoro_start = datetime.now()
+                st.session_state.pomodoro_mode = "work"
+                st.rerun()
+        with c2:
+            if st.button("⏹️ Arrêter", key="pomo_stop"):
+                st.session_state.pomodoro_start = None
+                st.rerun()
+        with c3:
+            if st.button("🔄 Rafraîchir", key="pomo_refresh"):
+                st.rerun()
+
+        if st.session_state.pomodoro_start:
+            elapsed = (datetime.now() - st.session_state.pomodoro_start).total_seconds()
+            total = 25 * 60 if st.session_state.pomodoro_mode == "work" else 5 * 60
+            remaining = int(total - elapsed)
+            
+            if remaining > 0:
+                mins, secs = divmod(remaining, 60)
+                mode_label = "💪 Travail" if st.session_state.pomodoro_mode == "work" else "☕ Pause"
+                st.metric(mode_label, f"{mins:02d}:{secs:02d}")
+                st.progress(min(elapsed / total, 1.0))
+            else:
+                if st.session_state.pomodoro_mode == "work":
+                    st.session_state.pomodoro_start = datetime.now()
+                    st.session_state.pomodoro_mode = "break"
+                else:
+                    st.session_state.pomodoro_start = None
+                st.rerun()
 
 
 def _render_back_button() -> None:
@@ -268,6 +314,86 @@ def _generate_fiche(chap_id: int, force: bool) -> None:
             st.rerun()
         except Exception as exc:
             st.error(f"❌ Erreur de génération : {exc}")
+
+# ===========================================================================
+# Onglet Flashcards
+# ===========================================================================
+def _render_flashcards_tab(chap_id: int, snap: dict) -> None:
+    """Affiche et gère les flashcards générées par l'IA."""
+    with get_session() as session:
+        chap = session.get(Chapitre, chap_id)
+        flashcards = list(chap.flashcards_cache or [])
+
+    if not flashcards:
+        st.info("ℹ️ Aucune flashcard générée pour ce chapitre. La génération prend ~30 sec.")
+        if st.button("✨ Générer des Flashcards", type="primary", key=f"gen_fc_{chap_id}", width='stretch'):
+            with st.spinner("🧠 L'IA compose les flashcards..."):
+                try:
+                    with session_scope() as session:
+                        from services.ai_flashcards_service import generer_flashcards
+                        chap_obj = session.get(Chapitre, chap_id)
+                        fcs = generer_flashcards(session, chap_obj, nb_cartes=8)
+                        chap_obj.flashcards_cache = fcs
+                    st.toast("Flashcards générées ✅")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"❌ Erreur de génération : {exc}")
+        return
+
+    st.subheader(f"🗂️ Flashcards ({len(flashcards)})")
+    
+    # State pour le parcours des flashcards
+    fc_index_key = f"fc_idx_{chap_id}"
+    fc_flipped_key = f"fc_flipped_{chap_id}"
+    if fc_index_key not in st.session_state:
+        st.session_state[fc_index_key] = 0
+    if fc_flipped_key not in st.session_state:
+        st.session_state[fc_flipped_key] = False
+
+    idx = st.session_state[fc_index_key]
+    flipped = st.session_state[fc_flipped_key]
+
+    if idx >= len(flashcards):
+        st.success("🎉 Vous avez terminé toutes les flashcards de ce paquet !")
+        if st.button("🔄 Recommencer"):
+            st.session_state[fc_index_key] = 0
+            st.session_state[fc_flipped_key] = False
+            st.rerun()
+        return
+
+    fc = flashcards[idx]
+    
+    # Affichage de la carte
+    st.markdown(f"**Carte {idx + 1} / {len(flashcards)}**")
+    with st.container(border=True):
+        st.markdown(f"### 🤔 {fc.get('front', '')}")
+        if flipped:
+            st.divider()
+            st.markdown(f"### 💡 {fc.get('back', '')}")
+            
+    # Actions
+    if not flipped:
+        if st.button("🔄 Révéler la réponse", use_container_width=True, type="primary"):
+            st.session_state[fc_flipped_key] = True
+            st.rerun()
+    else:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🔴 Difficile", use_container_width=True):
+                # À l'avenir, pourrait impacter Leitner
+                st.session_state[fc_index_key] += 1
+                st.session_state[fc_flipped_key] = False
+                st.rerun()
+        with col2:
+            if st.button("🟠 Correct", use_container_width=True):
+                st.session_state[fc_index_key] += 1
+                st.session_state[fc_flipped_key] = False
+                st.rerun()
+        with col3:
+            if st.button("🟢 Facile", use_container_width=True):
+                st.session_state[fc_index_key] += 1
+                st.session_state[fc_flipped_key] = False
+                st.rerun()
 
 
 # ===========================================================================

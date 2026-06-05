@@ -135,7 +135,7 @@ def load_profil() -> dict[str, Any]:
             "deepseek_api_key_encrypted_was_legacy": (
                 bool(key_stored) and not is_encrypted(key_stored)
             ),
-            "deepseek_model": p.systeme.gemini_model or "deepseek-v4-pro",
+            "deepseek_model": p.systeme.deepseek_model or "deepseek-chat",
         }
 
 
@@ -144,7 +144,7 @@ _GAMIFICATION_ATTRS = frozenset([
     "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total",
 ])
 _SYSTEME_ATTRS = frozenset([
-    "gemini_api_key", "gemini_model", "google_maps_api_key", "replanning_auto_actif",
+    "gemini_api_key", "gemini_model", "deepseek_api_key", "deepseek_model", "google_maps_api_key", "replanning_auto_actif",
 ])
 _BIOMETRIE_ATTRS = frozenset([
     "heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype",
@@ -189,7 +189,9 @@ def save_profil(data: dict[str, Any]) -> None:
             if key in _TRANSIENT_KEYS:
                 continue
             # Chiffrement transparent de la cle DeepSeek avant persistance.
-            if key == "gemini_api_key":
+            if key == "deepseek_api_key":
+                value = encrypt_api_key(value)
+            elif key == "gemini_api_key":
                 value = encrypt_api_key(value)
             # Mapping : cle UI "transport" → colonne DB "trajets_habituels"
             if key == "transport":
@@ -766,8 +768,8 @@ def render() -> None:
             api_key = api_key_input.strip() if api_key_input.strip() else existing_key
 
         # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
-        stored_model = data.get("deepseek_model", "deepseek-v4-pro")
-        models_options = list(MODELES_IA)
+        stored_model = data.get("deepseek_model", "deepseek-chat")
+        models_options = ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
         if stored_model not in models_options:
             models_options.insert(0, stored_model)
 
@@ -775,7 +777,7 @@ def render() -> None:
             "Modele IA",
             options=models_options,
             index=models_options.index(stored_model) if stored_model in models_options else 0,
-            help="**DeepSeek-V4-Pro** = raisonnement tres profond.",
+            help="**deepseek-reasoner** = raisonnement tres profond.",
         )
 
         st.divider()

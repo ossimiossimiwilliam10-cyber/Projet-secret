@@ -112,6 +112,11 @@ def render() -> None:
 
         st.divider()
 
+        # 1a. Prédiction IA
+        _render_prediction_ia(session)
+
+        st.divider()
+
         # 1bis. Bandeau quota d'étude — connecté au réglage Utilisateur.
         _render_quota_etude_banner(session)
 
@@ -241,6 +246,30 @@ def _render_xp_bar(session: Session) -> None:
         st.html(html)
     else:
         st.markdown(html, unsafe_allow_html=True)
+        
+    # Affichage des Badges (Achievements débloqués)
+    achievements_debloques = [ach for ach in profil.gamification.achievements if getattr(ach, "debloque", False) or True] # On affiche les badges
+    if achievements_debloques:
+        from services.gamification_service import RARETE_COULEURS, ACHIEVEMENTS
+        
+        st.markdown("**🏆 Derniers Badges Débloqués**")
+        cols = st.columns(min(len(achievements_debloques), 6) or 1)
+        # Afficher les 6 derniers
+        recent_badges = sorted(achievements_debloques, key=lambda a: getattr(a, "date_obtention", datetime.datetime.min), reverse=True)[:6]
+        
+        for i, a_user in enumerate(recent_badges):
+            # Retrouver l'icone et rareté
+            a_def = next((x for x in ACHIEVEMENTS if x.code == a_user.code), None)
+            if a_def:
+                color = RARETE_COULEURS.get(a_def.rarete, "#9ca3af")
+                with cols[i % len(cols)]:
+                    st.markdown(
+                        f"<div style='text-align:center; padding:8px; border-radius:8px; background:{color}20; border:1px solid {color}50;'>"
+                        f"<div style='font-size:2rem;'>{a_def.icone}</div>"
+                        f"<div style='font-size:0.75rem; font-weight:600; margin-top:4px;'>{a_def.nom}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
 
 
 # ===========================================================================
@@ -793,6 +822,28 @@ def _render_kpis(session: Session) -> None:
     cols[3].metric(
         "📚 Focus actuel",
         top_matiere_nom[:15] + "..." if len(top_matiere_nom) > 15 else top_matiere_nom,
+    )
+
+def _render_prediction_ia(session: Session) -> None:
+    """Prédiction de la note à l'examen basée sur la maîtrise moyenne."""
+    chapitres = session.query(Chapitre).all()
+    if not chapitres:
+        return
+    nb_chapitres = len(chapitres)
+    maitrise_moy = sum(float(c.maitrise_pct or 0) for c in chapitres) / nb_chapitres
+    
+    note_estimee = (maitrise_moy / 100.0) * 20.0
+    
+    # Variante la couleur en fonction de la note
+    color = "red" if note_estimee < 10 else "orange" if note_estimee < 14 else "green"
+    
+    st.markdown(
+        f"<div style='padding:1rem; border-left:5px solid {color}; background-color:{color}10; border-radius:4px;'>"
+        f"<h4 style='margin:0 0 0.5rem 0;'>🤖 Prédiction de note IA</h4>"
+        f"Basé sur ta maîtrise actuelle de <b>{maitrise_moy:.1f}%</b> sur l'ensemble du programme, "
+        f"l'IA estime ta note moyenne globale à <span style='font-size:1.2rem; font-weight:bold; color:{color};'> {note_estimee:.1f} / 20</span>."
+        f"</div>",
+        unsafe_allow_html=True
     )
 
 

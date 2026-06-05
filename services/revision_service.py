@@ -213,6 +213,7 @@ def chapitres_a_reviser(
     # `selectinload`, on payerait 1 requête par chapitre dû.
     query = (
         session.query(Chapitre)
+        .filter(Chapitre.trashed.isnot(True))
         .options(selectinload(Chapitre.matiere_obj))
     )
     if inclure_jamais_revises:
@@ -247,6 +248,29 @@ def initialiser_chapitre_pour_revision(
     """
     if delai_initial_jours is None:
         delai_initial_jours = INTERVALLES_J[0]
+
+# ===========================================================================
+# 5. Gestion de la corbeille (Trash/Restore)
+# ===========================================================================
+def trash_chapitre(session: Session, chapitre_id: int) -> bool:
+    """Met un chapitre à la corbeille.
+    Returns True si mis à la corbeille, False sinon.
+    """
+    chap = session.get(Chapitre, chapitre_id)
+    if chap and not getattr(chap, "trashed", False):
+        chap.trashed = True
+        return True
+    return False
+
+def restore_chapitre(session: Session, chapitre_id: int) -> bool:
+    """Restaure un chapitre de la corbeille.
+    Returns True si restauré, False sinon.
+    """
+    chap = session.get(Chapitre, chapitre_id)
+    if chap and getattr(chap, "trashed", False):
+        chap.trashed = False
+        return True
+    return False
 
     chap = session.get(Chapitre, chapitre_id)
     if chap is None or chap.date_prochaine is not None:
