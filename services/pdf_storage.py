@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from database.db import PDF_DIR
+from database.db import PDF_DIR, supabase
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -161,6 +161,44 @@ def cleanup_orphan_pdfs(session: "Session", dry_run: bool = True) -> list[str]:
                 pass
     return [p.name for p in orphans]
 
+def upload_pdf_to_cloud(filename: str, file_bytes: bytes) -> None:
+    """Upload le PDF vers le bucket Supabase en arrière-plan."""
+    if not supabase:
+        return
+    try:
+        # storage.from_("exocerveau-pdfs").upload()
+        # file_options: content-type = application/pdf
+        res = supabase.storage.from_("exocerveau-pdfs").upload(
+            path=filename,
+            file=file_bytes,
+            file_options={"content-type": "application/pdf"}
+        )
+    except Exception as e:
+        # Échec silencieux, l'app marche toujours en local.
+        pass
+
+
+def ensure_pdf_local(filename: str) -> Path:
+    """S'assure que le PDF est disponible localement dans PDF_DIR.
+    Si le fichier manque, tente de le télécharger depuis Supabase.
+    
+    Lève FileNotFoundError si introuvable dans le cloud et en local.
+    """
+    path = PDF_DIR / filename
+    if path.exists():
+        return path
+        
+    if not supabase:
+        raise FileNotFoundError(f"PDF introuvable localement et pas de connexion Cloud: {filename}")
+        
+    try:
+        # Tente de télécharger depuis le bucket
+        res = supabase.storage.from_("exocerveau-pdfs").download(filename)
+        path.write_bytes(res)
+        return path
+    except Exception as e:
+        raise FileNotFoundError(f"Impossible de récupérer le PDF {filename} depuis le Cloud.") from e
+
 
 __all__ = [
     "MAX_PDF_SIZE_BYTES",
@@ -172,4 +210,6 @@ __all__ = [
     "safe_pdf_filename",
     "find_orphan_pdfs",
     "cleanup_orphan_pdfs",
+    "upload_pdf_to_cloud",
+    "ensure_pdf_local",
 ]

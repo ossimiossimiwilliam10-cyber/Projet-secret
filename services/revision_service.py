@@ -761,10 +761,13 @@ def get_or_extract_chapter_text(session: Session, chapitre_id: int) -> str:
         )
 
     pdf_path = Path(pdfs_list[0].get("path", ""))
-    if not pdf_path.is_absolute():
-        pdf_path = BASE_DIR / pdf_path
-    if not pdf_path.exists():
-        raise FileNotFoundError(f"PDF introuvable sur disque : {pdf_path}")
+    pdf_filename = pdf_path.name
+    
+    from services.pdf_storage import ensure_pdf_local
+    try:
+        pdf_path = ensure_pdf_local(pdf_filename)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"PDF introuvable : {pdf_path}") from e
 
     try:
         import pdfplumber  # type: ignore

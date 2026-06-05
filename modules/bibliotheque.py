@@ -779,6 +779,11 @@ def _process_import_unifie(
             pdf_path.write_bytes(pdf_bytes)
             pdf_rel = str(pdf_path.relative_to(PDF_DIR.parent.parent))
 
+            # Lancement asynchrone / background de l'upload vers Supabase
+            from services.pdf_storage import upload_pdf_to_cloud
+            import threading
+            threading.Thread(target=upload_pdf_to_cloud, args=(pdf_filename, pdf_bytes), daemon=True).start()
+
             # 4. Analyse Gemini du PDF. Si ça échoue (après retry), on
             # supprime le PDF qu'on vient d'écrire pour ne pas laisser
             # d'orphelin sur disque (atomicité).
@@ -1111,7 +1116,12 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                         st.stop()
                     label = (new_label or "").strip() or "Document sans titre"
                     pdf_path = PDF_DIR / f"chap_{chap.id}_{int(_time.time())}.pdf"
-                    pdf_path.write_bytes(new_pdf.getvalue())
+                    new_pdf_bytes = new_pdf.getvalue()
+                    pdf_path.write_bytes(new_pdf_bytes)
+                    
+                    from services.pdf_storage import upload_pdf_to_cloud
+                    import threading
+                    threading.Thread(target=upload_pdf_to_cloud, args=(pdf_path.name, new_pdf_bytes), daemon=True).start()
                     try:
                         ch_db = session.get(Chapitre, chap.id)
                         if ch_db:

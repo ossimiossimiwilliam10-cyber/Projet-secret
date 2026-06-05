@@ -212,7 +212,7 @@ class UE(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     nom = Column(String(200), nullable=False)
     code = Column(String(50), default="")           # ex: "MATH301"
-    semestre_code = Column(String(20), default="", name="semestre")  # ex: "S5"
+    semestre_code = Column(String(100), default="", name="semestre")  # ex: "S5"
     credits_ects = Column(Float, nullable=True)      # total de l'UE
     couleur = Column(String(20), default="#4cd137")  # hex code pour distinction visuelle
     actif = Column(Boolean, default=True)

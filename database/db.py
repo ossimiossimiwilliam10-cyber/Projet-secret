@@ -16,6 +16,27 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
+import os
+from dotenv import load_dotenv
+
+try:
+    from supabase import create_client, Client
+except ImportError:
+    Client = None
+    create_client = None
+
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Supabase Client
+# ---------------------------------------------------------------------------
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+supabase: Client | None = None
+if SUPABASE_URL and SUPABASE_KEY and create_client:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 # ---------------------------------------------------------------------------
 # Chemins
 # ---------------------------------------------------------------------------
@@ -26,25 +47,33 @@ PDF_DIR: Path = DATA_DIR / "pdfs"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 PDF_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH: Path = DATA_DIR / "planning.db"
-DATABASE_URL: str = f"sqlite:///{DB_PATH}"
-
 # ---------------------------------------------------------------------------
 # Moteur & session
 # ---------------------------------------------------------------------------
+# Par défaut, on utilise la base locale SQLite. Si DATABASE_URL est fournie
+# (ex: Supabase), on utilise PostgreSQL.
+DB_PATH: Path = DATA_DIR / "planning.db"
+DEFAULT_DATABASE_URL = f"sqlite:///{DB_PATH}"
+
+DATABASE_URL = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+
 engine: Engine = create_engine(
     DATABASE_URL,
     echo=False,
     future=True,
-    connect_args={"check_same_thread": False},
+    connect_args=connect_args,
 )
-
 
 @event.listens_for(engine, "connect")
 def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # noqa: D401
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+    if DATABASE_URL.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 SessionLocal = sessionmaker(
