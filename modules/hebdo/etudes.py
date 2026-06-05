@@ -283,13 +283,18 @@ def render() -> None:
 
         # --- 1. Sélection des matières ---
         st.subheader("1. Matières à travailler")
-        matieres_choisies = st.multiselect(
+        
+        matiere_dict = {m.id: m for m in toutes_matieres}
+        
+        matieres_choisies_ids = st.multiselect(
             "Quelles matières souhaites-tu aborder cette semaine ?",
-            options=matieres_filtrees,
-            default=matieres_pre_selectionnees,
-            format_func=lambda m: format_label_matiere(m, stats_par_id[m.id]),
+            options=[m.id for m in matieres_filtrees],
+            default=[m.id for m in matieres_pre_selectionnees],
+            format_func=lambda m_id: format_label_matiere(matiere_dict[m_id], stats_par_id[m_id]),
             help="Légende : 🔥 révisions dues — 📑 nouveaux — 📊 maîtrise.",
         )
+        
+        matieres_choisies = [matiere_dict[m_id] for m_id in matieres_choisies_ids]
 
         # --- Bandeau résumé en temps réel (Idée 3) ---
         nouvelles_matieres_selectionnees: list[dict[str, Any]] = []
