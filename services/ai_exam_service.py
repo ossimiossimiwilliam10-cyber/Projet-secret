@@ -22,6 +22,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("ai_exam")
 
 
+def _clean_json(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
+
 def generer_examen(
     session: Session, 
     chapitres: list[Chapitre], 
@@ -92,7 +104,8 @@ Format JSON STRICT (sans texte autour) :
             context="exam_gen",
         )
         
-        data = json.loads(raw_resp)
+        cleaned = _clean_json(raw_resp)
+        data = json.loads(cleaned)
         if "questions" not in data:
             raise ValueError("Le JSON retourné ne contient pas la clé 'questions'.")
             
@@ -174,7 +187,8 @@ Format JSON STRICT :
             context="exam_eval",
         )
         
-        data = json.loads(raw_resp)
+        cleaned = _clean_json(raw_resp)
+        data = json.loads(cleaned)
         if "resultats" not in data:
             raise ValueError("Le JSON retourné ne contient pas la clé 'resultats'.")
             

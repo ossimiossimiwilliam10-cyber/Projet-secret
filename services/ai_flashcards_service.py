@@ -21,6 +21,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger("ai_flashcards")
 
 
+def _clean_json(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
 def generer_flashcards(session: Session, chapitre: Chapitre, nb_cartes: int = 8) -> list[dict[str, str]]:
     """Génère une liste de flashcards recto/verso via le LLM.
 
@@ -75,7 +86,8 @@ Format JSON attendu :
             context="flashcards_gen",
         )
         
-        data = json.loads(raw_resp)
+        cleaned = _clean_json(raw_resp)
+        data = json.loads(cleaned)
         if "flashcards" not in data:
             # Fallback for models that just return the array
             if isinstance(data, list):
