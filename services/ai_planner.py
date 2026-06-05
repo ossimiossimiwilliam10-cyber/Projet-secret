@@ -11,6 +11,7 @@ le prioriser.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date
 from typing import Any
@@ -47,7 +48,7 @@ def _safe_json_str(data: Any) -> str:
         return "Aucune donnée."
     try:
         return json.dumps(data, indent=2, ensure_ascii=False, default=str)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return str(data)
 
 
@@ -700,28 +701,19 @@ Retourne UNIQUEMENT un JSON :
 Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titre": "...", "type": "...", "chapitre_ids": [], "obligatoire": false, "justification": "..."}}.
 """
 
-    # 5. Appel Gemini
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError as exc:
-        raise RuntimeError("Package `google-genai` non installé.") from exc
+    # 5. Appel LLM via couche d'abstraction unifiée
+    from services.gemini_utils import call_llm
 
-    client = genai.Client(api_key=_gemini_key)
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=_gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.3,
-            ),
-        ),
+    text = call_llm(
+        api_key=_gemini_key,
+        model=_gemini_model,
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.3,
         context="planner_integrer_nouveautes",
     )
-    text = getattr(response, "text", "") or ""
     if not text.strip():
-        raise ValueError("Gemini a renvoyé une réponse vide.")
+        raise ValueError("L'IA a renvoyé une réponse vide.")
 
     parsed = _parse_gemini_json(text)
     # Validation stricte du schéma partiel (jours restants uniquement).
@@ -770,7 +762,9 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                 ))
                 nb_ajoutees += 1
             except (KeyError, ValueError) as exc:
-                print(f"[integrer_nouveautes] Tâche ignorée ({jour}) : {exc}")
+                logging.getLogger("gemini").warning(
+                    "[integrer_nouveautes] Tâche ignorée (%s) : %s", jour, exc,
+                )
 
     result["nb_taches_ajoutees"] = nb_ajoutees
     return result
@@ -896,28 +890,19 @@ Retourne UNIQUEMENT un JSON :
 Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titre": "...", "type": "...", "chapitre_ids": [], "obligatoire": false, "justification": "..."}}.
 """
 
-    # Appel Gemini
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError as exc:
-        raise RuntimeError("Package `google-genai` non installé.") from exc
+    # Appel LLM via couche d'abstraction unifiée
+    from services.gemini_utils import call_llm
 
-    client = genai.Client(api_key=_gemini_key)
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=_gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.3,
-            ),
-        ),
+    text = call_llm(
+        api_key=_gemini_key,
+        model=_gemini_model,
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.3,
         context="planner_replan",
     )
-    text = getattr(response, "text", "") or ""
     if not text.strip():
-        raise ValueError("Gemini a renvoyé une réponse vide.")
+        raise ValueError("L'IA a renvoyé une réponse vide.")
 
     parsed = _parse_gemini_json(text)
     # Validation stricte (replan = planning partiel sur jours restants).
@@ -956,6 +941,8 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                     chapitre_ids=t_data.get("chapitre_ids", []),
                 ))
             except (KeyError, ValueError) as exc:
-                print(f"[replan] Tâche ignorée ({jour}) : {exc}")
+                logging.getLogger("gemini").warning(
+                    "[replan] Tâche ignorée (%s) : %s", jour, exc,
+                )
 
     return result

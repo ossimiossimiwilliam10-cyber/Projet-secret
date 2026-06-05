@@ -7,6 +7,7 @@ et les PDFs des cours dans ``planning_app/data/pdfs/``.
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -95,8 +96,10 @@ def reset_db() -> None:
             if file.is_file() and file.suffix.lower() == ".pdf":
                 try:
                     file.unlink()
-                except Exception as e:
-                    print(f"Impossible de supprimer le fichier {file} : {e}")
+                except Exception as e:  # noqa: BLE001
+                    logging.getLogger(__name__).warning(
+                        "Impossible de supprimer le fichier %s : %s", file, e,
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -203,13 +206,21 @@ def migrate_schema(verbose: bool = True) -> dict[str, list[str]]:
                     )
                     ajouts.setdefault(table_name, []).append(col_name)
                     if verbose:
-                        print(f"[migrate_schema] ✓ {table_name}.{col_name} ({col_sql})")
+                        logging.getLogger(__name__).info(
+                            "[migrate_schema] ✓ %s.%s (%s)",
+                            table_name, col_name, col_sql,
+                        )
                 except Exception as exc:  # noqa: BLE001
                     if verbose:
-                        print(f"[migrate_schema] ✗ {table_name}.{col_name} : {exc}")
+                        logging.getLogger(__name__).warning(
+                            "[migrate_schema] ✗ %s.%s : %s",
+                            table_name, col_name, exc,
+                        )
 
     if verbose and not ajouts:
-        print("[migrate_schema] Schéma déjà à jour, rien à faire.")
+        logging.getLogger(__name__).info(
+            "[migrate_schema] Schéma déjà à jour, rien à faire.",
+        )
 
     _backfill_duree_min(verbose=verbose)
     return ajouts
@@ -249,7 +260,9 @@ def _backfill_duree_min(verbose: bool = True) -> int:
         """))
         nb = result.rowcount or 0
         if verbose and nb > 0:
-            print(f"[backfill] ✓ Tache.duree_min : {nb} ligne(s) recalculée(s)")
+            logging.getLogger(__name__).info(
+                "[backfill] ✓ Tache.duree_min : %d ligne(s) recalculée(s)", nb,
+            )
         return nb
 
 

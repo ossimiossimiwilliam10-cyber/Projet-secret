@@ -738,7 +738,8 @@ def get_or_extract_chapter_text(session: Session, chapitre_id: int) -> str:
             if 0 <= i < total:
                 try:
                     txt = pdf.pages[i].extract_text() or ""
-                except Exception:
+                except Exception:  # noqa: BLE001
+                    # Page illisible (chiffrée, corrompue…) — on continue.
                     txt = ""
                 if txt.strip():
                     textes.append(txt)

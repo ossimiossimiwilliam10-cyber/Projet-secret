@@ -239,6 +239,10 @@ en debug pour détecter les drifts de données silencieux.
 | N+1 `chap.matiere_obj.nom` | Lenteur Révisions | `selectinload` |
 | `Tache.duree_min` jamais setté | KPI Dashboard à 0 | Calcul à l'insert + backfill |
 | Cache IA non versionné | Fiches stales après changement de modèle | 4 colonnes `_model/_prompt_version/_texte_sha` |
+| UE.semestre shadowing | Column `semestre` et relationship `semestre` se masquaient mutuellement | Colonne renommée `semestre_code` (garde `name="semestre"` en DB) |
+| `print()` dans services | Erreurs masquées, pas de trace en prod | Migration vers `logging.getLogger(...)` dans db.py, ai_planner, pdf_analyzer |
+| Appel Gemini direct dans ai_planner | `integrer_nouveautes` + `replan` contournaient `call_llm` → pas de multi-LLM | Refactor via `call_llm` (supporte DeepSeek + Gemini) |
+| `except Exception:` nu sans log | Gamification, achievements : bugs silencieux | Ajout `logger.exception(...)` |
 
 ## Conseils pour Gemini/DeepSeek
 

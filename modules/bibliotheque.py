@@ -88,7 +88,7 @@ def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:
             "id": ue.id,
             "nom": ue.nom,
             "code": ue.code,
-            "semestre": ue.semestre,
+            "semestre": ue.semestre_code,
             "credits_ects": ue.credits_ects,
             "couleur": ue.couleur,
             "semestre_id": ue.semestre_id,
@@ -427,7 +427,7 @@ def _render_ues_section() -> None:
                 session.add(UE(
                     nom=nom_ue.strip(),
                     code=code_ue.strip(),
-                    semestre=semestre_ue.strip(),
+                    semestre_code=semestre_ue.strip(),
                     credits_ects=credits_ue if credits_ue > 0 else None,
                     couleur=couleur_ue,
                     semestre_id=semestre_id_ue,
@@ -487,7 +487,7 @@ def _render_ue_edit_form(ue: dict) -> None:
                 if ue_db:
                     ue_db.nom = new_nom.strip()
                     ue_db.code = new_code.strip()
-                    ue_db.semestre = new_semestre.strip()
+                    ue_db.semestre_code = new_semestre.strip()
                     ue_db.credits_ects = new_ects if new_ects > 0 else None
                     ue_db.couleur = new_couleur
             st.session_state.pop("editing_ue", None)

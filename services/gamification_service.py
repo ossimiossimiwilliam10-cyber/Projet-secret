@@ -403,9 +403,13 @@ def check_nouveaux_achievements(
             if ach.check(utilisateur, event_type, event_data):
                 session.add(Achievement(code=ach.code))
                 nouveaux.append(ach)
-        except Exception:
-            # Si le check plante, on ignore silencieusement — ne pas bloquer
-            # l'attribution d'XP à cause d'un bug de catalogue.
+        except Exception:  # noqa: BLE001
+            # Le check a planté — on loggue pour traçabilité mais on ne bloque
+            # pas l'attribution d'XP à cause d'un bug de catalogue.
+            import logging
+            logging.getLogger("gemini").exception(
+                "Achievement check '%s' a planté", ach.code,
+            )
             continue
     return nouveaux
 

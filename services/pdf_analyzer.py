@@ -18,6 +18,7 @@ Tous les appels Gemini utilisent le nouveau SDK ``google-genai`` (l'ancien
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -129,7 +130,9 @@ def extract_text(pdf_path: str | Path) -> PdfExtraction:
             doc.close()
     except Exception as exc:  # noqa: BLE001
         # On poursuit même si les métadonnées sont inaccessibles.
-        print(f"[pdf_analyzer] Avertissement : métadonnées illisibles ({exc})")
+        logging.getLogger("gemini").warning(
+            "[pdf_analyzer] Métadonnées PDF illisibles : %s", exc,
+        )
 
     # --- Texte par page via pdfplumber ----------------------------------
     pages_text: list[str] = []
