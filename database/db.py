@@ -281,17 +281,32 @@ def _backfill_duree_min(verbose: bool = True) -> int:
         if "taches" not in inspector.get_table_names():
             return 0
 
-        result = conn.execute(text("""
-            UPDATE taches
-            SET duree_min = CAST(
-                (strftime('%s', '2000-01-01 ' || heure_fin)
-                 - strftime('%s', '2000-01-01 ' || heure_debut)) / 60
-                AS INTEGER
-            )
-            WHERE (duree_min IS NULL OR duree_min = 0)
-              AND heure_debut IS NOT NULL
-              AND heure_fin IS NOT NULL
-        """))
+        if engine.dialect.name == "sqlite":
+            sql = """
+                UPDATE taches
+                SET duree_min = CAST(
+                    (strftime('%s', '2000-01-01 ' || heure_fin)
+                     - strftime('%s', '2000-01-01 ' || heure_debut)) / 60
+                    AS INTEGER
+                )
+                WHERE (duree_min IS NULL OR duree_min = 0)
+                  AND heure_debut IS NOT NULL
+                  AND heure_fin IS NOT NULL
+            """
+        elif engine.dialect.name == "postgresql":
+            sql = """
+                UPDATE taches
+                SET duree_min = CAST(
+                    EXTRACT(EPOCH FROM (heure_fin::time - heure_debut::time)) / 60 AS INTEGER
+                )
+                WHERE (duree_min IS NULL OR duree_min = 0)
+                  AND heure_debut IS NOT NULL
+                  AND heure_fin IS NOT NULL
+            """
+        else:
+            return 0
+            
+        result = conn.execute(text(sql))
         nb = result.rowcount or 0
         if verbose and nb > 0:
             logging.getLogger(__name__).info(
