@@ -21,17 +21,7 @@ from modules import (
     import_externe,
     profil,
     suivi,
-    travail,
-)
-from modules.hebdo import (
-    ajustements,
-    courses,
-    dev_perso,
-    etudes,
-    intendance,
-    projets,
-    social,
-    sport,
+    preparer_semaine,
 )
 
 
@@ -53,34 +43,28 @@ def main() -> None:
     migrate_schema(verbose=True)
 
     pages = {
-        "Configuration": [
-            st.Page(profil.render, title="Utilisateur", icon="👤", url_path="profil"),
-            st.Page(bibliotheque.render, title="Bibliothèque", icon="📚", url_path="bibliotheque"),
-            st.Page("pages/aide.py", title="Aide & Mode d'emploi", icon="❓", url_path="aide"),
+        "Aujourd'hui": [
+            st.Page("pages/aujourdhui.py", title="Aujourd'hui", icon="📍", url_path="aujourdhui", default=True),
         ],
-        "Ma semaine": [
-            st.Page(etudes.render, title="Études", icon="📖", url_path="hebdo-etudes"),
-            st.Page(sport.render, title="Sport", icon="🥊", url_path="hebdo-sport"),
-            st.Page(courses.render, title="Courses & Repas", icon="🛒", url_path="hebdo-courses"),
-            st.Page(projets.render, title="Projets & Tâches", icon="🎯", url_path="hebdo-projets"),
-            st.Page(dev_perso.render, title="Développement Personnel", icon="🌱", url_path="hebdo-dev-perso"),
-            st.Page(social.render, title="Social & Loisirs", icon="🍹", url_path="hebdo-social"),
-            st.Page(intendance.render, title="Intendance & Admin", icon="🧹", url_path="hebdo-intendance"),
-            st.Page(ajustements.render, title="Ajustements", icon="⚖️", url_path="hebdo-ajustements"),
-            st.Page(travail.render, title="Jobs & Travail", icon="💼", url_path="hebdo-travail"),
-            st.Page(import_externe.render, title="Import Photo (IA)", icon="📸", url_path="import-externe"),
+        "Planification": [
+            st.Page(preparer_semaine.render, title="Préparer ma semaine", icon="📅", url_path="preparer-semaine"),
+            st.Page(generation.render, title="Génération IA", icon="✨", url_path="generation"),
         ],
         "Action": [
-            st.Page("pages/aujourdhui.py", title="Aujourd'hui", icon="📍", url_path="aujourdhui", default=True),
-            st.Page(generation.render, title="Génération IA", icon="✨", url_path="generation"),
-            st.Page(suivi.render, title="Suivi quotidien", icon="📊", url_path="suivi"),
             st.Page("pages/session_etude.py", title="Salle d'étude", icon="🧠", url_path="session-etude"),
-            st.Page("pages/achievements.py",  title="Achievements", icon="🏆", url_path="achievements"),
-            st.Page("pages/objectifs.py", title="Objectifs", icon="🎯", url_path="objectifs")
+            st.Page(bibliotheque.render, title="Bibliothèque", icon="📚", url_path="bibliotheque"),
         ],
-        "Bilan": [
+        "Progression & Bilan": [
+            st.Page(suivi.render, title="Suivi quotidien", icon="📝", url_path="suivi"),
             st.Page(dashboard.render, title="Tableau de bord", icon="📈", url_path="dashboard"),
-            st.Page("pages/revisions.py", title="Révisions (Méthode des J)", icon="🧠", url_path="revisions"),
+            st.Page("pages/revisions.py", title="Révisions (Méthode des J)", icon="🔥", url_path="revisions"),
+            st.Page("pages/achievements.py",  title="Achievements", icon="🏆", url_path="achievements"),
+            st.Page("pages/objectifs.py", title="Objectifs", icon="🎯", url_path="objectifs"),
+        ],
+        "Configuration": [
+            st.Page(profil.render, title="Profil & Réglages", icon="👤", url_path="profil"),
+            st.Page(import_externe.render, title="Import Photo (IA)", icon="📸", url_path="import-externe"),
+            st.Page("pages/aide.py", title="Aide & Mode d'emploi", icon="❓", url_path="aide"),
         ],
     }
     nav = st.navigation(pages, position="sidebar")

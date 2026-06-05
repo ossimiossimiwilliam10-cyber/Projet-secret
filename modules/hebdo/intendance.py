@@ -33,20 +33,10 @@ def _get_prev_intendance(session, offset: int) -> list[dict]:
 
 
 def render() -> None:
-    st.title("🧹 Intendance & Administratif")
+    st.subheader("🧹 Intendance & Administratif")
     st.caption("Libère ton esprit des corvées en les planifiant dans tes moments de basse énergie.")
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
-    options = {0: "📅 Cette semaine", 1: "📆 Semaine prochaine"}
-    nouveau_offset = st.radio(
-        "Semaine à préparer", options=list(options.keys()),
-        format_func=lambda k: options[k],
-        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
-        horizontal=True, key="intendance_semaine_target",
-    )
-    if nouveau_offset != offset_courant:
-        st.session_state["semaine_target_offset"] = nouveau_offset
-        st.rerun()
 
     with get_session() as session:
         saisie = _get_saisie_for_offset(session, offset_courant)

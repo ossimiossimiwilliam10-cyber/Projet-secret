@@ -125,26 +125,13 @@ def _suggest_priority_chapters(
 # Rendu UI
 # ---------------------------------------------------------------------------
 def render() -> None:
-    st.title("📚 Études de la semaine")
+    st.subheader("📚 Études de la semaine")
     st.caption(
         "Sélectionne tes matières et chapitres. "
         "L'IA s'occupera ensuite de la répartition."
     )
 
-    # --- Sélecteur de semaine ---
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
-    options = {0: "📅 Cette semaine (en cours)", 1: "📆 Semaine prochaine"}
-    nouveau_offset = st.radio(
-        "Semaine à préparer",
-        options=list(options.keys()),
-        format_func=lambda k: options[k],
-        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
-        horizontal=True,
-        key="etudes_semaine_target",
-    )
-    if nouveau_offset != offset_courant:
-        st.session_state["semaine_target_offset"] = nouveau_offset
-        st.rerun()
 
     with get_session() as session:
         semaine, saisie, nb_reportees = get_or_create_week_for_offset(

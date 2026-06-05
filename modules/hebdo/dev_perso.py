@@ -35,20 +35,10 @@ def _get_prev_dev(session, offset: int) -> list[dict]:
 
 
 def render() -> None:
-    st.title("🌱 Développement Personnel")
+    st.subheader("🌱 Développement Personnel")
     st.caption("Investis en toi-même. L'IA utilisera ces blocs comme des respirations productives.")
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
-    options = {0: "📅 Cette semaine", 1: "📆 Semaine prochaine"}
-    nouveau_offset = st.radio(
-        "Semaine à préparer", options=list(options.keys()),
-        format_func=lambda k: options[k],
-        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
-        horizontal=True, key="dev_semaine_target",
-    )
-    if nouveau_offset != offset_courant:
-        st.session_state["semaine_target_offset"] = nouveau_offset
-        st.rerun()
 
     with get_session() as session:
         saisie = _get_saisie_for_offset(session, offset_courant)

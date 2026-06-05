@@ -30,21 +30,10 @@ def _get_previous_week_config(session, current_offset: int) -> dict:
 
 
 def render() -> None:
-    st.title("🛒 Courses & Repas")
+    st.subheader("🛒 Courses & Repas")
     st.caption("Gère ton intendance alimentaire. Le Meal Prep est un excellent moyen de gagner du temps en semaine.")
 
-    # --- Sélecteur de semaine ---
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
-    options = {0: "📅 Cette semaine", 1: "📆 Semaine prochaine"}
-    nouveau_offset = st.radio(
-        "Semaine à préparer", options=list(options.keys()),
-        format_func=lambda k: options[k],
-        index=list(options.keys()).index(offset_courant) if offset_courant in options else 0,
-        horizontal=True, key="courses_semaine_target",
-    )
-    if nouveau_offset != offset_courant:
-        st.session_state["semaine_target_offset"] = nouveau_offset
-        st.rerun()
 
     with get_session() as session:
         saisie = _get_saisie_for_offset(session, offset_courant)

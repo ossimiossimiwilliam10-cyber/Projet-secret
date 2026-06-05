@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import streamlit as st
 from database import Job, Utilisateur, get_session, session_scope
-from utils.helpers import get_or_create_current_week
+from utils.helpers import get_or_create_week_for_offset
 
 JOURS = [
     "lundi",
@@ -19,14 +19,18 @@ JOURS = [
 
 
 def render() -> None:
-    st.title("💼 Emplois & Activités Professionnelles")
+    st.subheader("💼 Emplois & Activités Professionnelles")
     st.caption(
         "Renseigne tes contrats à long terme ou tes shifts ponctuels. "
         "L'IA verrouillera automatiquement ces créneaux dans ton planning."
     )
 
+    offset_courant = int(st.session_state.get("semaine_target_offset", 0))
+
     with get_session() as session:
-        semaine, _, _ = get_or_create_current_week(session, transfer_reported=False)
+        semaine, _, _ = get_or_create_week_for_offset(
+            session, offset_weeks=offset_courant, transfer_reported=False,
+        )
 
         # Liste des trajets habituels pour offrir un selecteur de lieu cohérent.
         # Défensif : profil OU sa sous-config logistique peuvent manquer
