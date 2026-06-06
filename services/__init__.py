@@ -6,6 +6,3 @@ pdfplumber, PyMuPDF, etc.). Les autres services sont importés à la
 demande par les modules qui en ont besoin.
 """
 
-from . import pdf_analyzer
-
-__all__ = ["pdf_analyzer"]

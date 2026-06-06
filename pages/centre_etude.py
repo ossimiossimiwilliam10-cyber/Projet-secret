@@ -32,18 +32,25 @@ def render():
     if "active_etude_tab" not in st.session_state:
         st.session_state.active_etude_tab = TABS[0]
         
+    # Determine the index for the radio based on the active tab state
+    try:
+        default_index = TABS.index(st.session_state.active_etude_tab)
+    except ValueError:
+        default_index = 0
+
     # Navigation interne avec style "pilules" via un radio bouton
     active_tab = st.radio(
         "Navigation",
         options=TABS,
+        index=default_index,
         horizontal=True,
         label_visibility="collapsed",
-        key="active_etude_tab_widget"
     )
     
     # Synchronisation de l'état si modifié par le widget
     if active_tab != st.session_state.active_etude_tab:
         st.session_state.active_etude_tab = active_tab
+        st.rerun()
         
     st.divider()
     

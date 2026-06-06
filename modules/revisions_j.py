@@ -617,7 +617,7 @@ def _render_jamais_commences(session, matiere_ids: list[int] | None) -> None:
                     st.session_state.target_chapitre_id = chap.id
                     try:
                         st.session_state.active_etude_tab = "🧠 Salle d'Étude"
-                    st.switch_page("pages/centre_etude.py")
+                        st.switch_page("pages/centre_etude.py")
                     except Exception:  # noqa: BLE001
                         st.session_state.navigate_to_session = True
 
