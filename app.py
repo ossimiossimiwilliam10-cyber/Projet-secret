@@ -59,6 +59,7 @@ def main() -> None:
         "Progression & Bilan": [
             st.Page(suivi.render, title="Suivi quotidien", icon="📝", url_path="suivi"),
             st.Page(dashboard.render, title="Tableau de bord", icon="📈", url_path="dashboard"),
+            st.Page("pages/historique.py", title="Historique (Cadenciers)", icon="🕰️", url_path="historique"),
             st.Page("pages/revisions.py", title="Révisions (Méthode des J)", icon="🔥", url_path="revisions"),
             st.Page("pages/achievements.py",  title="Achievements", icon="🏆", url_path="achievements"),
             st.Page("pages/objectifs.py", title="Objectifs", icon="🎯", url_path="objectifs"),
