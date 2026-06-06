@@ -584,7 +584,8 @@ def _render_liste_detaillee(session, matiere_ids: list[int] | None) -> None:
             if st.button("🧠 Réviser", key=f"goto_rev_{chap.id}", width="stretch"):
                 st.session_state.target_chapitre_id = chap.id
                 try:
-                    st.switch_page("pages/session_etude.py")
+                    st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                    st.switch_page("pages/centre_etude.py")
                 except Exception:  # noqa: BLE001
                     st.session_state.navigate_to_session = True
 
@@ -615,7 +616,8 @@ def _render_jamais_commences(session, matiere_ids: list[int] | None) -> None:
                 if st.button("▶️ Ouvrir", key=f"goto_new_{chap.id}", width="stretch"):
                     st.session_state.target_chapitre_id = chap.id
                     try:
-                        st.switch_page("pages/session_etude.py")
+                        st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                    st.switch_page("pages/centre_etude.py")
                     except Exception:  # noqa: BLE001
                         st.session_state.navigate_to_session = True
 
@@ -634,7 +636,8 @@ def render() -> None:
     col_rev, col_exam = st.columns(2)
     with col_rev:
         if st.button("⚡ Lancer la révision rapide", use_container_width=True, type="primary"):
-            st.switch_page("pages/revision_rapide.py")
+            st.session_state.active_etude_tab = "⚡ Quiz Flash"
+            st.switch_page("pages/centre_etude.py")
     with col_exam:
         if st.button("📝 Lancer un examen blanc", use_container_width=True):
             st.switch_page("pages/examen_blanc.py")
@@ -728,6 +731,3 @@ def render() -> None:
 
 
 
-
-if __name__ == "__main__":
-    render()

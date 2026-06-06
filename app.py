@@ -51,15 +51,12 @@ def main() -> None:
             st.Page(generation.render, title="Génération IA", icon="✨", url_path="generation"),
         ],
         "Action": [
-            st.Page("pages/session_etude.py", title="Salle d'étude", icon="🧠", url_path="session-etude"),
-            st.Page("pages/revision_rapide.py", title="Révision Rapide", icon="⚡", url_path="revision-rapide"),
-            st.Page(bibliotheque.render, title="Bibliothèque", icon="📚", url_path="bibliotheque"),
+            st.Page("pages/centre_etude.py", title="Centre d'Études", icon="🎓", url_path="centre-etude"),
         ],
         "Progression & Bilan": [
             st.Page(suivi.render, title="Suivi quotidien", icon="📝", url_path="suivi"),
             st.Page(dashboard.render, title="Tableau de bord", icon="📈", url_path="dashboard"),
             st.Page("pages/historique.py", title="Historique (Cadenciers)", icon="🕰️", url_path="historique"),
-            st.Page("pages/revisions.py", title="Révisions (Méthode des J)", icon="🔥", url_path="revisions"),
             st.Page("pages/achievements.py",  title="Achievements", icon="🏆", url_path="achievements"),
             st.Page("pages/objectifs.py", title="Objectifs", icon="🎯", url_path="objectifs"),
         ],

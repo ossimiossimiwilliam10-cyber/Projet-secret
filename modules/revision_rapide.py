@@ -22,7 +22,8 @@ def render() -> None:
     if not quick_ids:
         st.success("🎉 Aucun chapitre à réviser ! Tout est à jour.")
         if st.button("← Retour au tableau de bord"):
-            st.switch_page("pages/revisions.py")
+            st.session_state.active_etude_tab = "📅 Méthode des J"
+            st.switch_page("pages/centre_etude.py")
         return
 
     if idx >= len(quick_ids):
@@ -38,7 +39,8 @@ def render() -> None:
             if st.button("← Retour au tableau de bord"):
                 del st.session_state.quick_ids
                 del st.session_state.quick_idx
-                st.switch_page("pages/revisions.py")
+                st.session_state.active_etude_tab = "📅 Méthode des J"
+                st.switch_page("pages/centre_etude.py")
         return
 
     chap_id = quick_ids[idx]
@@ -81,4 +83,3 @@ def render() -> None:
                     st.session_state.quick_idx += 1
                     st.rerun()
 
-render()

@@ -1052,7 +1052,8 @@ def _render_carte_chapitre(chap: Chapitre, session: Session, prefix: str = "") -
         if st.button("🧠 Salle d'étude", key=f"btn_study_{prefix}{chap.id}", type="primary"):
             st.session_state.target_chapitre_id = chap.id
             try:
-                st.switch_page("pages/session_etude.py")
+                st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                st.switch_page("pages/centre_etude.py")
             except Exception:
                 st.rerun()
 

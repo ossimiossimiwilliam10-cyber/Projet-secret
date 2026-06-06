@@ -64,7 +64,8 @@ def _open_chapitre_in_session_etude(chap_id: int) -> None:
     """Ouvre la salle d'étude pour un chapitre donné."""
     st.session_state.target_chapitre_id = chap_id
     try:
-        st.switch_page("pages/session_etude.py")
+        st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+        st.switch_page("pages/centre_etude.py")
     except Exception:
         st.session_state.navigate_to_session = True
 

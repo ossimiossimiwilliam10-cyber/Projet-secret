@@ -82,7 +82,8 @@ def render() -> None:
                 if _s.get(Chapitre, chap_id) is not None:
                     st.session_state.target_chapitre_id = chap_id
                     st.query_params.clear()
-                    st.switch_page("pages/session_etude.py")
+                    st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                    st.switch_page("pages/centre_etude.py")
                     return  # par sécurité, normalement switch_page interrompt
         except (ValueError, TypeError):
             pass
