@@ -1021,10 +1021,14 @@ def _render_feynman_tab(chap_id: int) -> None:
 
 def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
     """Envoie l'audio à Gemini pour le comparer avec la fiche de cours."""
+    import logging
     import tempfile
     import os
     from google import genai
     from database.models import Utilisateur, Chapitre
+    from services.gemini_utils import gemini_call_with_retry
+
+    logger = logging.getLogger(__name__)
 
     with st.spinner("🧠 Gemini écoute, transcrit et évalue ta démonstration... (ça peut prendre 30 sec)"):
         try:
@@ -1073,10 +1077,14 @@ Ta tâche :
    - ⚠️ Les éléments cruciaux de la fiche qu'il a oublié de mentionner.
 4. Donne-lui une note sur 10 de clarté et de maîtrise.
 """
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[uploaded_file, prompt]
-                )
+                # Wrapper l'appel Gemini avec retry réseau automatique
+                def _call_gemini():
+                    return client.models.generate_content(
+                        model=model_name,
+                        contents=[uploaded_file, prompt]
+                    )
+                
+                response = gemini_call_with_retry(_call_gemini, context="feynman_audio_evaluation")
                 
                 # 4. Affichage du résultat
                 st.success("Analyse terminée !")
@@ -1088,5 +1096,6 @@ Ta tâche :
                     client.files.delete(name=uploaded_file.name)
                 os.remove(tmp_path)
                 
-        except Exception as e:
-            st.error(f"❌ Erreur lors de l'analyse : {e}")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Erreur lors de l'évaluation Feynman audio")
+            st.error(f"❌ Erreur lors de l'analyse : {e}")

@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import io
+import logging
 import shutil
 import sqlite3
 import zipfile
@@ -60,7 +61,11 @@ def _build_manifest() -> str:
                 try:
                     c.execute(f"SELECT COUNT(*) FROM {table}")
                     stats[table] = c.fetchone()[0]
-                except Exception:
+                except Exception:  # noqa: BLE001
+                    logging.getLogger(__name__).warning(
+                        "[backup_manifest] Impossible de lire le nombre de %s",
+                        table,
+                    )
                     stats[table] = "?"
             # XP/Niveau
             try:
@@ -68,11 +73,15 @@ def _build_manifest() -> str:
                 row = c.fetchone()
                 if row:
                     stats["XP"], stats["Niveau"], stats["Streak"] = row[0], row[1], row[2]
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "[backup_manifest] Impossible de lire les statistiques de gamification"
+                )
             conn.close()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "[backup_manifest] Impossible de lire les stats de la base, manifest simplifié"
+            )
 
     lines = [
         "Exocerveau backup",
@@ -155,8 +164,10 @@ def auto_backup() -> bool:
                     lines = last_data.split("\n")
                     if len(lines) >= 2 and lines[1] == current_db_hash:
                         return False  # DB inchangée, pas de nouveau backup
-                except Exception:
-                    pass  # fichier corrompu, on continue
+                except Exception:  # noqa: BLE001
+                    logging.getLogger(__name__).warning(
+                        "[auto_backup] Fichier .last_backup corrompu, ignoré"
+                    )
 
         zip_bytes = create_backup_zip()
         filename = make_backup_filename()
@@ -169,14 +180,20 @@ def auto_backup() -> bool:
             try:
                 old.unlink()
             except OSError:
-                pass
+                logging.getLogger(__name__).warning(
+                    "[auto_backup] Impossible de supprimer l'ancien backup %s",
+                    old.name,
+                )
 
         # Tracer le timestamp + hash DB pour la prochaine déduplication
         _LAST_BACKUP_FILE.write_text(
             datetime.datetime.now().isoformat() + "\n" + current_db_hash
         )
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception(
+            "[auto_backup] Erreur lors de la création du backup automatique"
+        )
         return False
 
 
@@ -192,7 +209,10 @@ def get_last_backup_age_days() -> int | None:
         last_str = _LAST_BACKUP_FILE.read_text().strip().split("\n")[0]
         last_dt = datetime.datetime.fromisoformat(last_str)
         return (datetime.datetime.now() - last_dt).days
-    except Exception:
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "[get_last_backup_age_days] Impossible de calculer l'âge du dernier backup"
+        )
         return None
 
 
