@@ -420,26 +420,12 @@ def render() -> None:
     with st.expander("💪 Capacite de travail", expanded=is_new):
         col1, col2 = st.columns(2)
         with col1:
-            methode_travail = st.selectbox(
-                "Methode de travail preferee",
-                options=list(METHODES_TRAVAIL.keys()),
-                format_func=lambda k: METHODES_TRAVAIL[k],
-                index=list(METHODES_TRAVAIL.keys()).index(data["methode_travail"])
-                if data.get("methode_travail") in METHODES_TRAVAIL else 0,
-            )
-            # Si Pomodoro, force le slider a une valeur coherente (25 min)
-            if methode_travail == "pomodoro":
-                st.session_state["profil_duree_max_session"] = min(
-                    data.get("duree_max_session_min", 25), 30
-                )
             duree_max_session = st.slider(
                 "Duree maximale d'une session sans pause (min)",
                 min_value=20, max_value=120,
-                value=st.session_state.get("profil_duree_max_session", data["duree_max_session_min"]),
+                value=data.get("duree_max_session_min", 50),
                 step=5,
-                disabled=(methode_travail == "pomodoro"),
                 key="profil_duree_max_session",
-                help="Avec Pomodoro, la duree est bloquee a 25-30 min maximum.",
             )
             pause_entre_sessions = st.slider(
                 "Duree d'une pause entre sessions (min)",
@@ -454,16 +440,6 @@ def render() -> None:
                 index=list(TOLERANCE_FATIGUE.keys()).index(data["tolerance_fatigue"])
                 if data.get("tolerance_fatigue") in TOLERANCE_FATIGUE else 0,
             )
-            if methode_travail == "pomodoro":
-                st.caption("🍅 Mode Pomodoro : sessions de 25-30 min, entrecoupees de courtes pauses.")
-
-        capacite_weekend = st.radio(
-            "Capacite de travail le week-end",
-            options=list(CAPACITE_WEEKEND.keys()),
-            format_func=lambda k: CAPACITE_WEEKEND[k],
-            index=list(CAPACITE_WEEKEND.keys()).index(data["capacite_weekend"])
-            if data.get("capacite_weekend") in CAPACITE_WEEKEND else 0,
-        )
 
         st.divider()
         st.markdown("##### 🎯 Quota d'etude (cours + revisions perso)")
@@ -514,7 +490,9 @@ def render() -> None:
             )
 
     # === Section 3 - Contraintes fixes recurrentes =========================
-    contraintes_brutes: list[dict] = []  # défini même si expander fermé
+    if "profil_contraintes" not in st.session_state:
+        st.session_state.profil_contraintes = list(data.get("contraintes_fixes", []))
+
     with st.expander("📌 Contraintes fixes recurrentes", expanded=is_new):
         st.caption(
             "Creneaux bloques **chaque semaine** : cours en presentiel, job etudiant, "
@@ -522,36 +500,59 @@ def render() -> None:
             "generes."
         )
 
-        df_contraintes = _build_constraints_df(data["contraintes_fixes"])
-        edited = st.data_editor(
-            df_contraintes,
-            num_rows="dynamic",
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "jour": st.column_config.SelectboxColumn(
-                    "Jour", options=JOURS, required=True,
-                ),
-                "heure_debut": st.column_config.TextColumn(
-                    "Debut (HH:MM)", required=True,
-                    help="Format 24 h, ex. : 08:30",
-                ),
-                "heure_fin": st.column_config.TextColumn(
-                    "Fin (HH:MM)", required=True,
-                    help="Format 24 h, ex. : 10:30",
-                ),
-                "libelle": st.column_config.TextColumn(
-                    "Libelle", required=True,
-                    help="Ex. : << TD Droit >>, << Job etudiant >>",
-                ),
-                "lieu": st.column_config.TextColumn(
-                    "Lieu", required=False,
-                    help="Ex. : << Fac >>, << Luxembourg >>",
-                ),
-            },
-            key="profil_contraintes_editor",
-        )
-        contraintes_brutes = edited.to_dict(orient="records")
+        contraintes_list = st.session_state.profil_contraintes
+
+        if contraintes_list:
+            for i, c in enumerate(contraintes_list):
+                col1, col2 = st.columns([11, 1])
+                with col1:
+                    jour = c.get('jour', '').capitalize()
+                    hd = c.get('heure_debut', '')
+                    hf = c.get('heure_fin', '')
+                    libelle = c.get('libelle', '')
+                    lieu = c.get('lieu', '')
+                    lieu_str = f" ({lieu})" if lieu else ""
+                    st.markdown(f"**{jour} {hd} - {hf}** : {libelle}{lieu_str}")
+                with col2:
+                    if st.button("🗑️", key=f"del_contrainte_{i}"):
+                        contraintes_list.pop(i)
+                        st.rerun()
+        else:
+            st.info("Aucune contrainte fixe definie.")
+
+        st.divider()
+        st.markdown("##### ➕ Ajouter une contrainte")
+        with st.form("form_add_contrainte", clear_on_submit=True):
+            col_j, col_d, col_f = st.columns(3)
+            with col_j:
+                new_jour = st.selectbox("Jour", options=JOURS)
+            with col_d:
+                new_debut = st.time_input("Heure debut", value=None)
+            with col_f:
+                new_fin = st.time_input("Heure fin", value=None)
+
+            col_l, col_lieu = st.columns(2)
+            with col_l:
+                new_lib = st.text_input("Libelle (ex: TD Droit)")
+            with col_lieu:
+                new_lieu = st.text_input("Lieu (optionnel)")
+
+            if st.form_submit_button("Ajouter", use_container_width=True):
+                if not new_debut or not new_fin or not new_lib:
+                    st.error("Veuillez remplir le jour, les heures et le libellé.")
+                elif new_debut >= new_fin:
+                    st.error("L'heure de fin doit être après l'heure de début.")
+                else:
+                    contraintes_list.append({
+                        "jour": new_jour,
+                        "heure_debut": new_debut.strftime("%H:%M"),
+                        "heure_fin": new_fin.strftime("%H:%M"),
+                        "libelle": new_lib,
+                        "lieu": new_lieu,
+                    })
+                    st.rerun()
+
+        contraintes_brutes = contraintes_list
 
     # === Section 4 - Transport & Lieux ======================================
     transport_config: dict[str, Any] = data.get("transport", {})  # défini même si expander fermé
@@ -568,27 +569,38 @@ def render() -> None:
         mode_principal: str = transport.get("mode", "transit")
         lieu_principal: str = transport.get("lieu_principal", "")
 
+        if "profil_lieux" not in st.session_state:
+            st.session_state.profil_lieux = list(transport.get("lieux", []))
+            
+        nouveaux_lieux = st.session_state.profil_lieux
+
         # --- Edition des lieux ---
         st.markdown("##### 📍 Mes lieux")
-        df_lieux = pd.DataFrame({"lieu": pd.Series(lieux, dtype="string")} if lieux else {"lieu": pd.Series([], dtype="string")})
-        edited_lieux = st.data_editor(
-            df_lieux,
-            num_rows="dynamic",
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "lieu": st.column_config.TextColumn(
-                    "Nom du lieu", required=True,
-                    help="Ex: Appartement, Fac, Salle de sport, Gare",
-                ),
-            },
-            key="profil_lieux_v3",
-        )
-        nouveaux_lieux: list[str] = []
-        for _, row in edited_lieux.iterrows():
-            l = str(row.get("lieu") or "").strip()
-            if l and l not in nouveaux_lieux:
-                nouveaux_lieux.append(l)
+        if nouveaux_lieux:
+            for i, lieu in enumerate(nouveaux_lieux):
+                col1, col2 = st.columns([11, 1])
+                with col1:
+                    st.markdown(f"**{lieu}**")
+                with col2:
+                    if st.button("🗑️", key=f"del_lieu_{i}"):
+                        nouveaux_lieux.pop(i)
+                        st.rerun()
+        else:
+            st.info("Aucun lieu defini.")
+            
+        with st.form("form_add_lieu", clear_on_submit=True):
+            col_l, col_btn = st.columns([4, 1])
+            with col_l:
+                new_lieu_input = st.text_input("Ajouter un lieu", placeholder="ex: Fac, Appartement, Gare", label_visibility="collapsed")
+            with col_btn:
+                submitted = st.form_submit_button("Ajouter", use_container_width=True)
+            if submitted:
+                nl = new_lieu_input.strip()
+                if nl and nl not in nouveaux_lieux:
+                    nouveaux_lieux.append(nl)
+                    st.rerun()
+                elif nl in nouveaux_lieux:
+                    st.error("Ce lieu existe deja.")
 
         # --- Options ---
         col_opt1, col_opt2, col_opt3 = st.columns(3)
@@ -784,7 +796,7 @@ def render() -> None:
 
         # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
         stored_model = data.get("deepseek_model", "deepseek-chat")
-        models_options = ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
+        models_options = ["deepseek-v4-pro", "deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
         if stored_model not in models_options:
             models_options.insert(0, stored_model)
 
@@ -951,8 +963,8 @@ def render() -> None:
         "pic_concentration": pic_concentration,
         "duree_max_session_min": int(duree_max_session),
         "pause_entre_sessions_min": int(pause_entre_sessions),
-        "methode_travail": methode_travail,
-        "capacite_weekend": capacite_weekend,
+        "methode_travail": data.get("methode_travail", "mixte"),
+        "capacite_weekend": data.get("capacite_weekend", "partiel"),
         "tolerance_fatigue": tolerance_fatigue,
         "heures_etude_cible_par_semaine": float(heures_etude_cible_par_semaine),
         "heures_etude_plafond_par_jour": float(heures_etude_plafond_par_jour),
@@ -1027,16 +1039,7 @@ def _defaults() -> dict[str, Any]:
     }
 
 
-def _build_constraints_df(contraintes: list[dict[str, str]]) -> pd.DataFrame:
-    """DataFrame avec les colonnes attendues, meme pour une liste vide."""
-    cols = ["jour", "heure_debut", "heure_fin", "libelle", "lieu"]
-    if not contraintes:
-        return pd.DataFrame({c: pd.Series(dtype="string") for c in cols})
-    df = pd.DataFrame(contraintes)
-    for c in cols:
-        if c not in df.columns:
-            df[c] = ""
-    return df[cols].astype("string")
+
 
 
 def _is_valid_time(s: str) -> bool:
