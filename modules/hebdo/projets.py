@@ -66,13 +66,6 @@ def render() -> None:
         config_db = saisie.projets_config or []
         items_normalises = [_normaliser_item(it) for it in config_db if isinstance(it, dict)]
 
-        if items_normalises:
-            df_projets = pd.DataFrame(items_normalises)
-        else:
-            df_projets = pd.DataFrame([{"titre": "", "type": TYPES_PROJET[0], "duree_min": 60, "priorite": "Moyenne", "echeance": "Peu importe"}])
-
-        df_projets = df_projets.reindex(columns=["titre", "type", "duree_min", "priorite", "echeance"])
-
     # Reprendre S-1
     col_prev, _ = st.columns([1, 3])
     with col_prev:
@@ -103,44 +96,77 @@ def render() -> None:
                         f"({len(prev)} projet(s) ponctuel(s) ignoré(s)).",
                         icon="ℹ️",
                     )
+                st.session_state.pop(f"projets_config_{saisie.id}", None)
                 st.rerun()
             else:
                 st.toast("Aucun projet la semaine dernière.", icon="ℹ️")
 
     st.subheader("Liste de tes projets de la semaine")
-    edited_projets = st.data_editor(
-        df_projets, num_rows="dynamic", width='stretch',
-        column_config={
-            "titre": st.column_config.TextColumn("Nom de la tâche / Projet", required=True),
-            "type": st.column_config.SelectboxColumn("Catégorie", options=TYPES_PROJET, default=TYPES_PROJET[0]),
-            "duree_min": st.column_config.NumberColumn("Durée totale (min)", min_value=15, step=15, default=60),
-            "priorite": st.column_config.SelectboxColumn("Priorité", options=PRIORITES, default="Moyenne"),
-            "echeance": st.column_config.TextColumn("Échéance (ex: Avant Mercredi)"),
-        },
-        key="projets_editor_v3",
-    )
+
+    state_key = f"projets_config_{saisie.id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = [dict(p) for p in items_normalises]
+
+    projets_actuels = st.session_state[state_key]
+
+    if not projets_actuels:
+        st.info("Aucun projet ou tâche prévu cette semaine.")
+    else:
+        for idx, p in enumerate(projets_actuels):
+            # Icônes selon priorité et type
+            prio = p.get("priorite", "Moyenne")
+            prio_icon = "🚨" if prio == "Haute" else "🔵" if prio == "Moyenne" else "🟢"
+            
+            type_p = p.get("type", TYPES_PROJET[0])
+            type_icon = "🎓" if "Scolaire" in type_p else "👤" if "Personnel" in type_p else "📁" if "Administratif" in type_p else "🎯"
+
+            with st.container(border=True):
+                col_icon, col_details, col_del = st.columns([1, 8, 1])
+                with col_icon:
+                    st.markdown(f"<h2 style='text-align:center;'>{type_icon}</h2>", unsafe_allow_html=True)
+                with col_details:
+                    titre = p.get("titre", "Tâche")
+                    st.markdown(f"**{titre}**")
+                    st.caption(f"⏱️ {p.get('duree_min', 60)} min | {prio_icon} Priorité {prio} | 📅 Échéance : {p.get('echeance', 'Peu importe')}")
+                with col_del:
+                    if st.button("❌", key=f"del_pj_{saisie.id}_{idx}", help="Supprimer la tâche"):
+                        projets_actuels.pop(idx)
+                        st.rerun()
+
+    with st.expander("➕ **Ajouter un projet / tâche**", expanded=len(projets_actuels) == 0):
+        with st.form(f"form_add_pj_{saisie.id}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                new_titre = st.text_input("Nom de la tâche / Projet")
+                new_type = st.selectbox("Catégorie", options=TYPES_PROJET, index=0)
+                new_duree = st.number_input("Durée totale (min)", min_value=15, step=15, value=60)
+            with c2:
+                new_priorite = st.selectbox("Priorité", options=PRIORITES, index=1)
+                new_echeance = st.text_input("Échéance", placeholder="ex: Avant Mercredi")
+                
+            if st.form_submit_button("✓ Ajouter", type="primary", use_container_width=True):
+                if not new_titre.strip():
+                    st.error("Le nom de la tâche est requis.")
+                else:
+                    projets_actuels.append({
+                        "titre": new_titre.strip(),
+                        "type": new_type,
+                        "duree_min": int(new_duree),
+                        "priorite": new_priorite,
+                        "echeance": new_echeance.strip() if new_echeance.strip() else "Peu importe",
+                    })
+                    st.rerun()
 
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
         if st.button("💾 Enregistrer mes projets", type="primary", width='stretch'):
-            projets_propre = []
-            for _, row in edited_projets.iterrows():
-                if pd.notna(row.get("titre")) and str(row.get("titre")).strip():
-                    projets_propre.append({
-                        "titre": str(row["titre"]).strip(),
-                        "type": str(row.get("type", TYPES_PROJET[0])),
-                        "duree_min": int(row.get("duree_min", 60)),
-                        "priorite": str(row.get("priorite", "Moyenne")),
-                        "echeance": str(row.get("echeance", "Peu importe")),
-                    })
+            projets_propre = projets_actuels
             try:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.projets_config = projets_propre
-                st.success("✅ Projets enregistrés !")
                 st.toast("Projets sauvegardés", icon="✅")
-                st.rerun()
             except Exception as e:  # noqa: BLE001
                 import logging
                 logging.getLogger("hebdo").exception("sauvegarde projets")
