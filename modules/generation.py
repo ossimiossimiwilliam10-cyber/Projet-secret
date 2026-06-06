@@ -455,7 +455,7 @@ def render() -> None:
         cible_hebdo_min = calculer_cible_hebdo_minutes(profil)
 
         # === Bandeau d'aide & contexte ===
-        col_h1, col_h2, col_h3 = st.columns([2, 1, 1])
+        col_h1, col_h2 = st.columns([2, 1])
         with col_h1:
             st.info(
                 f"📅 **Semaine {semaine.numero_semaine}** — "
@@ -465,26 +465,8 @@ def render() -> None:
             st.metric(
                 "🎯 Objectif hebdo",
                 f"{cible_hebdo_min / 60:.1f} h",
-                help=f"Plafond journalier : {quota_etude_jour_min / 60:.1f} h "
-                     "(modulé par ton check-in).",
+                help=f"Plafond journalier : {quota_etude_jour_min / 60:.1f} h.",
             )
-        with col_h3:
-            if checkin and (checkin["fatigue_physique"] > 7 or checkin["charge_mentale"] > 7):
-                st.warning("⚠️ Check-in fatigué : plafond -30 %")
-            elif checkin:
-                st.success("✅ Check-in OK")
-            else:
-                st.warning("👇 Pense à faire ton check-in du jour")
-
-        # Widget de check-in directement accessible sur cette page.
-        # Effet réel : module le plafond journalier d'étude utilisé par
-        # le scheduler (-30 % si fatigue > 7 ou mental > 7).
-        from modules._widgets_checkin import render_checkin_quotidien_widget
-        render_checkin_quotidien_widget(
-            session,
-            titre="📊 Check-in Biomécanique du jour (impacte la génération)",
-            key_prefix="gen_checkin",
-        )
 
         # === Lancement de la génération ===
         st.subheader("1. Lancer la planification")
@@ -542,9 +524,9 @@ def render() -> None:
                 f"→ ~{sim_plafond * 7 / 60:.0f}h max cette semaine"
             )
 
-        label_btn = "🔄 Régénérer le planning" if is_generee else "🚀 Générer le planning avec Gemini"
+        label_btn = "🔄 Régénérer le planning" if is_generee else "🚀 Générer le planning avec DeepSeek"
         if st.button(label_btn, type="primary", width="stretch"):
-            with st.spinner("🧠 Gemini construit ton planning… (15-30 secondes)"):
+            with st.spinner("🧠 DeepSeek construit ton planning… (15-30 secondes)"):
                 try:
                     resultat_json = generate_schedule_from_ai(
                         semaine.id,
@@ -598,7 +580,7 @@ def render() -> None:
                          "et tes tâches obligatoires. Ajoute juste les nouveaux "
                          "chapitres dans les créneaux libres restants.",
                 ):
-                    with st.spinner("🧠 Gemini intègre tes nouveautés…"):
+                    with st.spinner("🧠 DeepSeek intègre tes nouveautés…"):
                         try:
                             resultat_inc = integrer_nouveautes_a_semaine(
                                 session, semaine.id,
