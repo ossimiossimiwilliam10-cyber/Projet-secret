@@ -1284,7 +1284,7 @@ def _render_programme_section() -> None:
             for ch, m, u in urgents:
                 expanded = view in ("all", "urgent")
                 with st.expander(_chapter_title_html(ch), expanded=expanded):
-                    _render_carte_chapitre(ch, session)
+                    _render_carte_chapitre(ch, session, prefix="urgent_")
             st.divider()
 
         # --- Hiérarchie : Semestre → UE → Matière → Chapitre ---
@@ -1337,7 +1337,7 @@ def _render_programme_section() -> None:
                     continue
                 expanded = view == "all" or (view == "urgent" and ch_urgent)
                 with st.expander(_chapter_title_html(ch), expanded=expanded):
-                    _render_carte_chapitre(ch, session)
+                    _render_carte_chapitre(ch, session, prefix="prog_")
 
 
 def _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, view, _matches) -> None:
@@ -1369,7 +1369,7 @@ def _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, vie
                 continue
             expanded = view == "all" or (view == "urgent" and ch_urgent)
             with st.expander(_chapter_title_html(ch), expanded=expanded):
-                _render_carte_chapitre(ch, session)
+                _render_carte_chapitre(ch, session, prefix="prog_")
 
 
 # ---------------------------------------------------------------------------
