@@ -246,7 +246,8 @@ def _render_bouton_magique(action: dict[str, Any]) -> None:
         ):
             st.session_state.target_chapitre_id = chap_id
             try:
-                st.switch_page("pages/session_etude.py")
+                st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                st.switch_page("pages/centre_etude.py")
             except Exception:  # noqa: BLE001
                 st.session_state.navigate_to_session = True
 

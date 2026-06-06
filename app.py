@@ -14,14 +14,7 @@ from __future__ import annotations
 import streamlit as st
 
 from database.db import init_db, migrate_schema
-from modules import (
-    dashboard,
-    generation,
-    import_externe,
-    profil,
-    suivi,
-    preparer_semaine,
-)
+
 
 
 def main() -> None:
@@ -46,23 +39,16 @@ def main() -> None:
             st.Page("pages/aujourdhui.py", title="Aujourd'hui", icon="📍", url_path="aujourdhui", default=True),
         ],
         "Planification": [
-            st.Page(preparer_semaine.render, title="Préparer ma semaine", icon="📅", url_path="preparer-semaine"),
-            st.Page(generation.render, title="Génération IA", icon="✨", url_path="generation"),
+            st.Page("pages/planification.py", title="Planification", icon="📅", url_path="planification"),
         ],
         "Action": [
             st.Page("pages/centre_etude.py", title="Centre d'Études", icon="🎓", url_path="centre-etude"),
         ],
         "Progression & Bilan": [
-            st.Page(suivi.render, title="Suivi quotidien", icon="📝", url_path="suivi"),
-            st.Page(dashboard.render, title="Tableau de bord", icon="📈", url_path="dashboard"),
-            st.Page("pages/historique.py", title="Historique (Cadenciers)", icon="🕰️", url_path="historique"),
-            st.Page("pages/achievements.py",  title="Achievements", icon="🏆", url_path="achievements"),
-            st.Page("pages/objectifs.py", title="Objectifs", icon="🎯", url_path="objectifs"),
+            st.Page("pages/progression.py", title="Progression & Bilan", icon="📈", url_path="progression"),
         ],
         "Configuration": [
-            st.Page(profil.render, title="Profil & Réglages", icon="👤", url_path="profil"),
-            st.Page(import_externe.render, title="Import Photo (IA)", icon="📸", url_path="import-externe"),
-            st.Page("pages/aide.py", title="Aide & Mode d'emploi", icon="❓", url_path="aide"),
+            st.Page("pages/configuration.py", title="Configuration", icon="⚙️", url_path="configuration"),
         ],
     }
     nav = st.navigation(pages, position="sidebar")
