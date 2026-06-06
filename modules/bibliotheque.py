@@ -1157,6 +1157,31 @@ def _render_carte_chapitre(chap: Chapitre, session: Session, prefix: str = "") -
                 st.session_state.pop(confirm_key, None)
                 st.rerun()
 
+@st.dialog("⚙️ Gérer le chapitre", width="large")
+def _manage_chapitre_dialog(chap_id: int) -> None:
+    with session_scope() as session:
+        chap = session.get(Chapitre, chap_id)
+        if not chap:
+            st.error("Chapitre introuvable.")
+            return
+        _render_carte_chapitre(chap, session, prefix="dialog_")
+
+def _render_chapter_row(ch: Chapitre, prefix: str) -> None:
+    """Affiche une ligne compacte pour un chapitre, avec un bouton Gérer qui ouvre un dialog."""
+    m = int(ch.maitrise_pct or 0)
+    label_rev, color = label_couleur_status(ch)
+    
+    with st.container(border=True):
+        c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
+        num_str = f"{ch.numero}. " if ch.numero else ""
+        c1.markdown(f"**📑 {num_str}{ch.titre}**")
+        c2.markdown(f"<div style='color:{color}; padding-top:0.2rem; font-size:0.9rem;'>{label_rev}</div>", unsafe_allow_html=True)
+        with c3:
+            st.progress(m / 100.0, text=f"{m}%")
+        with c4:
+            if st.button("⚙️ Gérer", key=f"btn_manage_{prefix}{ch.id}", use_container_width=True):
+                _manage_chapitre_dialog(ch.id)
+
 
 # ---------------------------------------------------------------------------
 # Rendu principal — avec regroupement par Semestre
@@ -1277,14 +1302,12 @@ def _render_programme_section() -> None:
         if urgents:
             st.markdown(
                 f"<div style='margin-top:1rem; padding:10px 14px; background:#fef2f2; "
-                f"border-left:4px solid #dc2626; border-radius:4px;'>"
+                f"border-left:4px solid #dc2626; border-radius:4px; margin-bottom:1rem;'>"
                 f"🔴 <b>{len(urgents)} chapitre(s) à réviser aujourd'hui</b>"
                 f"</div>", unsafe_allow_html=True,
             )
             for ch, m, u in urgents:
-                expanded = view in ("all", "urgent")
-                with st.expander(_chapter_title_html(ch), expanded=expanded):
-                    _render_carte_chapitre(ch, session, prefix="urgent_")
+                _render_chapter_row(ch, prefix="urgent_")
             st.divider()
 
         # --- Hiérarchie : Semestre → UE → Matière → Chapitre ---
@@ -1320,24 +1343,19 @@ def _render_programme_section() -> None:
 
         for matiere in matieres_sans_ue:
             matiere_chaps = chaps_par_matiere.get(matiere.id, [])
+            if search_lower:
+                matiere_chaps = [ch for ch in matiere_chaps if search_lower in ch.titre.lower() or search_lower in matiere.nom.lower() or (matiere.code and search_lower in matiere.code.lower())]
+            if view == "urgent":
+                matiere_chaps = [ch for ch in matiere_chaps if ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50]
+            
             if not matiere_chaps:
                 continue
-            st.markdown(
-                f"<div style='margin-top:1.5rem; padding:6px 12px; "
-                f"border-left:4px solid #6b7280; background:#6b728015; border-radius:4px;'>"
-                f"<span style='font-size:1.1rem; font-weight:600;'>📘 {matiere.nom}</span>"
-                f"<span style='color:#6b7280; font-size:0.9rem;'> (matière sans UE)</span></div>",
-                unsafe_allow_html=True,
-            )
-            for ch in matiere_chaps:
-                if search_lower and not (search_lower in ch.titre.lower() or search_lower in matiere.nom.lower() or (matiere.code and search_lower in matiere.code.lower())):
-                    continue
-                ch_urgent = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
-                if view == "urgent" and not ch_urgent:
-                    continue
-                expanded = view == "all" or (view == "urgent" and ch_urgent)
-                with st.expander(_chapter_title_html(ch), expanded=expanded):
-                    _render_carte_chapitre(ch, session, prefix="prog_")
+            
+            code_part = f" · `{matiere.code}`" if matiere.code else ""
+            expanded = (view == "all" or search_lower != "")
+            with st.expander(f"📘 {matiere.nom} {code_part} ({len(matiere_chaps)} chapitres)  — *(sans UE)*", expanded=expanded):
+                for ch in matiere_chaps:
+                    _render_chapter_row(ch, prefix="prog_")
 
 
 def _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, view, _matches) -> None:
@@ -1353,23 +1371,23 @@ def _render_ue_in_programme(ue, matieres_par_ue, chaps_par_matiere, session, vie
 
     for matiere in ue_matieres:
         matiere_chaps = chaps_par_matiere.get(matiere.id, [])
+        # Filter matching chapters
+        matiere_chaps = [ch for ch in matiere_chaps if _matches(ch, matiere, ue)]
+        if view == "urgent":
+            matiere_chaps = [ch for ch in matiere_chaps if ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50]
+        
         if not matiere_chaps:
             continue
+            
         code_part = f" · `{matiere.code}`" if matiere.code else ""
-        st.markdown(
-            f"<div style='margin:0.4rem 0 0.3rem 1.5rem; color:#374151;'>"
-            f"<b>📘 {matiere.nom}</b><span style='color:#9ca3af; font-size:0.85rem;'>{code_part}</span>"
-            f"</div>", unsafe_allow_html=True,
-        )
-        for ch in matiere_chaps:
-            if not _matches(ch, matiere, ue):
-                continue
-            ch_urgent = (ch.date_prochaine and (ch.date_prochaine - datetime.date.today()).days <= 0 and (ch.maitrise_pct or 0) < 50)
-            if view == "urgent" and not ch_urgent:
-                continue
-            expanded = view == "all" or (view == "urgent" and ch_urgent)
-            with st.expander(_chapter_title_html(ch), expanded=expanded):
-                _render_carte_chapitre(ch, session, prefix="prog_")
+        expanded = (view == "all" or _matches(matiere_chaps[0], matiere, ue) and view != "none")
+        # Ensure it's expanded if searching
+        if view == "none":
+            expanded = False
+            
+        with st.expander(f"📘 {matiere.nom} {code_part} ({len(matiere_chaps)} chapitres)", expanded=expanded):
+            for ch in matiere_chaps:
+                _render_chapter_row(ch, prefix="prog_")
 
 
 # ---------------------------------------------------------------------------
