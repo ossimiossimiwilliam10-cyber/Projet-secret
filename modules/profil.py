@@ -104,38 +104,42 @@ def load_profil() -> dict[str, Any]:
         if p is None:
             return {}
 
+        sys = p.systeme
+        bio = p.biometrie
+        logis = p.logistique
+
         # Dechiffrement transparent de la cle API (legacy en clair gere)
-        key_stored = p.systeme.gemini_api_key or ""
+        key_stored = sys.gemini_api_key if sys and sys.gemini_api_key else ""
         key_clear = decrypt_api_key(key_stored)
 
         return {
             "id": p.id,
             "nom": p.nom or "",
             "prenom": p.prenom or "",
-            "heure_lever": p.biometrie.heure_lever or time(7, 0),
-            "heure_coucher": p.biometrie.heure_coucher or time(23, 30),
-            "heures_sommeil_cible": float(p.biometrie.heures_sommeil_cible or 8.0),
-            "chronotype": p.biometrie.chronotype or "intermediaire",
-            "pic_concentration": p.biometrie.pic_concentration or "matin",
-            "duree_max_session_min": int(p.biometrie.duree_max_session_min or 50),
-            "pause_entre_sessions_min": int(p.biometrie.pause_entre_sessions_min or 10),
-            "methode_travail": p.biometrie.methode_travail or "mixte",
-            "capacite_weekend": p.biometrie.capacite_weekend or "partiel",
-            "tolerance_fatigue": p.biometrie.tolerance_fatigue or "moyenne",
-            "heures_etude_cible_par_semaine": float(p.biometrie.heures_etude_cible_par_semaine or 21.0),
-            "heures_etude_plafond_par_jour": float(p.biometrie.heures_etude_plafond_par_jour or 6.0),
-            "nb_repas_par_jour": int(p.logistique.nb_repas_par_jour or 3),
-            "duree_repas_min": int(p.logistique.duree_repas_min or 30),
-            "duree_prep_repas_min": int(p.logistique.duree_prep_repas_min or 30),
-            "besoin_sieste": bool(p.biometrie.besoin_sieste),
-            "duree_sieste_min": int(p.biometrie.duree_sieste_min or 20),
-            "contraintes_fixes": list(p.logistique.contraintes_fixes or []),
-            "transport": _load_transport_config(dict(p.logistique.trajets_habituels or {})),
+            "heure_lever": bio.heure_lever if bio and bio.heure_lever else time(7, 0),
+            "heure_coucher": bio.heure_coucher if bio and bio.heure_coucher else time(23, 30),
+            "heures_sommeil_cible": float(bio.heures_sommeil_cible if bio and bio.heures_sommeil_cible else 8.0),
+            "chronotype": bio.chronotype if bio and bio.chronotype else "intermediaire",
+            "pic_concentration": bio.pic_concentration if bio and bio.pic_concentration else "matin",
+            "duree_max_session_min": int(bio.duree_max_session_min if bio and bio.duree_max_session_min else 50),
+            "pause_entre_sessions_min": int(bio.pause_entre_sessions_min if bio and bio.pause_entre_sessions_min else 10),
+            "methode_travail": bio.methode_travail if bio and bio.methode_travail else "mixte",
+            "capacite_weekend": bio.capacite_weekend if bio and bio.capacite_weekend else "partiel",
+            "tolerance_fatigue": bio.tolerance_fatigue if bio and bio.tolerance_fatigue else "moyenne",
+            "heures_etude_cible_par_semaine": float(bio.heures_etude_cible_par_semaine if bio and bio.heures_etude_cible_par_semaine else 21.0),
+            "heures_etude_plafond_par_jour": float(bio.heures_etude_plafond_par_jour if bio and bio.heures_etude_plafond_par_jour else 6.0),
+            "nb_repas_par_jour": int(logis.nb_repas_par_jour if logis and logis.nb_repas_par_jour else 3),
+            "duree_repas_min": int(logis.duree_repas_min if logis and logis.duree_repas_min else 30),
+            "duree_prep_repas_min": int(logis.duree_prep_repas_min if logis and logis.duree_prep_repas_min else 30),
+            "besoin_sieste": bool(bio.besoin_sieste if bio else False),
+            "duree_sieste_min": int(bio.duree_sieste_min if bio and bio.duree_sieste_min else 20),
+            "contraintes_fixes": list(logis.contraintes_fixes if logis and logis.contraintes_fixes else []),
+            "transport": _load_transport_config(dict(logis.trajets_habituels if logis and logis.trajets_habituels else {})),
             "deepseek_api_key": key_clear,
             "deepseek_api_key_encrypted_was_legacy": (
                 bool(key_stored) and not is_encrypted(key_stored)
             ),
-            "deepseek_model": p.systeme.deepseek_model or "deepseek-chat",
+            "deepseek_model": sys.deepseek_model if sys and sys.deepseek_model else "deepseek-chat",
         }
 
 
@@ -184,6 +188,17 @@ def save_profil(data: dict[str, Any]) -> None:
             )
             session.add(p)
             session.flush()  # garantit p.id pour les FK des sous-configs
+        else:
+            # Creation des relations manquantes pour les vieux profils
+            if not p.gamification:
+                p.gamification = GamificationState()
+            if not p.systeme:
+                p.systeme = SystemeConfig()
+            if not p.logistique:
+                p.logistique = LogistiqueConfig()
+            if not p.biometrie:
+                p.biometrie = BiometrieConfig()
+            session.flush()
 
         for key, value in data.items():
             if key in _TRANSIENT_KEYS:
