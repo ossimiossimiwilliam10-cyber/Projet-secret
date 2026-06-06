@@ -173,9 +173,12 @@ def upload_pdf_to_cloud(filename: str, file_bytes: bytes) -> None:
             file=file_bytes,
             file_options={"content-type": "application/pdf"}
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Échec silencieux, l'app marche toujours en local.
-        pass
+        import logging
+        logging.getLogger("gemini").warning(
+            "[pdf_storage] Échec upload cloud %s : %s", filename, e,
+        )
 
 
 def ensure_pdf_local(filename: str) -> Path:

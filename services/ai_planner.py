@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+
+logger = logging.getLogger("gemini")
 from datetime import date
 from typing import Any
 
@@ -778,13 +780,19 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
             if bool(t_data.get("obligatoire", False)):
                 continue
             try:
+                t_hd = _str_to_time_local(t_data["heure_debut"])
+                t_hf = _str_to_time_local(t_data["heure_fin"])
+                duree = (t_hf.hour * 60 + t_hf.minute) - (t_hd.hour * 60 + t_hd.minute)
+                if duree <= 0:
+                    duree = 0
                 session.add(Tache(
                     semaine_id=semaine_id,
                     type=str(t_data.get("type", "autre")).lower(),
                     titre=t_data.get("titre", "Tâche sans nom"),
                     jour=jour,
-                    heure_debut=_str_to_time_local(t_data["heure_debut"]),
-                    heure_fin=_str_to_time_local(t_data["heure_fin"]),
+                    heure_debut=t_hd,
+                    heure_fin=t_hf,
+                    duree_min=duree,
                     obligatoire=False,
                     justification_ia=t_data.get("justification", ""),
                     statut="a_faire",
@@ -958,13 +966,19 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
             continue
         for t_data in taches or []:
             try:
+                t_hd = _str_to_time_local(t_data["heure_debut"])
+                t_hf = _str_to_time_local(t_data["heure_fin"])
+                duree = (t_hf.hour * 60 + t_hf.minute) - (t_hd.hour * 60 + t_hd.minute)
+                if duree <= 0:
+                    duree = 0
                 session.add(Tache(
                     semaine_id=semaine_id,
                     type=str(t_data.get("type", "autre")).lower(),
                     titre=t_data.get("titre", "Tâche sans nom"),
                     jour=jour,
-                    heure_debut=_str_to_time_local(t_data["heure_debut"]),
-                    heure_fin=_str_to_time_local(t_data["heure_fin"]),
+                    heure_debut=t_hd,
+                    heure_fin=t_hf,
+                    duree_min=duree,
                     obligatoire=bool(t_data.get("obligatoire", False)),
                     justification_ia=t_data.get("justification", ""),
                     statut="a_faire",

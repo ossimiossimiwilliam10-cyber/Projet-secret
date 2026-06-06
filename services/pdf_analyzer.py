@@ -307,16 +307,13 @@ def analyze_pdf(
     extraction = extract_text(pdf_path)
     prompt = build_analysis_prompt(extraction, cours_nom, matiere)
 
-    client = genai.Client(api_key=api_key.strip())
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.3,
-            ),
-        ),
+    from services.gemini_utils import call_llm
+    text = call_llm(
+        api_key=api_key.strip(),
+        model=model,
+        prompt=prompt,
+        json_mode=True,
+        temperature=0.3,
         context="pdf_analyze",
     )
 

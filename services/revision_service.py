@@ -273,6 +273,15 @@ def initialiser_chapitre_pour_revision(
     if delai_initial_jours is None:
         delai_initial_jours = INTERVALLES_J[0]
 
+    chap = session.get(Chapitre, chapitre_id)
+    if chap is None or chap.date_prochaine is not None:
+        return False
+
+    chap.niveau_actuel = int(chap.niveau_actuel or 0)
+    chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
+    return True
+
+
 # ===========================================================================
 # 5. Gestion de la corbeille (Trash/Restore)
 # ===========================================================================
@@ -286,6 +295,7 @@ def trash_chapitre(session: Session, chapitre_id: int) -> bool:
         return True
     return False
 
+
 def restore_chapitre(session: Session, chapitre_id: int) -> bool:
     """Restaure un chapitre de la corbeille.
     Returns True si restauré, False sinon.
@@ -295,14 +305,6 @@ def restore_chapitre(session: Session, chapitre_id: int) -> bool:
         chap.trashed = False
         return True
     return False
-
-    chap = session.get(Chapitre, chapitre_id)
-    if chap is None or chap.date_prochaine is not None:
-        return False
-
-    chap.niveau_actuel = int(chap.niveau_actuel or 0)
-    chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
-    return True
 
 
 # ===========================================================================
@@ -840,26 +842,8 @@ def _parse_page_range(pages_str: str, max_pages: int) -> list[int]:
 # ===========================================================================
 # 6. Génération IA — fiche, QCM, quiz ouvert + évaluation
 # ===========================================================================
-def _get_gemini_client_and_model(session: Session) -> tuple[Any, str]:
-    """Récupère le client Gemini configuré + le nom du modèle.
-
-    Raises:
-        ValueError: si la clé API ou le profil est manquant.
-        RuntimeError: si le SDK google-genai n'est pas installé.
-    """
-    api_key, model = get_gemini_credentials(session)
-    if not api_key:
-        raise ValueError("Clé API Gemini absente du profil.")
-
-    try:
-        from google import genai  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "Package `google-genai` non installé. `pip install google-genai`."
-        ) from exc
-
-    client = genai.Client(api_key=api_key)
-    return client, model
+# _get_gemini_client_and_model supprimé — les fonctions utilisent désormais
+# call_llm (services.gemini_utils) qui gère Gemini ET DeepSeek/OpenAI.
 
 
 def generer_fiche_ia(
@@ -882,7 +866,9 @@ def generer_fiche_ia(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    client, model = _get_gemini_client_and_model(session)
+    api_key, model = get_gemini_credentials(session)
+    if not api_key:
+        raise ValueError("Clé API LLM absente du profil.")
 
     # Cache versionné : on ne réutilise la fiche que si modèle, prompt et
     # contenu source sont identiques à la version stockée.
@@ -896,9 +882,8 @@ def generer_fiche_ia(
     )
     if cache_ok and not force_regenerate:
         return chap.fiche_ia
-    from google.genai import types  # type: ignore
 
-    systeme = f"""Tu es un professeur d'élite — pédagogue exigeant, expert en mémorisation.
+    prompt = f"""Tu es un professeur d'élite — pédagogue exigeant, expert en mémorisation.
 
 Ta mission : produire une FICHE DE RÉVISION CHIRURGICALE pour le chapitre
 « {chap.titre} » dans la matière « {matiere} ».
@@ -940,24 +925,24 @@ R2. …
 - Dense, précis, sans remplissage
 - **Gras** pour les termes essentiels
 - Pas de blabla d'introduction ou de conclusion — RIEN d'autre que la fiche.
+
+Localise « {chap.titre} » dans le document ci-dessous et génère la fiche.
+
+DOCUMENT :
+{texte}
 """
 
-    msg = f"Localise « {chap.titre} » dans le document et génère la fiche.\n\nDOCUMENT :\n{texte}"
-
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=model,
-            contents=msg,
-            config=types.GenerateContentConfig(
-                system_instruction=systeme,
-                temperature=0.3,
-            ),
-        ),
+    from services.gemini_utils import call_llm
+    fiche = call_llm(
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        temperature=0.3,
         context="fiche_ia",
     )
-    fiche = (getattr(response, "text", "") or "").strip()
+    fiche = fiche.strip()
     if not fiche:
-        raise ValueError("Gemini a renvoyé une fiche vide.")
+        raise ValueError("L'IA a renvoyé une fiche vide.")
 
     chap.fiche_ia = fiche
     chap.fiche_ia_model = model
@@ -1064,7 +1049,9 @@ def generer_quiz_ouvert(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    client, model = _get_gemini_client_and_model(session)
+    api_key, model = get_gemini_credentials(session)
+    if not api_key:
+        raise ValueError("Clé API LLM absente du profil.")
 
     current_sha = texte_sha256(texte)
     cache_ok = chap.quiz_cache and cache_is_valid(
@@ -1078,9 +1065,7 @@ def generer_quiz_ouvert(
     if cache_ok and not force_regenerate:
         return list(chap.quiz_cache)
 
-    from google.genai import types  # type: ignore
-
-    prompt = f"""Génère EXACTEMENT {nb} questions ouvertes sur « {chap.titre} » ({matiere}).
+    prompt = f"""Tu es un professeur exigeant. Génère EXACTEMENT {nb} questions ouvertes sur « {chap.titre} » ({matiere}).
 Varie les types : définition, mécanisme, application, comparaison, cause/effet.
 Mélange : 2 questions de rappel + 2 de compréhension + 1 de synthèse.
 Utilise l'unicode pour les formules si pertinent (² ³ × ÷ Δ π α β γ μ σ).
@@ -1093,20 +1078,16 @@ RÈGLES DE SORTIE :
 - Une question par ligne, format : "N. Question"
 """
 
-    response = gemini_call_with_retry(
-        lambda: client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction="Professeur exigeant. Liste numérotée uniquement.",
-                temperature=0.4,
-            ),
-        ),
+    from services.gemini_utils import call_llm
+    text = call_llm(
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        temperature=0.4,
         context="quiz_ouvert",
     )
-    text = (getattr(response, "text", "") or "").strip()
-    if not text:
-        raise ValueError("Gemini a renvoyé un quiz vide.")
+    if not text.strip():
+        raise ValueError("L'IA a renvoyé un quiz vide.")
 
     questions = validate_quiz_questions(text, max_questions=nb)
 
