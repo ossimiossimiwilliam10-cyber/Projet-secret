@@ -105,7 +105,7 @@ def render() -> None:
                     nouveaux_evenements = _extraire_planning_image_ia(image, api_key, model)
 
                     if nouveaux_evenements:
-                        contraintes_actuelles = list(profil.logistique.contraintes_fixes or [])
+                        contraintes_actuelles = list(profil.logistique.contraintes_fixes or []) if profil.logistique else []
                         contraintes_actuelles.extend(nouveaux_evenements)
 
                         with session_scope() as write_session:

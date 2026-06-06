@@ -1020,8 +1020,9 @@ def _render_quota_etude_banner(session: Session) -> None:
     else:
         color, label = "#6b7280", "📚 Marge à rattraper d'ici dimanche soir."
 
-    cible_h = (profil.biometrie.heures_etude_cible_par_semaine if profil else 21.0)
-    plafond_h = (profil.biometrie.heures_etude_plafond_par_jour if profil else 6.0)
+    bio = profil.biometrie
+    cible_h = (bio.heures_etude_cible_par_semaine if bio else 21.0)
+    plafond_h = (bio.heures_etude_plafond_par_jour if bio else 6.0)
 
     st.markdown(
         f"<div style='padding:14px 18px;background:{color}15;"
@@ -1242,7 +1243,7 @@ DONNÉES :
 - Semaine {semaine.numero_semaine} ({semaine.date_debut}->{semaine.date_fin})
 - {total} tâches : {fait} faites, {partiel} partielles, {non_fait} non faites
 - {etude_min / 60:.1f}h d'étude, {sport_count} séances de sport
-- Objectif hebdo: {profil.biometrie.heures_etude_cible_par_semaine if profil else '?'}h
+- Objectif hebdo: {profil.biometrie.heures_etude_cible_par_semaine if profil and profil.biometrie else '?'}h
 - Streak: {profil.gamification.streak_jours if profil and profil.gamification else '?'} jours
 
 RETOURNE UNIQUEMENT ce JSON:
