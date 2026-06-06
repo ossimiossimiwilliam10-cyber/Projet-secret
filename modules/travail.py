@@ -115,34 +115,32 @@ def render() -> None:
             if submit:
                 if not titre.strip():
                     st.error("L'intitulé du poste est obligatoire.")
-                    return
-                if heure_debut >= heure_fin:
+                elif heure_debut >= heure_fin:
                     st.error("L'heure de fin doit être postérieure à l'heure de début.")
-                    return
-
-                # Résolution du lieu : choix dans la liste OU saisie libre.
-                if lieu_choisi == "(aucun)":
-                    lieu_final = ""
-                elif lieu_choisi == "✏️ Saisir un autre lieu…":
-                    lieu_final = (lieu_libre or "").strip()
                 else:
-                    lieu_final = lieu_choisi
+                    # Résolution du lieu : choix dans la liste OU saisie libre.
+                    if lieu_choisi == "(aucun)":
+                        lieu_final = ""
+                    elif lieu_choisi == "✏️ Saisir un autre lieu…":
+                        lieu_final = (lieu_libre or "").strip()
+                    else:
+                        lieu_final = lieu_choisi
 
-                with session_scope() as write_session:
-                    nouveau_job = Job(
-                        titre=titre.strip(),
-                        jour=jour,
-                        heure_debut=heure_debut,
-                        heure_fin=heure_fin,
-                        lieu=lieu_final,
-                        date_debut=d_debut if type_duree == "long_terme" else None,
-                        date_fin=d_fin if type_duree == "long_terme" else None,
-                        semaine_id=semaine.id if type_duree == "semaine_unique" else None,
-                    )
-                    write_session.add(nouveau_job)
+                    with session_scope() as write_session:
+                        nouveau_job = Job(
+                            titre=titre.strip(),
+                            jour=jour,
+                            heure_debut=heure_debut,
+                            heure_fin=heure_fin,
+                            lieu=lieu_final,
+                            date_debut=d_debut if type_duree == "long_terme" else None,
+                            date_fin=d_fin if type_duree == "long_terme" else None,
+                            semaine_id=semaine.id if type_duree == "semaine_unique" else None,
+                        )
+                        write_session.add(nouveau_job)
 
-                st.success(f"✅ Activité '{titre}' enregistrée avec succès !")
-                st.rerun()
+                    st.toast(f"✅ Activité '{titre}' enregistrée avec succès !")
+                    st.rerun()
 
         # 2. Liste des activités enregistrées
         st.divider()
