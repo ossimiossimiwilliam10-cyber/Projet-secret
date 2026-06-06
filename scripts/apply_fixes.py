@@ -218,7 +218,7 @@ FIXES_REPLACE: list[dict] = [
         ],
     },
 
-    # ━━━ 🟡 BUG #8 — modèle Gemini inexistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━ 🟡 BUG #8 — modèle LLM inexistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "file": "modules/profil.py",
         "name": "[#8] Retrait du modèle gemini-3-flash-preview (inexistant)",

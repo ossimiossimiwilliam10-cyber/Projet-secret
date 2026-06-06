@@ -38,8 +38,8 @@ from services.pdf_storage import (
 )
 from services.profil_service import (
     DEFAULT_MODEL,
-    get_gemini_credentials,
-    has_gemini_credentials,
+    get_llm_api_key,
+    has_llm_credentials,
 )
 
 
@@ -60,15 +60,15 @@ def session():
 # ---------------------------------------------------------------------------
 # profil_service
 # ---------------------------------------------------------------------------
-def test_get_gemini_credentials_aucun_profil(session):
+def test_get_llm_api_key_aucun_profil(session):
     """Sans profil en base : clé vide + modèle par défaut."""
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
     assert api_key == ""
     assert model == DEFAULT_MODEL
-    assert has_gemini_credentials(session) is False
+    assert has_llm_credentials(session) is False
 
 
-def test_get_gemini_credentials_clef_chiffree_dechiffree(session):
+def test_get_llm_api_key_clef_chiffree_dechiffree(session):
     """La clé chiffrée en base est restituée en clair par le service."""
     from database.models import BiometrieConfig, LogistiqueConfig, SystemeConfig
 
@@ -80,15 +80,15 @@ def test_get_gemini_credentials_clef_chiffree_dechiffree(session):
     session.add(LogistiqueConfig(utilisateur_id=u.id))
     session.add(SystemeConfig(
         utilisateur_id=u.id,
-        gemini_api_key=cipher,
-        gemini_model="gemini-2.5-pro",
+        llm_api_key=cipher,
+        llm_model="gemini-2.5-pro",
     ))
     session.commit()
 
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
     assert api_key == "ma-vraie-cle-secrete"
     assert model == "gemini-2.5-pro"
-    assert has_gemini_credentials(session) is True
+    assert has_llm_credentials(session) is True
 
 
 # ---------------------------------------------------------------------------

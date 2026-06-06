@@ -80,7 +80,7 @@ def find_existing_upload(session, sha: str, matiere_id: int):
     """Retourne le :class:`PdfUpload` existant pour ce ``(sha, matiere_id)``,
     ou ``None`` si jamais ingéré sur cette matière.
 
-    Permet d'éviter de re-payer un appel Gemini si l'utilisateur dépose
+    Permet d'éviter de re-payer un appel LLM si l'utilisateur dépose
     deux fois le même PDF sur la même matière.
     """
     from database import PdfUpload
@@ -176,7 +176,7 @@ def upload_pdf_to_cloud(filename: str, file_bytes: bytes) -> None:
     except Exception as e:  # noqa: BLE001
         # Échec silencieux, l'app marche toujours en local.
         import logging
-        logging.getLogger("gemini").warning(
+        logging.getLogger("llm").warning(
             "[pdf_storage] Échec upload cloud %s : %s", filename, e,
         )
 

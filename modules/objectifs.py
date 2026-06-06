@@ -3,7 +3,7 @@
 L'utilisateur :
 1. Voit la liste de ses objectifs (actifs + atteints + abandonnés).
 2. Crée un nouvel objectif via un formulaire.
-3. Demande une proposition de stratégie à Gemini (preview avant adoption).
+3. Demande une proposition de stratégie au LLM (preview avant adoption).
 4. Adopte (ou refuse) la stratégie → l'objectif est persisté + les
    pondérations sont activées dans tous les futurs plannings.
 5. Marque un objectif comme atteint / abandonné.
@@ -275,7 +275,7 @@ def _render_form_creation() -> None:
             "Description (motivations, contraintes, contexte)",
             placeholder="Ex: Examen mi-juin. Je suis faible sur diagonalisation. J'ai 2h/jour dispo.",
             height=80,
-            max_chars=2000,  # borne pour éviter d'envoyer un mur de texte à Gemini
+            max_chars=2000,  # borne pour éviter d'envoyer un mur de texte au LLM
         )
         c1, c2, c3 = st.columns(3)
         with c1:

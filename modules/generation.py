@@ -551,7 +551,7 @@ def render() -> None:
                 except Exception as exc:  # noqa: BLE001
                     # Filet de sécurité : on log pour debug mais on ne crash pas l'UI.
                     import logging
-                    logging.getLogger("gemini").exception("planner_generate failed")
+                    logging.getLogger("llm").exception("planner_generate failed")
                     st.error(
                         f"❌ Erreur inattendue lors de la génération : {exc}. "
                         "Consulte les logs pour le détail."
@@ -602,7 +602,7 @@ def render() -> None:
                             st.error(f"❌ Configuration ou SDK manquant : {exc}")
                         except Exception as exc:  # noqa: BLE001
                             import logging
-                            logging.getLogger("gemini").exception(
+                            logging.getLogger("llm").exception(
                                 "planner_integrer_nouveautes failed"
                             )
                             st.error(

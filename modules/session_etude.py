@@ -24,7 +24,7 @@ import streamlit as st
 from database import Chapitre, Matiere, get_session, session_scope
 from services import revision_service as rs
 from services.optimistic_lock import ConflictError, update_chapitre_safe
-from services.profil_service import get_gemini_credentials
+from services.profil_service import get_llm_api_key
 from services.gamification_service import (
     attribuer_xp_quiz,
     attribuer_xp_promotion_leitner,
@@ -323,7 +323,7 @@ def _render_fiche_tab(chap_id: int, snap: dict) -> None:
 
 
 def _generate_fiche(chap_id: int, force: bool) -> None:
-    """Encapsule l'appel Gemini de génération de fiche avec gestion d'erreur."""
+    """Encapsule l'appel LLM de génération de fiche avec gestion d'erreur."""
     with st.spinner("🧠 Gemini compose la fiche... (30-60 sec)"):
         try:
             with session_scope() as session:
@@ -630,7 +630,7 @@ def _render_qcm_results(chap_id: int, questions: list[dict]) -> None:
 
 
 def _generate_qcm(chap_id: int, force: bool) -> None:
-    """Encapsule l'appel Gemini de génération de QCM."""
+    """Encapsule l'appel LLM de génération de QCM."""
     with st.spinner("🧠 Gemini crée le QCM... (~30 sec)"):
         try:
             with session_scope() as session:
@@ -706,7 +706,7 @@ def _render_quiz_tab(chap_id: int) -> None:
 
 
 def _submit_quiz(chap_id: int, questions: list[str]) -> None:
-    """Récupère les réponses, demande à Gemini d'évaluer, applique Leitner."""
+    """Récupère les réponses, demande au LLM d'évaluer, applique Leitner."""
     reponses = [
         st.session_state.get(f"quiz_rep_{chap_id}_{i}", "") for i in range(1, len(questions) + 1)
     ]
@@ -820,7 +820,7 @@ def _render_quiz_results(chap_id: int, questions: list[str]) -> None:
 
 
 def _generate_quiz(chap_id: int, force: bool) -> None:
-    """Encapsule l'appel Gemini pour générer un quiz ouvert."""
+    """Encapsule l'appel LLM pour générer un quiz ouvert."""
     with st.spinner("🧠 Gemini compose les questions... (~30 sec)"):
         try:
             with session_scope() as session:
@@ -1020,13 +1020,13 @@ def _render_feynman_tab(chap_id: int) -> None:
             _evaluer_feynman(audio_bytes, chap_id)
 
 def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
-    """Envoie l'audio à Gemini pour le comparer avec la fiche de cours."""
+    """Envoie l'audio au LLM pour le comparer avec la fiche de cours."""
     import logging
     import tempfile
     import os
     from google import genai
     from database.models import Utilisateur, Chapitre
-    from services.gemini_utils import gemini_call_with_retry
+    from services.llm_utils import llm_call_with_retry
 
     logger = logging.getLogger(__name__)
 
@@ -1035,7 +1035,7 @@ def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
             # 1. On récupère la clé API ET le contenu du chapitre
             with get_session() as session:
                 chapitre = session.get(Chapitre, chap_id)
-                api_key, model_name = get_gemini_credentials(session)
+                api_key, model_name = get_llm_api_key(session)
 
                 if not api_key:
                     st.error("❌ Clé API Gemini introuvable.")
@@ -1047,7 +1047,7 @@ def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
                 fiche_cours = chapitre.fiche_ia if (chapitre and chapitre.fiche_ia) else "(Aucune fiche IA générée. Base ton évaluation sur le titre du chapitre uniquement.)"
 
             if model_name.startswith("deepseek"):
-                st.error("L'évaluation audio avec la technique de Feynman n'est pas encore supportée par DeepSeek. Veuillez utiliser un modèle Gemini.")
+                st.error("L'évaluation audio avec la technique de Feynman n'est pas encore supportée par DeepSeek. Veuillez utiliser un modèle LLM.")
                 return
 
             client = genai.Client(api_key=api_key)
@@ -1077,14 +1077,14 @@ Ta tâche :
    - ⚠️ Les éléments cruciaux de la fiche qu'il a oublié de mentionner.
 4. Donne-lui une note sur 10 de clarté et de maîtrise.
 """
-                # Wrapper l'appel Gemini avec retry réseau automatique
-                def _call_gemini():
+                # Wrapper l'appel LLM avec retry réseau automatique
+                def _call_llm():
                     return client.models.generate_content(
                         model=model_name,
                         contents=[uploaded_file, prompt]
                     )
                 
-                response = gemini_call_with_retry(_call_gemini, context="feynman_audio_evaluation")
+                response = llm_call_with_retry(_call_llm, context="feynman_audio_evaluation")
                 
                 # 4. Affichage du résultat
                 st.success("Analyse terminée !")

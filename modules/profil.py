@@ -109,7 +109,7 @@ def load_profil() -> dict[str, Any]:
         logis = p.logistique
 
         # Dechiffrement transparent de la cle API (legacy en clair gere)
-        key_stored = sys.gemini_api_key if sys and sys.gemini_api_key else ""
+        key_stored = sys.llm_api_key if sys and sys.llm_api_key else ""
         key_clear = decrypt_api_key(key_stored)
 
         return {
@@ -148,7 +148,7 @@ _GAMIFICATION_ATTRS = frozenset([
     "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total",
 ])
 _SYSTEME_ATTRS = frozenset([
-    "gemini_api_key", "gemini_model", "deepseek_api_key", "deepseek_model", "google_maps_api_key", "replanning_auto_actif",
+    "llm_api_key", "llm_model", "deepseek_api_key", "deepseek_model", "google_maps_api_key", "replanning_auto_actif",
 ])
 _BIOMETRIE_ATTRS = frozenset([
     "heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype",
@@ -206,7 +206,7 @@ def save_profil(data: dict[str, Any]) -> None:
             # Chiffrement transparent de la cle DeepSeek avant persistance.
             if key == "deepseek_api_key":
                 value = encrypt_api_key(value)
-            elif key == "gemini_api_key":
+            elif key == "llm_api_key":
                 value = encrypt_api_key(value)
             # Mapping : cle UI "transport" → colonne DB "trajets_habituels"
             if key == "transport":
@@ -978,8 +978,8 @@ def render() -> None:
         "duree_sieste_min": int(duree_sieste),
         "contraintes_fixes": contraintes_validees,
         "trajets_habituels": transport_config,
-        "gemini_api_key": (api_key or "").strip(),
-        "gemini_model": deepseek_model,
+        "llm_api_key": (api_key or "").strip(),
+        "llm_model": deepseek_model,
         "google_maps_api_key": data.get("google_maps_api_key", ""),
     }
 

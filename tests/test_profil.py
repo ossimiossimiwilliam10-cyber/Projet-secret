@@ -17,7 +17,7 @@ from datetime import date, time, timedelta
 from pathlib import Path
 
 # Configure la clé de chiffrement avant tout import qui pourrait l'utiliser
-os.environ.setdefault("GEMINI_VAULT_KEY", "test_vault_key_for_unit_tests_only")
+os.environ.setdefault("LLM_VAULT_KEY", "test_vault_key_for_unit_tests_only")
 
 # Permet de lancer les tests depuis le répertoire racine
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

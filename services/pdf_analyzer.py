@@ -1,4 +1,4 @@
-"""Service d'**analyse de PDF** : extraction du texte et appel à Gemini pour
+"""Service d'**analyse de PDF** : extraction du texte et appel au LLM pour
 obtenir un découpage en chapitres + métadonnées pédagogiques.
 
 Pipeline complet :
@@ -7,7 +7,7 @@ Pipeline complet :
                                  texte, PyMuPDF pour les métadonnées et la
                                  table des matières), tronque si nécessaire.
 2. :func:`build_analysis_prompt` — construit le prompt structuré pour Gemini.
-3. :func:`analyze_pdf`         — orchestre l'appel Gemini, parse le JSON.
+3. :func:`analyze_pdf`         — orchestre l'appel LLM, parse le JSON.
 4. :func:`apply_analysis_to_course` — persiste l'analyse en base et crée
                                        les enregistrements ``Chapitre``.
 
@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from database import Chapitre, Matiere
-from services.gemini_utils import gemini_call_with_retry
+from services.llm_utils import llm_call_with_retry
 
 # ---------------------------------------------------------------------------
 # Imports optionnels — l'app reste importable même si ces paquets manquent.
@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-# Budget de caractères envoyés à Gemini. ~50 k tokens, bien sous la limite
+# Budget de caractères envoyés au LLM. ~50 k tokens, bien sous la limite
 # de 1 M tokens de Gemini 2.5 Flash, et économique en facturation.
 MAX_PROMPT_CHARS = 200_000
 
@@ -130,7 +130,7 @@ def extract_text(pdf_path: str | Path) -> PdfExtraction:
             doc.close()
     except Exception as exc:  # noqa: BLE001
         # On poursuit même si les métadonnées sont inaccessibles.
-        logging.getLogger("gemini").warning(
+        logging.getLogger("llm").warning(
             "[pdf_analyzer] Métadonnées PDF illisibles : %s", exc,
         )
 
@@ -164,7 +164,7 @@ def extract_text(pdf_path: str | Path) -> PdfExtraction:
 
 
 def _build_text_for_prompt(pages_text: list[str]) -> tuple[str, bool]:
-    """Construit le texte à envoyer à Gemini, avec marqueurs de page.
+    """Construit le texte à envoyer au LLM, avec marqueurs de page.
 
     Si le total dépasse :data:`MAX_PROMPT_CHARS`, garde le début, le milieu et
     la fin (les chapitres de plus de 200 k caractères sont rares — par
@@ -208,7 +208,7 @@ def build_analysis_prompt(
     cours_nom: str,
     matiere: str = "",
 ) -> str:
-    """Construit le prompt structuré envoyé à Gemini."""
+    """Construit le prompt structuré envoyé au LLM."""
     toc_section = ""
     if extraction.toc:
         # On limite à 80 entrées pour ne pas inonder le prompt.
@@ -281,7 +281,7 @@ CONSIGNES IMPÉRATIVES :
 
 
 # ---------------------------------------------------------------------------
-# 3. Appel à Gemini + parsing robuste
+# 3. Appel au LLM + parsing robuste
 # ---------------------------------------------------------------------------
 def analyze_pdf(
     pdf_path: str | Path,
@@ -307,7 +307,7 @@ def analyze_pdf(
     extraction = extract_text(pdf_path)
     prompt = build_analysis_prompt(extraction, cours_nom, matiere)
 
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
     text = call_llm(
         api_key=api_key.strip(),
         model=model,
@@ -325,7 +325,7 @@ def analyze_pdf(
             f"Réponse vide de Gemini. prompt_feedback = {feedback!r}"
         )
 
-    analysis = parse_gemini_json(text)
+    analysis = parse_llm_json(text)
     analysis = _validate_and_normalize(analysis)
 
     # Métadonnées utiles pour le module Bibliothèque (affichage UI).
@@ -338,7 +338,7 @@ def analyze_pdf(
     return analysis
 
 
-def parse_gemini_json(text: str) -> dict[str, Any]:
+def parse_llm_json(text: str) -> dict[str, Any]:
     """Parse robuste de la réponse Gemini.
 
     Tente, dans l'ordre :
@@ -528,7 +528,7 @@ __all__ = [
     "extract_text",
     "build_analysis_prompt",
     "analyze_pdf",
-    "parse_gemini_json",
+    "parse_llm_json",
     "apply_analysis_to_matiere",
     "MAX_PROMPT_CHARS",
     "TYPES_CONTENU_VALIDES",

@@ -1,6 +1,6 @@
 """Validation stricte du JSON de planning hebdomadaire renvoyé par Gemini.
 
-Avant : ``_parse_gemini_json`` se contentait de parser le JSON sans
+Avant : ``_parse_llm_json`` se contentait de parser le JSON sans
 valider sa structure. Si Gemini renvoyait un schéma cassé (manque
 ``planning``, jours invalides, heures malformées, types faux), le bug
 se manifestait silencieusement en aval — tâches ignorées sans avertissement

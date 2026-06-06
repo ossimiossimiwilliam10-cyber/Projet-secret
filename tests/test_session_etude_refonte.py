@@ -15,10 +15,10 @@ from services.cache_versioning import (
     QUIZ_PROMPT_VERSION,
     cache_is_valid,
 )
-from services.gemini_utils import (
+from services.llm_utils import (
     GEMINI_MAX_RETRIES,
-    gemini_call_with_retry,
-    is_transient_gemini_error,
+    llm_call_with_retry,
+    is_transient_llm_error,
 )
 from services.qcm_validator import (
     VALID_LETTERS,
@@ -35,37 +35,37 @@ class _FakeGeminiError(Exception):
 
 
 def test_is_transient_503():
-    assert is_transient_gemini_error(_FakeGeminiError("503 Service Unavailable")) is True
+    assert is_transient_llm_error(_FakeGeminiError("503 Service Unavailable")) is True
 
 
 def test_is_transient_429_rate_limit():
-    assert is_transient_gemini_error(_FakeGeminiError("429 Too Many Requests")) is True
+    assert is_transient_llm_error(_FakeGeminiError("429 Too Many Requests")) is True
 
 
 def test_is_transient_timeout():
-    assert is_transient_gemini_error(_FakeGeminiError("Deadline exceeded")) is True
+    assert is_transient_llm_error(_FakeGeminiError("Deadline exceeded")) is True
 
 
 def test_is_transient_connection_error():
-    assert is_transient_gemini_error(ConnectionError("network down")) is True
-    assert is_transient_gemini_error(TimeoutError("timed out")) is True
+    assert is_transient_llm_error(ConnectionError("network down")) is True
+    assert is_transient_llm_error(TimeoutError("timed out")) is True
 
 
 def test_is_transient_401_permanent():
-    assert is_transient_gemini_error(_FakeGeminiError("401 Unauthorized")) is False
+    assert is_transient_llm_error(_FakeGeminiError("401 Unauthorized")) is False
 
 
 def test_is_transient_403_permanent():
-    assert is_transient_gemini_error(_FakeGeminiError("403 Forbidden")) is False
+    assert is_transient_llm_error(_FakeGeminiError("403 Forbidden")) is False
 
 
 def test_is_transient_api_key_invalid_permanent():
-    assert is_transient_gemini_error(_FakeGeminiError("API key not valid")) is False
+    assert is_transient_llm_error(_FakeGeminiError("API key not valid")) is False
 
 
 def test_is_transient_inconnue_rejette():
     # Ni transient ni permanent connu → considéré non-transient (safe default).
-    assert is_transient_gemini_error(_FakeGeminiError("weird error")) is False
+    assert is_transient_llm_error(_FakeGeminiError("weird error")) is False
 
 
 # ===========================================================================
@@ -78,7 +78,7 @@ def test_retry_succes_au_premier_essai():
         calls["n"] += 1
         return "OK"
 
-    assert gemini_call_with_retry(ok) == "OK"
+    assert llm_call_with_retry(ok) == "OK"
     assert calls["n"] == 1
 
 
@@ -90,13 +90,13 @@ def test_retry_permanente_ne_retry_pas():
         raise _FakeGeminiError("401 Unauthorized")
 
     with pytest.raises(_FakeGeminiError):
-        gemini_call_with_retry(boom)
+        llm_call_with_retry(boom)
     assert calls["n"] == 1  # un seul essai
 
 
 def test_retry_transitoire_puis_succes(monkeypatch):
     # Évite d'attendre 2s + 4s pendant les tests
-    monkeypatch.setattr("services.gemini_utils.time.sleep", lambda _: None)
+    monkeypatch.setattr("services.llm_utils.time.sleep", lambda _: None)
     calls = {"n": 0}
 
     def flaky():
@@ -105,12 +105,12 @@ def test_retry_transitoire_puis_succes(monkeypatch):
             raise _FakeGeminiError("503 Overloaded")
         return "OK"
 
-    assert gemini_call_with_retry(flaky) == "OK"
+    assert llm_call_with_retry(flaky) == "OK"
     assert calls["n"] == 3
 
 
 def test_retry_epuisement_des_essais(monkeypatch):
-    monkeypatch.setattr("services.gemini_utils.time.sleep", lambda _: None)
+    monkeypatch.setattr("services.llm_utils.time.sleep", lambda _: None)
     calls = {"n": 0}
 
     def always_503():
@@ -118,7 +118,7 @@ def test_retry_epuisement_des_essais(monkeypatch):
         raise _FakeGeminiError("503")
 
     with pytest.raises(_FakeGeminiError):
-        gemini_call_with_retry(always_503)
+        llm_call_with_retry(always_503)
     assert calls["n"] == GEMINI_MAX_RETRIES
 
 

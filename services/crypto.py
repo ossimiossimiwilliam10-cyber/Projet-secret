@@ -11,8 +11,8 @@ qui est déjà une dépendance transitive de ``google-genai``.
   peut tout déchiffrer — c'est attendu (on n'est pas un HSM).
 
 **Clé maître** :
-- Sur Streamlit Cloud : récupérée via ``st.secrets["GEMINI_VAULT_KEY"]``.
-- En local : variable d'env ``GEMINI_VAULT_KEY``.
+- Sur Streamlit Cloud : récupérée via ``st.secrets["LLM_VAULT_KEY"]``.
+- En local : variable d'env ``LLM_VAULT_KEY``.
 - Fallback dev : clé dérivée d'un fichier ``data/.vault_key`` créé au
   premier lancement (mode développement, pas pour la prod).
 
@@ -44,14 +44,14 @@ def _load_vault_key() -> bytes:
     # 1. Streamlit secrets (prod)
     try:
         import streamlit as st  # noqa: PLC0415
-        if "GEMINI_VAULT_KEY" in st.secrets:
-            return st.secrets["GEMINI_VAULT_KEY"].encode("ascii")
+        if "LLM_VAULT_KEY" in st.secrets:
+            return st.secrets["LLM_VAULT_KEY"].encode("ascii")
     except Exception:
         # st.secrets peut lever si pas dans un contexte Streamlit
         pass
 
     # 2. Variable d'environnement
-    env_key = os.environ.get("GEMINI_VAULT_KEY")
+    env_key = os.environ.get("LLM_VAULT_KEY")
     if env_key:
         return env_key.encode("ascii")
 

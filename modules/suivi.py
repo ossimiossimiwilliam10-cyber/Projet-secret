@@ -438,7 +438,7 @@ def _render_replan_section(session: Session, semaine: Semaine) -> None:
             st.error(str(exc))
         except Exception as exc:  # noqa: BLE001
             import logging
-            logging.getLogger("gemini").exception("replan_remaining_week failed")
+            logging.getLogger("llm").exception("replan_remaining_week failed")
             status.update(label="❌ Erreur inattendue", state="error")
             st.error(
                 f"Erreur inattendue lors du recalcul : {exc}. "

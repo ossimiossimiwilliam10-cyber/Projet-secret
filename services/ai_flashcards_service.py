@@ -10,7 +10,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from services.gemini_utils import call_llm
+from services.llm_utils import call_llm
 from services.profil_service import get_llm_credentials
 
 if TYPE_CHECKING:

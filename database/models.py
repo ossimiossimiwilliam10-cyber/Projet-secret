@@ -115,8 +115,8 @@ class SystemeConfig(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
     
-    gemini_api_key = Column(String(500), default="")
-    gemini_model = Column(String(50), default="deepseek-v4-pro")
+    llm_api_key = Column(String(500), default="", name="gemini_api_key")  # colonne legacy "gemini_api_key"
+    llm_model = Column(String(50), default="deepseek-v4-pro", name="gemini_model")  # colonne legacy "gemini_model"
     deepseek_api_key = Column(String(500), default="")
     deepseek_model = Column(String(50), default="deepseek-chat")
     google_maps_api_key = Column(String(200), default="")
@@ -334,7 +334,7 @@ class Chapitre(Base):
     date_prochaine = Column(Date, nullable=True)
     historique_quiz = Column(JSON, default=list)
 
-    # --- Caches IA (évitent de re-payer Gemini à chaque ouverture) -------
+    # --- Caches IA (évitent de re-payer le LLM à chaque ouverture) -------
     fiche_ia = Column(Text, nullable=True)
     qcm_cache = Column(JSON, nullable=True)
     quiz_cache = Column(JSON, nullable=True)

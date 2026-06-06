@@ -16,7 +16,7 @@ T = TypeVar("T")
 
 # Logger dédié — l'app peut le configurer (handler, niveau) au démarrage.
 # Par défaut : propage au root logger (silencieux tant que rien n'est configuré).
-logger = logging.getLogger("gemini")
+logger = logging.getLogger("llm")
 
 # Backoff exponentiel : 2s, 4s, 8s — total max ~14s d'attente cumulée
 # avant abandon. Suffisant pour absorber les 503/timeouts transitoires
@@ -28,7 +28,7 @@ _TRANSIENT_MARKERS = ("429", "503", "504", "overloaded", "timeout", "deadline")
 _PERMANENT_MARKERS = ("400", "401", "403", "api key", "invalid", "permission")
 
 
-def is_transient_gemini_error(exc: BaseException) -> bool:
+def is_transient_llm_error(exc: BaseException) -> bool:
     """Vrai si l'erreur Gemini est probablement transitoire (à retry).
 
     Transitoires : 429 (rate limit), 503 (overloaded), 504 (gateway
@@ -43,8 +43,8 @@ def is_transient_gemini_error(exc: BaseException) -> bool:
     return any(m in msg for m in _TRANSIENT_MARKERS)
 
 
-def gemini_call_with_retry(
-    call_fn: Callable[[], T], *, context: str = "gemini"
+def llm_call_with_retry(
+    call_fn: Callable[[], T], *, context: str = "llm"
 ) -> T:
     """Exécute ``call_fn()`` avec retry exponentiel sur erreurs transitoires.
 
@@ -70,7 +70,7 @@ def gemini_call_with_retry(
             return result
         except Exception as exc:
             last_exc = exc
-            transient = is_transient_gemini_error(exc)
+            transient = is_transient_llm_error(exc)
             elapsed_ms = int((time.monotonic() - started) * 1000)
             if not transient:
                 logger.error(
@@ -109,7 +109,7 @@ def call_llm(
     # Fournisseur LLM détecté au préfixe du modèle.
     # Évite les faux positifs (ex. "deepseek-*" est OpenAI-compatible, pas Gemini).
     _OPENAI_COMPATIBLE_PREFIXES = ("deepseek", "gpt", "o1", "o3", "o4")
-    _GEMINI_PREFIXES = ("gemini", "models/gemini", "palm")
+    _LLM_PREFIXES = ("llm", "models/gemini", "palm")
     is_openai = any(model.startswith(p) for p in _OPENAI_COMPATIBLE_PREFIXES)
 
     def _do_call() -> str:
@@ -155,13 +155,13 @@ def call_llm(
         def __init__(self, t: str):
             self.text = t
 
-    return gemini_call_with_retry(lambda: DummyResult(_do_call()), context=context).text
+    return llm_call_with_retry(lambda: DummyResult(_do_call()), context=context).text
 
 
 __all__ = [
     "GEMINI_MAX_RETRIES",
     "GEMINI_BACKOFF_BASE_S",
-    "is_transient_gemini_error",
-    "gemini_call_with_retry",
+    "is_transient_llm_error",
+    "llm_call_with_retry",
     "call_llm",
 ]

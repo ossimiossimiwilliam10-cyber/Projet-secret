@@ -28,7 +28,7 @@ files = [
 ]
 
 gamification_attrs = ["xp", "niveau", "streak_jours", "streak_record", "derniere_activite_xp", "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total"]
-systeme_attrs = ["gemini_api_key", "gemini_model", "replanning_auto_actif"]
+systeme_attrs = ["llm_api_key", "llm_model", "replanning_auto_actif"]
 biometrie_attrs = ["heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype", "pic_concentration", "duree_max_session_min", "pause_entre_sessions_min", "methode_travail", "capacite_weekend", "tolerance_fatigue", "heures_etude_cible_par_semaine", "heures_etude_plafond_par_jour", "besoin_sieste", "duree_sieste_min"]
 logistique_attrs = ["temps_transport_min", "trajets_habituels", "nb_repas_par_jour", "duree_repas_min", "duree_prep_repas_min", "contraintes_fixes"]
 

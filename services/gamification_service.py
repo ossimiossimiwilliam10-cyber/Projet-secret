@@ -407,7 +407,7 @@ def check_nouveaux_achievements(
             # Le check a planté — on loggue pour traçabilité mais on ne bloque
             # pas l'attribution d'XP à cause d'un bug de catalogue.
             import logging
-            logging.getLogger("gemini").exception(
+            logging.getLogger("llm").exception(
                 "Achievement check '%s' a planté", ach.code,
             )
             continue

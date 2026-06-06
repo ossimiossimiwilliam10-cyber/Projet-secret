@@ -11,11 +11,11 @@ import streamlit as st
 from PIL import Image
 
 from database import Utilisateur, get_session, session_scope
-from services.gemini_utils import gemini_call_with_retry
-from services.profil_service import get_gemini_credentials
+from services.llm_utils import llm_call_with_retry
+from services.profil_service import get_llm_api_key
 
 
-def _parse_gemini_json(text: str) -> dict:
+def _parse_llm_json(text: str) -> dict:
     s = text.strip()
     if s.startswith("```"):
         lines = s.split("\n")
@@ -31,7 +31,7 @@ def _extraire_planning_image_ia(image: Image.Image, api_key: str, model: str) ->
     if model.startswith("deepseek"):
         raise ValueError(
             "L'import par image n'est pas encore supporté par DeepSeek. "
-            "Bascule sur un modèle Gemini dans ton profil."
+            "Bascule sur un modèle LLM dans ton profil."
         )
     try:
         from google import genai
@@ -57,7 +57,7 @@ RETOURNE UNIQUEMENT UN JSON AU FORMAT SUIVANT :
   ]
 }"""
     client = genai.Client(api_key=api_key)
-    response = gemini_call_with_retry(
+    response = llm_call_with_retry(
         lambda: client.models.generate_content(
             model=model, contents=[prompt, image],
             config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1),
@@ -65,7 +65,7 @@ RETOURNE UNIQUEMENT UN JSON AU FORMAT SUIVANT :
         context="import_planning",
     )
     text = getattr(response, "text", "") or ""
-    resultat = _parse_gemini_json(text)
+    resultat = _parse_llm_json(text)
     return resultat.get("evenements", [])
 
 
@@ -78,7 +78,7 @@ def render() -> None:
 
     with get_session() as session:
         profil = session.query(Utilisateur).first()
-        api_key, model = get_gemini_credentials(session)
+        api_key, model = get_llm_api_key(session)
         if not profil or not api_key:
             st.warning("⚠️ Clé API manquante. Configure ton profil d'abord (👤 Utilisateur).")
             return

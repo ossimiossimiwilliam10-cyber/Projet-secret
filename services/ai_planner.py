@@ -14,7 +14,7 @@ import json
 import logging
 import re
 
-logger = logging.getLogger("gemini")
+logger = logging.getLogger("llm")
 from datetime import date
 from typing import Any
 
@@ -23,9 +23,9 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from database.models import Utilisateur, SaisieHebdo, Semaine
-from services.gemini_utils import gemini_call_with_retry
+from services.llm_utils import llm_call_with_retry
 from services.planner_validator import validate_partial_planning, validate_planning
-from services.profil_service import get_gemini_credentials
+from services.profil_service import get_llm_api_key
 from services.scheduler_engine import (
     JOURS,
     calculer_cible_hebdo_minutes,
@@ -462,11 +462,11 @@ def generate_schedule_from_ai(
     semaine_id: int,
     consignes_manuelles: str = "",
 ) -> dict[str, Any]:
-    """Orchestre la création du prompt, l'appel à Gemini et le renvoi du JSON.
+    """Orchestre la création du prompt, l'appel au LLM et le renvoi du JSON.
 
     Refonte de la lifecycle des sessions : la fonction ouvre sa propre
     session pour la **phase de lecture** (construction du prompt à partir
-    de la DB), la **referme avant l'appel Gemini** (15-30s), et travaille
+    de la DB), la **referme avant l'appel LLM** (15-30s), et travaille
     ensuite sur des données pures. Évite de tenir une connexion SQLite
     ouverte pendant l'appel HTTP lent.
     """
@@ -483,8 +483,8 @@ def generate_schedule_from_ai(
             raise ValueError("Aucune saisie hebdomadaire trouvée pour cette semaine.")
 
         profil = session.query(Utilisateur).first()
-        _gemini_key, _gemini_model = get_gemini_credentials(session)
-        if not profil or not _gemini_key:
+        _api_key, _model = get_llm_api_key(session)
+        if not profil or not _api_key:
             raise ValueError("Clé API Gemini introuvable dans le profil.")
 
         prompt = build_planner_prompt(
@@ -492,12 +492,12 @@ def generate_schedule_from_ai(
             consignes_manuelles=consignes_manuelles,
         )
 
-    # Phase 2 (sans session, lente) : appel Gemini sur données pures
-    from services.gemini_utils import call_llm
+    # Phase 2 (sans session, lente) : appel LLM sur données pures
+    from services.llm_utils import call_llm
 
     text_response = call_llm(
-        api_key=_gemini_key,
-        model=_gemini_model,
+        api_key=_api_key,
+        model=_model,
         prompt=prompt,
         json_mode=True,
         temperature=0.2,
@@ -508,7 +508,7 @@ def generate_schedule_from_ai(
         raise ValueError("L'IA a renvoyé une réponse vide.")
 
     # 4. Parsing JSON + validation stricte du schéma de planning.
-    parsed = _parse_gemini_json(text_response)
+    parsed = _parse_llm_json(text_response)
     return validate_planning(parsed)
 
 
@@ -539,7 +539,7 @@ class PlanningFinalOutput(BaseModel):
     planning: PlanningSemaineOutput
 
 
-def _parse_gemini_json(text: str) -> dict[str, Any]:
+def _parse_llm_json(text: str) -> dict[str, Any]:
     """Parse et valide la réponse de l'IA via Pydantic pour garantir le schéma."""
     s = text.strip()
 
@@ -642,8 +642,8 @@ def integrer_nouveautes_a_semaine(session: Session, semaine_id: int) -> dict[str
         raise ValueError("Semaine introuvable.")
 
     profil = session.query(Utilisateur).first()
-    _gemini_key, _gemini_model = get_gemini_credentials(session)
-    if not profil or not _gemini_key:
+    _api_key, _model = get_llm_api_key(session)
+    if not profil or not _api_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     today = datetime.date.today()
@@ -760,11 +760,11 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
 """
 
     # 5. Appel LLM via couche d'abstraction unifiée
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
 
     text = call_llm(
-        api_key=_gemini_key,
-        model=_gemini_model,
+        api_key=_api_key,
+        model=_model,
         prompt=prompt,
         json_mode=True,
         temperature=0.3,
@@ -773,7 +773,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     if not text.strip():
         raise ValueError("L'IA a renvoyé une réponse vide.")
 
-    parsed = _parse_gemini_json(text)
+    parsed = _parse_llm_json(text)
     # Validation stricte du schéma partiel (jours restants uniquement).
     result = validate_partial_planning(
         parsed,
@@ -817,7 +817,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                 ))
                 nb_ajoutees += 1
             except (KeyError, ValueError) as exc:
-                logging.getLogger("gemini").warning(
+                logging.getLogger("llm").warning(
                     "[integrer_nouveautes] Tâche ignorée (%s) : %s", jour, exc,
                 )
 
@@ -826,7 +826,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
 
 
 def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
-    """Demande à Gemini de redistribuer les tâches restantes sur les jours qui
+    """Demande au LLM de redistribuer les tâches restantes sur les jours qui
     restent dans la semaine, en tenant compte du retard accumulé.
 
     Conserve :
@@ -847,8 +847,8 @@ def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
         raise ValueError("Semaine introuvable.")
 
     profil = session.query(Utilisateur).first()
-    _gemini_key, _gemini_model = get_gemini_credentials(session)
-    if not profil or not _gemini_key:
+    _api_key, _model = get_llm_api_key(session)
+    if not profil or not _api_key:
         raise ValueError("Clé API Gemini absente du profil.")
 
     today = datetime.date.today()
@@ -936,11 +936,11 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
 """
 
     # Appel LLM via couche d'abstraction unifiée
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
 
     text = call_llm(
-        api_key=_gemini_key,
-        model=_gemini_model,
+        api_key=_api_key,
+        model=_model,
         prompt=prompt,
         json_mode=True,
         temperature=0.3,
@@ -949,7 +949,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     if not text.strip():
         raise ValueError("L'IA a renvoyé une réponse vide.")
 
-    parsed = _parse_gemini_json(text)
+    parsed = _parse_llm_json(text)
     # Validation stricte (replan = planning partiel sur jours restants).
     result = validate_partial_planning(
         parsed,
@@ -985,7 +985,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
                     chapitre_ids=t_data.get("chapitre_ids", []),
                 ))
             except (KeyError, ValueError) as exc:
-                logging.getLogger("gemini").warning(
+                logging.getLogger("llm").warning(
                     "[replan] Tâche ignorée (%s) : %s", jour, exc,
                 )
 

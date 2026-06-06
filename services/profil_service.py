@@ -1,6 +1,6 @@
 """Service centralise d'acces aux credentials LLM de l'utilisateur.
 
-Avant cette centralisation, **8 fichiers** lisaient ``profil.systeme.gemini_api_key``
+Avant cette centralisation, **8 fichiers** lisaient ``profil.systeme.llm_api_key``
 directement. Depuis la refonte securite (chiffrement Fernet), il faut
 TOUJOURS passer par :func:`get_llm_credentials` qui s'occupe du
 dechiffrement transparent et de la gestion des cas degrades.
@@ -33,7 +33,7 @@ def get_llm_credentials(session: "Session") -> tuple[str, str]:
     if p is None or p.systeme is None:
         return "", DEFAULT_MODEL
     api_key_deepseek = decrypt_api_key(p.systeme.deepseek_api_key or "")
-    api_key_gemini = decrypt_api_key(p.systeme.gemini_api_key or "")
+    llm_api_key_decrypted = decrypt_api_key(p.systeme.llm_api_key or "")
     
     # Tout passer sur DeepSeek par défaut comme demandé par l'utilisateur
     if api_key_deepseek:
@@ -41,8 +41,8 @@ def get_llm_credentials(session: "Session") -> tuple[str, str]:
         return api_key_deepseek, model
     
     # Fallback sur Gemini
-    model = p.systeme.gemini_model or DEFAULT_MODEL
-    return api_key_gemini, model
+    model = p.systeme.llm_model or DEFAULT_MODEL
+    return llm_api_key_decrypted, model
 
 
 def has_llm_credentials(session: "Session") -> bool:
@@ -52,14 +52,14 @@ def has_llm_credentials(session: "Session") -> bool:
 
 
 # Backward compat aliases
-get_gemini_credentials = get_llm_credentials
-has_gemini_credentials = has_llm_credentials
+get_llm_api_key = get_llm_credentials
+has_llm_credentials = has_llm_credentials
 
 
 __all__ = [
     "DEFAULT_MODEL",
     "get_llm_credentials",
     "has_llm_credentials",
-    "get_gemini_credentials",
-    "has_gemini_credentials",
+    "get_llm_api_key",
+    "has_llm_credentials",
 ]

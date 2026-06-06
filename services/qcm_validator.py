@@ -6,7 +6,7 @@ crashes UI si la structure était inattendue.
 
 Après : on rejette les questions non conformes et on dédoublonne. Si
 zéro question valide reste, on lève :class:`ValueError` pour que
-l'appelant puisse demander à Gemini de regénérer (ou afficher une
+l'appelant puisse demander au LLM de regénérer (ou afficher une
 erreur claire à l'utilisateur).
 """
 

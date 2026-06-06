@@ -56,8 +56,8 @@ def _setup_min(session) -> tuple[Semaine, SaisieHebdo, Utilisateur]:
             trajets_habituels={"Strasbourg-Luxembourg": 150, "Appartement-Fac": 15},
         ),
         systeme=SystemeConfig(
-            gemini_api_key="fake",
-            gemini_model="gemini-2.5-flash",
+            llm_api_key="fake",
+            llm_model="gemini-2.5-flash",
         ),
         gamification=GamificationState()
     )
@@ -126,7 +126,7 @@ def test_job_sans_lieu_garde_le_comportement_actuel(session):
 # ---------------------------------------------------------------------------
 def test_contrainte_ignoree_est_absente_du_prompt(session):
     """Si une contrainte fixe est listée dans ``contraintes_ignorees``,
-    elle ne doit PAS apparaître dans le prompt envoyé à Gemini."""
+    elle ne doit PAS apparaître dans le prompt envoyé au LLM."""
     semaine, saisie, profil = _setup_min(session)
     profil.logistique.contraintes_fixes = [
         {"jour": "lundi", "heure_debut": "08:00", "heure_fin": "10:00", "libelle": "CM Mathématiques"},

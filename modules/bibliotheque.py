@@ -29,7 +29,7 @@ from services.pdf_storage import (
     safe_pdf_filename,
     validate_pdf_upload,
 )
-from services.profil_service import get_gemini_credentials
+from services.profil_service import get_llm_api_key
 from services.revision_service import (
     initialiser_chapitre_pour_revision,
     label_couleur_status,
@@ -69,7 +69,7 @@ UE_COLORS_DEFAULT = [
 def _get_api_config() -> tuple[str, str]:
     """Récupère la clé API (déchiffrée) et le modèle depuis le profil."""
     with get_session() as session:
-        return get_gemini_credentials(session)
+        return get_llm_api_key(session)
 
 
 def _get_ues_snapshot(session: Session) -> list[dict[str, Any]]:

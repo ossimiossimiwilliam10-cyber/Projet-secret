@@ -1,7 +1,7 @@
 """Moteur de planification déterministe (couche pré-IA).
 
 Ce module fait en Python tout ce qu'un LLM fait mal : compter, équilibrer,
-lisser. Il ne touche jamais à Gemini ; il fournit à ``build_planner_prompt``
+lisser. Il ne touche jamais au LLM ; il fournit à ``build_planner_prompt``
 une répartition par jour déjà calculée, que l'IA n'aura plus qu'à habiller
 en créneaux horaires.
 

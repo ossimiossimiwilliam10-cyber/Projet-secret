@@ -31,7 +31,7 @@ _MODULES = [
     "services.crypto",
     "services.data_integrity",
     "services.gamification_service",
-    "services.gemini_utils",
+    "services.llm_utils",
     "services.ical_exporter",
     "services.matiere_stats",
     "services.objectif_service",

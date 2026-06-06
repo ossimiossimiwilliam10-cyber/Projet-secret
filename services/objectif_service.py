@@ -2,7 +2,7 @@
 
 Workflow :
 1. L'étudiant définit un objectif (nom, cours visé, note cible, date cible, description)
-2. Avant de le créer, on demande à Gemini de proposer une **stratégie** :
+2. Avant de le créer, on demande au LLM de proposer une **stratégie** :
    pondérations par chapitre, heures à investir, conseils, niveau de réalisme.
 3. L'étudiant peut **adopter** la stratégie (créer l'objectif + activer les
    pondérations) ou demander une autre proposition.
@@ -23,8 +23,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import Chapitre, Objectif, Utilisateur
-from services.gemini_utils import gemini_call_with_retry
-from services.profil_service import get_gemini_credentials
+from services.llm_utils import llm_call_with_retry
+from services.profil_service import get_llm_api_key
 
 
 # ===========================================================================
@@ -68,7 +68,7 @@ def _build_etat_chapitres(session: Session, matiere_id: int | None) -> list[dict
 
 
 # ===========================================================================
-# 2. Prompt builder + appel Gemini
+# 2. Prompt builder + appel LLM
 # ===========================================================================
 def _build_strategie_prompt(
     nom: str,
@@ -79,7 +79,7 @@ def _build_strategie_prompt(
     nb_jours_restants: int,
     chapitres: list[dict[str, Any]],
 ) -> str:
-    """Construit le prompt pour demander une stratégie à Gemini."""
+    """Construit le prompt pour demander une stratégie au LLM."""
     cible_str = "Toutes les matières (objectif global)" if not matiere_nom else matiere_nom
     note_str = f"{note_cible}/20" if note_cible is not None else "(qualitatif — pas de note précise)"
 
@@ -142,7 +142,7 @@ RAPPEL : RETOURNE UNIQUEMENT LE JSON, RIEN D'AUTRE.
     return prompt
 
 
-def _parse_gemini_json(text: str) -> dict[str, Any]:
+def _parse_llm_json(text: str) -> dict[str, Any]:
     """Parse robuste du JSON retourné par Gemini (mutualisé avec ai_planner)."""
     s = text.strip()
     if s.startswith("```"):
@@ -172,7 +172,7 @@ def proposer_strategie(
     note_cible: float | None,
     date_cible: datetime.date,
 ) -> dict[str, Any]:
-    """Demande à Gemini de proposer une stratégie pour l'objectif.
+    """Demande au LLM de proposer une stratégie pour l'objectif.
 
     Returns:
         dict avec les clés : realisme, justification, heures_total_estimees,
@@ -182,8 +182,8 @@ def proposer_strategie(
         ValueError si pas de clé API ou si Gemini répond mal.
     """
     profil = session.query(Utilisateur).first()
-    _gemini_key, _gemini_model = get_gemini_credentials(session)
-    if not profil or not _gemini_key:
+    _api_key, _model = get_llm_api_key(session)
+    if not profil or not _api_key:
         raise ValueError("Clé API Gemini introuvable dans le profil.")
 
     # Snapshot état actuel
@@ -214,11 +214,11 @@ def proposer_strategie(
     )
 
     # Appel Gemini
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
 
     text = call_llm(
-        api_key=_gemini_key,
-        model=_gemini_model or "gemini-2.5-flash",
+        api_key=_api_key,
+        model=_model or "gemini-2.5-flash",
         prompt=prompt,
         json_mode=True,
         temperature=0.3,
@@ -228,7 +228,7 @@ def proposer_strategie(
     if not text.strip():
         raise ValueError("L'IA a refusé de répondre.")
 
-    strategie = _parse_gemini_json(text)
+    strategie = _parse_llm_json(text)
 
     # Validation/nettoyage minimal du retour
     strategie = _valider_strategie(strategie, chapitres)

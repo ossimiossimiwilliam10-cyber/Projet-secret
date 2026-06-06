@@ -1209,12 +1209,12 @@ def _render_rapport_semaine(session) -> None:
 
 def _generer_rapport_semaine(session) -> dict:
     """Appelle le LLM pour générer le rapport de la semaine."""
-    from services.gemini_utils import call_llm
-    from services.profil_service import get_gemini_credentials
+    from services.llm_utils import call_llm
+    from services.profil_service import get_llm_api_key
     from database.models import Semaine, Tache, Utilisateur
     from utils.helpers import get_or_create_week_for_offset
 
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
     if not api_key:
         raise ValueError("Clé API manquante.")
 

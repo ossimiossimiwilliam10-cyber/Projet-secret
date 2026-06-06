@@ -62,8 +62,8 @@ def _make_minimal_setup(session) -> tuple[Semaine, SaisieHebdo, Utilisateur]:
             temps_transport_min=20,
         ),
         systeme=SystemeConfig(
-            gemini_api_key="fake-key",
-            gemini_model="gemini-2.5-flash",
+            llm_api_key="fake-key",
+            llm_model="gemini-2.5-flash",
         ),
         gamification=GamificationState()
     )

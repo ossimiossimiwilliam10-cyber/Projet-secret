@@ -10,7 +10,7 @@ Cette intégration porte les fonctionnalités de l'ancienne app desktop
   - **Fiche structurée** (idée centrale, notions, formules, pièges, mini-quiz, mnémo)
   - **QCM** à 4 choix (avec explications)
   - **Quiz ouvert** (questions textuelles, réponses libres évaluées par Gemini)
-- Cache du texte extrait du PDF par chapitre — évite de payer Gemini ET de
+- Cache du texte extrait du PDF par chapitre — évite de payer le LLM ET de
   réextraire le PDF à chaque ouverture.
 
 Toutes les fonctions ont une signature ``(session, chapitre_id, …)`` et opèrent
@@ -40,8 +40,8 @@ from services.cache_versioning import (
     fiche_cache_is_valid,
     texte_sha256,
 )
-from services.gemini_utils import gemini_call_with_retry
-from services.profil_service import get_gemini_credentials
+from services.llm_utils import llm_call_with_retry
+from services.profil_service import get_llm_api_key
 from services.qcm_validator import validate_qcm_questions, validate_quiz_questions
 
 
@@ -847,7 +847,7 @@ def _parse_page_range(pages_str: str, max_pages: int) -> list[int]:
 # 6. Génération IA — fiche, QCM, quiz ouvert + évaluation
 # ===========================================================================
 # _get_gemini_client_and_model supprimé — les fonctions utilisent désormais
-# call_llm (services.gemini_utils) qui gère Gemini ET DeepSeek/OpenAI.
+# call_llm (services.llm_utils) qui gère Gemini ET DeepSeek/OpenAI.
 
 
 def generer_fiche_ia(
@@ -870,7 +870,7 @@ def generer_fiche_ia(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
     if not api_key:
         raise ValueError("Clé API LLM absente du profil.")
 
@@ -936,7 +936,7 @@ DOCUMENT :
 {texte}
 """
 
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
     fiche = call_llm(
         api_key=api_key,
         model=model,
@@ -975,7 +975,7 @@ def generer_qcm(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
 
     current_sha = texte_sha256(texte)
     cache_ok = chap.qcm_cache and cache_is_valid(
@@ -1012,7 +1012,7 @@ RETOURNE UNIQUEMENT un JSON valide (tableau) :
 ]
 """
 
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
     text = call_llm(
         api_key=api_key.strip(),
         model=model,
@@ -1053,7 +1053,7 @@ def generer_quiz_ouvert(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
     if not api_key:
         raise ValueError("Clé API LLM absente du profil.")
 
@@ -1082,7 +1082,7 @@ RÈGLES DE SORTIE :
 - Une question par ligne, format : "N. Question"
 """
 
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
     text = call_llm(
         api_key=api_key,
         model=model,
@@ -1108,7 +1108,7 @@ def evaluer_quiz_ouvert(
     questions: list[str],
     reponses: list[str],
 ) -> dict[str, Any]:
-    """Demande à Gemini d'évaluer les réponses libres de l'étudiant.
+    """Demande au LLM d'évaluer les réponses libres de l'étudiant.
 
     Args:
         questions: liste de questions posées.
@@ -1134,7 +1134,7 @@ def evaluer_quiz_ouvert(
     texte = get_or_extract_chapter_text(session, chapitre_id)
     matiere = chap.matiere_obj.nom if chap.matiere_obj else "Sans matière"
 
-    api_key, model = get_gemini_credentials(session)
+    api_key, model = get_llm_api_key(session)
 
     paires = "\n\n".join([
         f"Q{i+1} : {q}\nRéponse de l'étudiant : {r or '(pas de réponse)'}"
@@ -1168,7 +1168,7 @@ RETOURNE UNIQUEMENT un JSON :
 }}
 """
 
-    from services.gemini_utils import call_llm
+    from services.llm_utils import call_llm
     text = call_llm(
         api_key=api_key.strip(),
         model=model,
