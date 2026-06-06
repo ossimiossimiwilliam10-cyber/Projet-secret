@@ -20,7 +20,7 @@ from database.db import init_db, migrate_schema
 def main() -> None:
     st.set_page_config(
         page_title="Exocerveau",
-        page_icon="⊞",
+        page_icon="🧠",
         layout="wide",
         initial_sidebar_state="expanded",
     )

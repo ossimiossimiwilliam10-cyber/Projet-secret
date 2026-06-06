@@ -30,11 +30,13 @@ def render() -> None:
         default_index = 0
 
     active_tab = st.radio(
-        "Navigation",
+        "Navigation Configuration",
         options=TABS,
         index=default_index,
         horizontal=True,
         label_visibility="collapsed",
+        key="config_tab_radio",
+        help="Choisis une section : Profil, Import ou Aide",
     )
     
     if active_tab != st.session_state.active_config_tab:

@@ -324,9 +324,12 @@ def render() -> None:
         semaine = _get_semaine_courante(session)
 
         if semaine is None:
-            st.warning(
-                "⚠️ Aucune semaine en cours. Ouvre l'onglet **📖 Études** "
-                "pour initialiser ta semaine."
+            st.info(
+                "👋 **Bienvenue sur Exocerveau !**\n\n"
+                "Aucune semaine n'est encore planifiée. Pour commencer :\n\n"
+                "1. Va dans **⚙️ Configuration** → remplis ton profil étudiant\n"
+                "2. Puis dans **📅 Planification** → génère ta première semaine\n"
+                "3. Reviens ici pour voir ton planning du jour ! 🚀"
             )
             return
 
