@@ -183,6 +183,7 @@ def render() -> None:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie_id)
                     s.sport_config = prev_config
+                st.session_state.pop(f"sport_config_{saisie_id}", None)
                 st.toast("Séances reprises !", icon="📋")
                 st.rerun()
             else:
@@ -193,67 +194,72 @@ def render() -> None:
     # --- Éditeur de séances ---
     st.subheader("Séances prévues")
 
-    df_sport = pd.DataFrame(sport_config_db)
-    if df_sport.empty:
-        df_sport = pd.DataFrame([{
-            "type": "🏃‍♂️ Course / Cardio",
-            "nom": "",
-            "duree_min": 60,
-            "intensite": INTENSITES[1],
-            "creneau_pref": "Soir",
-        }])
+    state_key = f"sport_config_{saisie_id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = [dict(s) for s in sport_config_db]
+
+    seances_actuelles = st.session_state[state_key]
+
+    # Affichage en cartes
+    if not seances_actuelles:
+        st.info("Aucune séance de sport prévue pour le moment.")
     else:
-        for col_name in ["type", "nom", "duree_min", "intensite", "creneau_pref"]:
-            if col_name not in df_sport.columns:
-                df_sport[col_name] = "" if col_name in ("type", "nom", "intensite", "creneau_pref") else 60
+        for idx, seance in enumerate(seances_actuelles):
+            # Extraction des icônes pour le design
+            type_icon = seance.get("type", "🎯").split(" ")[0] if seance.get("type") else "🎯"
+            intensite_icon = (
+                "🔴" if "🔴" in seance.get("intensite", "")
+                else "🟡" if "🟡" in seance.get("intensite", "")
+                else "🟢" if "🟢" in seance.get("intensite", "")
+                else "🔵"
+            )
 
-    cols = ["type", "nom", "duree_min", "intensite", "creneau_pref"]
-    df_sport = df_sport[cols]
+            with st.container(border=True):
+                col_icon, col_details, col_del = st.columns([1, 8, 1])
+                with col_icon:
+                    st.markdown(f"<h2 style='text-align:center;'>{type_icon}</h2>", unsafe_allow_html=True)
+                with col_details:
+                    titre = seance.get("nom") or seance.get("type", "Séance")
+                    st.markdown(f"**{titre}**")
+                    st.caption(f"⏱️ {seance.get('duree_min', 60)} min | {intensite_icon} {seance.get('intensite', '')} | 📅 Créneau : {seance.get('creneau_pref', 'Peu importe')}")
+                with col_del:
+                    if st.button("❌", key=f"del_sp_{saisie_id}_{idx}", help="Supprimer la séance"):
+                        seances_actuelles.pop(idx)
+                        st.rerun()
 
-    edited_sport = st.data_editor(
-        df_sport,
-        num_rows="dynamic",
-        width='stretch',
-        column_config={
-            "type": st.column_config.SelectboxColumn(
-                "Discipline", options=list(TYPES_SPORT.keys()), required=True,
-            ),
-            "nom": st.column_config.TextColumn("Détails (ex: Séance Jambes)"),
-            "duree_min": st.column_config.NumberColumn(
-                "Durée (min)", min_value=15, step=15, default=60,
-            ),
-            "intensite": st.column_config.SelectboxColumn(
-                "Intensité", options=INTENSITES, default=INTENSITES[1],
-            ),
-            "creneau_pref": st.column_config.SelectboxColumn(
-                "Créneau préféré", options=CRENEAUX, default="Peu importe",
-            ),
-        },
-        key=f"sport_editor_{saisie_id}",
-    )
+    # Formulaire d'ajout
+    with st.expander("➕ **Ajouter une séance**", expanded=len(seances_actuelles) == 0):
+        with st.form(f"form_add_sp_{saisie_id}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                new_type = st.selectbox("Discipline", options=list(TYPES_SPORT.keys()))
+                new_nom = st.text_input("Détails (ex: Séance Jambes)")
+                new_duree = st.number_input("Durée (min)", min_value=15, step=15, value=60)
+            with c2:
+                new_intensite = st.selectbox("Intensité", options=INTENSITES, index=1)
+                new_creneau = st.selectbox("Créneau préféré", options=CRENEAUX, index=0)
+                
+            if st.form_submit_button("✓ Ajouter", type="primary", use_container_width=True):
+                seances_actuelles.append({
+                    "type": new_type,
+                    "nom": new_nom.strip(),
+                    "duree_min": int(new_duree),
+                    "intensite": new_intensite,
+                    "creneau_pref": new_creneau,
+                })
+                st.rerun()
 
     st.divider()
 
     col_save, col_info = st.columns([1, 2])
     with col_save:
         if st.button("💾 Enregistrer mes séances", type="primary", width='stretch'):
-            sport_propre = []
-            for _, row in edited_sport.iterrows():
-                if pd.notna(row.get("type")):
-                    sport_propre.append({
-                        "type": str(row["type"]),
-                        "nom": str(row.get("nom", "")).strip(),
-                        "duree_min": int(row.get("duree_min", 60)),
-                        "intensite": str(row.get("intensite", INTENSITES[1])),
-                        "creneau_pref": str(row.get("creneau_pref", "Peu importe")),
-                    })
+            sport_propre = seances_actuelles
             try:
                 with session_scope() as write_session:
                     s = write_session.get(SaisieHebdo, saisie_id)
                     s.sport_config = sport_propre
-                st.success("✅ Séances enregistrées !")
                 st.toast("Sport sauvegardé", icon="💾")
-                st.rerun()
             except Exception as e:
                 st.error(f"Erreur : {e}")
 
