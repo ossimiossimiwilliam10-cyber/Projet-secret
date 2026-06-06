@@ -131,7 +131,6 @@ def render() -> None:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.courses_config = nouvelle_config
-                st.success("✅ Intendance alimentaire enregistrée !")
                 st.toast("Courses sauvegardées", icon="✅")
                 st.rerun()
             except Exception as e:
