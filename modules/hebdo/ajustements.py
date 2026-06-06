@@ -54,6 +54,7 @@ def render() -> None:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.ajustements = prev
+                st.session_state.pop(f"ajustements_ev_{saisie.id}", None)
                 st.toast("Ajustements repris !", icon="📋")
                 st.rerun()
             else:
@@ -74,18 +75,39 @@ def render() -> None:
     st.subheader("2. Événements exceptionnels")
     st.caption("Ex: 'Trajet imprévu vendredi 18h', 'Visite médicale mercredi matin'. L'IA en tiendra compte.")
     evenements_db = config_db.get("evenements_exceptionnels", [])
-    df_evenements = pd.DataFrame([{"evenement": ev} for ev in evenements_db] if evenements_db else [{"evenement": ""}])
-    edited_evenements = st.data_editor(
-        df_evenements, num_rows="dynamic", width='stretch',
-        column_config={"evenement": st.column_config.TextColumn("Description", required=True)},
-        key="editor_ajustements_v2",
-    )
+
+    state_key = f"ajustements_ev_{saisie.id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = list(evenements_db)
+
+    evenements_actuels = st.session_state[state_key]
+
+    if not evenements_actuels:
+        st.info("Aucun événement exceptionnel prévu.")
+    else:
+        for idx, ev in enumerate(evenements_actuels):
+            with st.container(border=True):
+                col_txt, col_del = st.columns([9, 1])
+                with col_txt:
+                    st.markdown(f"🗓️ **{ev}**")
+                with col_del:
+                    if st.button("❌", key=f"del_ev_{saisie.id}_{idx}", help="Supprimer l'événement"):
+                        evenements_actuels.pop(idx)
+                        st.rerun()
+
+    with st.expander("➕ **Ajouter un événement exceptionnel**", expanded=len(evenements_actuels) == 0):
+        with st.form(f"form_add_ev_{saisie.id}"):
+            new_ev = st.text_input("Description (ex: Visite médicale mercredi 14h)")
+            if st.form_submit_button("✓ Ajouter", type="primary", use_container_width=True):
+                if new_ev.strip():
+                    evenements_actuels.append(new_ev.strip())
+                    st.rerun()
 
     # --- 3. Contraintes à ignorer ---
     st.divider()
     st.subheader("3. Contraintes à ignorer cette semaine")
     profil = session.query(Utilisateur).first()
-    contraintes_fixes_dispo = list(profil.logistique.contraintes_fixes or []) if profil else []
+    contraintes_fixes_dispo = list(profil.logistique.contraintes_fixes or []) if profil and profil.logistique else []
     contraintes_ignorees_db = config_db.get("contraintes_ignorees", [])
 
     if not contraintes_fixes_dispo:
@@ -111,10 +133,7 @@ def render() -> None:
 
     st.divider()
     if st.button("💾 Enregistrer les ajustements", type="primary"):
-        evenements_propres = []
-        for _, row in edited_evenements.iterrows():
-            if pd.notna(row.get("evenement")) and str(row.get("evenement")).strip():
-                evenements_propres.append(str(row["evenement"]).strip())
+        evenements_propres = evenements_actuels
         try:
             with session_scope() as ws:
                 s = ws.get(SaisieHebdo, saisie.id)
@@ -125,7 +144,6 @@ def render() -> None:
                     "contraintes_ignorees": contraintes_ignorees,
                     "commentaire_libre": commentaire_libre.strip(),
                 }
-            st.success("✅ Ajustements enregistrés !")
             st.toast("Ajustements sauvegardés", icon="✅")
         except Exception as e:  # noqa: BLE001
             import logging
