@@ -727,3 +727,7 @@ def render() -> None:
         _render_jamais_commences(session, matiere_ids)
 
 
+
+
+if __name__ == "__main__":
+    render()

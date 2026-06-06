@@ -363,3 +363,7 @@ def _render_form_creation() -> None:
                 st.rerun()
 
 
+
+
+if __name__ == "__main__":
+    render()

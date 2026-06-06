@@ -393,3 +393,7 @@ def render() -> None:
         _render_tips()
 
 
+
+
+if __name__ == "__main__":
+    render()

@@ -201,3 +201,7 @@ def _render_achievement_card(ach, unlocked: dict[str, str]) -> None:
         )
 
 
+
+
+if __name__ == "__main__":
+    render()
