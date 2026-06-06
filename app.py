@@ -53,7 +53,6 @@ def main() -> None:
         "Action": [
             st.Page("pages/session_etude.py", title="Salle d'étude", icon="🧠", url_path="session-etude"),
             st.Page("pages/revision_rapide.py", title="Révision Rapide", icon="⚡", url_path="revision-rapide"),
-            st.Page("pages/examen_blanc.py", title="Examen Blanc", icon="📝", url_path="examen-blanc"),
             st.Page(bibliotheque.render, title="Bibliothèque", icon="📚", url_path="bibliotheque"),
         ],
         "Progression & Bilan": [
