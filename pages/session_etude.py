@@ -244,20 +244,20 @@ def _render_no_chapter_view() -> None:
         for ue, mat_dict in grouped_items.items():
             st.markdown(f"### 🎓 {ue}")
             for mat, chaps in mat_dict.items():
-                st.markdown(f"#### 📘 {mat}")
-                for it in chaps:
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([4, 2, 1])
-                        c1.markdown(f"**{it['titre']}**")
-                        c2.markdown(
-                            f"<div style='color:{it['color']}; padding-top:0.4rem;'>{it['label']} "
-                            f"<span style='color:gray;'>· Niv. {it['niveau']}</span></div>",
-                            unsafe_allow_html=True,
-                        )
-                        with c3:
-                            if st.button("▶️ Ouvrir", key=f"open_chap_{it['id']}", width='stretch'):
-                                st.session_state.target_chapitre_id = it["id"]
-                                st.rerun()
+                with st.expander(f"📘 {mat} ({len(chaps)} chapitres)", expanded=False):
+                    for it in chaps:
+                        with st.container(border=True):
+                            c1, c2, c3 = st.columns([4, 2, 1])
+                            c1.markdown(f"**{it['titre']}**")
+                            c2.markdown(
+                                f"<div style='color:{it['color']}; padding-top:0.4rem;'>{it['label']} "
+                                f"<span style='color:gray;'>· Niv. {it['niveau']}</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                            with c3:
+                                if st.button("▶️ Ouvrir", key=f"open_chap_{it['id']}", width='stretch'):
+                                    st.session_state.target_chapitre_id = it["id"]
+                                    st.rerun()
     else:
         st.divider()
         st.caption("ℹ️ Aucun chapitre dû pour le moment — bravo ! 🎉")
