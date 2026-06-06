@@ -216,11 +216,12 @@ def _render_xp_bar(session: Session) -> None:
     if profil is None:
         return
 
-    xp_total = profil.gamification.xp or 0
-    streak = profil.gamification.streak_jours or 0
-    streak_record = profil.gamification.streak_record or 0
-    nb_quiz = profil.gamification.nb_quiz_total or 0
-    nb_maitrise = profil.gamification.nb_chapitres_maitrise or 0
+    gamif = profil.gamification
+    xp_total = gamif.xp if gamif else 0
+    streak = gamif.streak_jours if gamif else 0
+    streak_record = gamif.streak_record if gamif else 0
+    nb_quiz = gamif.nb_quiz_total if gamif else 0
+    nb_maitrise = gamif.nb_chapitres_maitrise if gamif else 0
 
     prog = progression_niveau(xp_total)
     niveau = prog["niveau"]
@@ -296,7 +297,8 @@ def _render_xp_bar(session: Session) -> None:
         st.markdown(html, unsafe_allow_html=True)
         
     # Affichage des Badges (Achievements débloqués)
-    achievements_debloques = [ach for ach in profil.gamification.achievements if getattr(ach, "debloque", False) or True] # On affiche les badges
+    from database.models import Achievement
+    achievements_debloques = session.query(Achievement).all()
     if achievements_debloques:
         from services.gamification_service import RARETE_COULEURS, ACHIEVEMENTS
         
