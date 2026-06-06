@@ -529,7 +529,7 @@ def render() -> None:
                         try:
                             dt_obj = _parse_deadline(travail)
                             dt_str = dt_obj.strftime("%A %d %b à %H:%M") if dt_obj.year != 9999 else travail.get('deadline', 'Aucune')
-                        except:
+                        except (ValueError, TypeError):
                             dt_str = travail.get('deadline', 'Aucune')
                         st.caption(f"📅 Deadline : {dt_str} | ⏱️ {travail.get('duree_min', 60)} min")
                     with col_del:
@@ -594,7 +594,7 @@ def _render_alertes_deadlines_list(travaux: list[dict[str, Any]]) -> None:
     for row in travaux:
         try:
             deadline = _dt.datetime.strptime(row.get("deadline", ""), "%Y-%m-%d %H:%M")
-        except:
+        except (ValueError, TypeError):
             continue
             
         libelle = (row.get("libelle") or "").strip()
