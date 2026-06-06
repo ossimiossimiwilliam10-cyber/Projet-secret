@@ -495,25 +495,79 @@ def render() -> None:
         st.subheader("2. Travaux ponctuels")
         st.caption("Devoir à rendre, compte-rendu de TP, projet noté…")
 
-        df_travaux = _build_travaux_df(travaux_ponctuels_db)
-        edited_travaux = st.data_editor(
-            df_travaux,
-            num_rows="dynamic",
-            width="stretch",
-            column_config={
-                "libelle": st.column_config.TextColumn("Libellé du devoir", required=True),
-                "deadline": st.column_config.DatetimeColumn("Deadline (Date & Heure)", format="DD/MM/YYYY HH:mm"),
-                "duree_min": st.column_config.NumberColumn("Durée estimée (min)", min_value=15, step=15, default=60),
-                "priorite": st.column_config.SelectboxColumn("Priorité", options=PRIORITES, default="Normale"),
-            },
-            key="editor_travaux_ponctuels",
-        )
-        _render_alertes_deadlines(edited_travaux)
+        state_key = f"travaux_{saisie.id}"
+        if state_key not in st.session_state:
+            # S'assurer d'avoir une liste propre, avec les dates déjà formatées en string ou gérables
+            st.session_state[state_key] = [dict(t) for t in travaux_ponctuels_db]
+
+        travaux_actuels = st.session_state[state_key]
+
+        # Trier les travaux par deadline
+        def _parse_deadline(t_dict):
+            import datetime as _dt
+            try:
+                return _dt.datetime.strptime(t_dict["deadline"], "%Y-%m-%d %H:%M")
+            except Exception:
+                return _dt.datetime.max
+                
+        travaux_actuels.sort(key=_parse_deadline)
+
+        # Affichage en "cartes"
+        if not travaux_actuels:
+            st.info("Aucun travail ponctuel prévu pour le moment. Ajoutes-en un ci-dessous !")
+        else:
+            for idx, travail in enumerate(travaux_actuels):
+                prio_colors = {"Basse": "🟢", "Normale": "🔵", "Haute": "🔥", "Critique": "🚨"}
+                prio_icon = prio_colors.get(travail.get("priorite", "Normale"), "🔵")
+                
+                with st.container(border=True):
+                    col_icon, col_details, col_del = st.columns([1, 8, 1])
+                    with col_icon:
+                        st.markdown(f"<h3 style='text-align:center;'>{prio_icon}</h3>", unsafe_allow_html=True)
+                    with col_details:
+                        st.markdown(f"**{travail.get('libelle', 'Sans nom')}**")
+                        try:
+                            dt_obj = _parse_deadline(travail)
+                            dt_str = dt_obj.strftime("%A %d %b à %H:%M") if dt_obj.year != 9999 else travail.get('deadline', 'Aucune')
+                        except:
+                            dt_str = travail.get('deadline', 'Aucune')
+                        st.caption(f"📅 Deadline : {dt_str} | ⏱️ {travail.get('duree_min', 60)} min")
+                    with col_del:
+                        if st.button("❌", key=f"del_t_{saisie.id}_{idx}", help="Supprimer"):
+                            travaux_actuels.pop(idx)
+                            st.rerun()
+
+        _render_alertes_deadlines_list(travaux_actuels)
+
+        # Formulaire d'ajout
+        with st.expander("➕ **Ajouter un travail ponctuel**", expanded=len(travaux_actuels) == 0):
+            with st.form(f"form_add_t_{saisie.id}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    new_lib = st.text_input("Libellé du devoir", placeholder="Ex: Rapport de stage")
+                    new_duree = st.number_input("Durée estimée (min)", min_value=15, step=15, value=60)
+                with c2:
+                    new_date = st.date_input("Date de rendu")
+                    import datetime as _dt
+                    new_time = st.time_input("Heure de rendu", value=_dt.time(23, 59))
+                    new_prio = st.selectbox("Priorité", options=PRIORITES, index=1) # 1 = Normale
+                
+                if st.form_submit_button("✓ Ajouter à la liste", type="primary", use_container_width=True):
+                    if new_lib.strip():
+                        deadline_str = _dt.datetime.combine(new_date, new_time).strftime("%Y-%m-%d %H:%M")
+                        travaux_actuels.append({
+                            "libelle": new_lib.strip(),
+                            "deadline": deadline_str,
+                            "duree_min": int(new_duree),
+                            "priorite": new_prio
+                        })
+                        st.rerun()
 
         # --- 4. Sauvegarde ---
         st.divider()
         if st.button("💾 Enregistrer mes objectifs d'études", type="primary"):
-            travaux_propres = _clean_travaux(edited_travaux)
+            # Les travaux sont déjà propres dans travaux_actuels
+            travaux_propres = travaux_actuels
             try:
                 with session_scope() as write_session:
                     saisie_to_update = write_session.get(SaisieHebdo, saisie.id)
@@ -530,51 +584,30 @@ def render() -> None:
 # ---------------------------------------------------------------------------
 # Helpers privés — travaux ponctuels
 # ---------------------------------------------------------------------------
-def _build_travaux_df(travaux_ponctuels_db: list[dict[str, Any]]) -> pd.DataFrame:
-    df = pd.DataFrame(travaux_ponctuels_db) if travaux_ponctuels_db else pd.DataFrame(
-        columns=["libelle", "deadline", "duree_min", "priorite"]
-    )
-    if "deadline" in df.columns:
-        df["deadline"] = pd.to_datetime(df["deadline"], errors="coerce")
-        df = df.sort_values(by="deadline", ascending=True, na_position="last")
-    return df.reset_index(drop=True)
 
-
-def _render_alertes_deadlines(edited_travaux: pd.DataFrame) -> None:
-    if edited_travaux.empty or "deadline" not in edited_travaux.columns:
+def _render_alertes_deadlines_list(travaux: list[dict[str, Any]]) -> None:
+    if not travaux:
         return
+    import datetime as _dt
     now = _dt.datetime.now()
     seuil = now + _dt.timedelta(days=3)
     alertes: list[str] = []
-    for _, row in edited_travaux.iterrows():
-        deadline = row.get("deadline")
-        libelle = (row.get("libelle") or "").strip()
-        if not libelle or pd.isna(deadline):
+    
+    for row in travaux:
+        try:
+            deadline = _dt.datetime.strptime(row.get("deadline", ""), "%Y-%m-%d %H:%M")
+        except:
             continue
+            
+        libelle = (row.get("libelle") or "").strip()
+        if not libelle:
+            continue
+            
         if deadline < now:
             alertes.append(f"📅 **{libelle}** : deadline **passée** ({deadline.strftime('%d/%m %H:%M')})")
         elif deadline <= seuil:
             jours = (deadline - now).days
             alertes.append(f"🚨 **{libelle}** : deadline dans {jours} jour(s) ({deadline.strftime('%d/%m %H:%M')})")
+            
     if alertes:
         st.warning("**Deadlines proches ou dépassées :**\n\n" + "\n\n".join(alertes))
-
-
-def _clean_travaux(edited_travaux: pd.DataFrame) -> list[dict[str, Any]]:
-    travaux_propres: list[dict[str, Any]] = []
-    for _, row in edited_travaux.iterrows():
-        if pd.isna(row.get("libelle")) or str(row.get("libelle")).strip() == "":
-            continue
-        deadline_str = ""
-        if pd.notna(row.get("deadline")):
-            try:
-                deadline_str = row["deadline"].strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                pass
-        travaux_propres.append({
-            "libelle": str(row["libelle"]).strip(),
-            "deadline": deadline_str,
-            "duree_min": int(row.get("duree_min", 60)),
-            "priorite": str(row.get("priorite", "Normale")),
-        })
-    return travaux_propres
