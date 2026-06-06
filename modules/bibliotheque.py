@@ -748,7 +748,7 @@ def _process_import_unifie(
         label_clean = (label or "").strip() or _nom_cours_from_filename(pdf_file.name)
         progress.progress((i - 1) / total, text=f"PDF {i}/{total} : {label_clean}…")
         placeholder.info(
-            f"🧠 Analyse Gemini en cours pour **{label_clean}** "
+            f"🧠 Analyse DeepSeek en cours pour **{label_clean}** "
             f"({pdf_file.name}) — PDF {i}/{total}"
         )
 
@@ -848,9 +848,9 @@ def _render_import_unifie() -> None:
     api_key, model = _get_api_config()
     if not api_key:
         st.warning(
-            "⚠️ Aucune clé API Gemini n'est configurée. "
-            "Rends-toi dans l'onglet **Utilisateur** pour en ajouter une avant "
-            "d'importer un PDF."
+            "⚠️ Aucune clé API n'est configurée. "
+            "Rends-toi dans l'onglet **Profil & Réglages** pour ajouter ta clé "
+            "DeepSeek avant d'importer un PDF."
         )
         return
 
@@ -873,7 +873,7 @@ def _render_import_unifie() -> None:
     with st.expander("📥 Importer des PDFs (1 ou plusieurs)", expanded=False):
         st.caption(
             "Sélectionne **la matière** de rattachement, puis dépose **un ou "
-            "plusieurs PDFs**. Pour chacun, Gemini détecte les chapitres et "
+            "plusieurs PDFs**. Pour chacun, l'IA détecte les chapitres et "
             "les crée. Un même chapitre peut recueillir plusieurs PDFs plus "
             "tard via sa carte ci-dessous."
         )
@@ -926,7 +926,7 @@ def _render_import_unifie() -> None:
         eta_min = len(uploaded_pdfs) * 45 / 60
         st.caption(
             f"⏱️ Temps estimé : ~**{eta_min:.1f} min** "
-            f"({len(uploaded_pdfs)} PDF × ~45 s d'analyse Gemini)."
+            f"({len(uploaded_pdfs)} PDF × ~45 s d'analyse IA)."
         )
 
         if st.button(
@@ -1039,29 +1039,13 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
     col_act, col_pdf = st.columns([1, 1])
     with col_act:
         st.markdown("##### ⚙️ Progression & Révision")
-        with st.form(f"form_prog_{chap.id}", border=False):
-            new_maitrise = st.slider("Niveau de maîtrise (%)", 0, 100, int(maitrise), 5)
-            new_etape = st.selectbox(
-                "Prochaine étape",
-                options=TYPES_TRAVAIL,
-                index=TYPES_TRAVAIL.index(chap.type_travail_restant) if chap.type_travail_restant in TYPES_TRAVAIL else 0,
-            )
-            if st.form_submit_button("💾 Enregistrer"):
-                try:
-                    ch_db = session.get(Chapitre, chap.id)
-                    if ch_db:
-                        ch_db.maitrise_pct = new_maitrise
-                        ch_db.type_travail_restant = new_etape
-                        session.commit()
-                        st.toast("Progression mise à jour !", icon="✅")
-                        st.rerun()
-                except Exception as e:
-                    session.rollback()
-                    st.error(f"Erreur : {e}")
-
+        niveau = chap.niveau_actuel or 0
+        maitrise_calc = int((niveau / 13) * 100) if niveau <= 13 else 100
+        st.progress(maitrise_calc / 100.0, text=f"Maîtrise (calculée automatiquement) : {maitrise_calc}%")
+        
         st.markdown(
-            f"<div style='color:{color_rev}; font-size:0.9rem; margin-top:10px;'>"
-            f"<b>{label_rev}</b> (Niveau Leitner : {chap.niveau_actuel or 0}/{MAX_NIVEAU})"
+            f"<div style='color:{color_rev}; font-size:0.9rem; margin-top:10px; margin-bottom: 10px;'>"
+            f"<b>{label_rev}</b> (Niveau Leitner : {niveau}/{MAX_NIVEAU})"
             f"</div>",
             unsafe_allow_html=True,
         )
