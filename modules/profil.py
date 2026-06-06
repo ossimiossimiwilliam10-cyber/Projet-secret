@@ -371,465 +371,465 @@ def render() -> None:
     with tab_profil:
         # === Section 1 - Identite & rythme =====================================
         with st.expander("🌅 Identite & rythme", expanded=is_new):
-        col1, col2 = st.columns(2)
-        with col1:
-            nom = st.text_input(
-                "Nom", value=data["nom"], placeholder="Ex: Dupont"
-            )
-            prenom = st.text_input(
-                "Prenom", value=data.get("prenom", ""), placeholder="Ex: Jean"
-            )
-            heure_lever = st.time_input(
-                "Heure de lever habituelle", value=data["heure_lever"]
-            )
-        with col2:
-            heure_coucher = st.time_input(
-                "Heure de coucher habituelle", value=data["heure_coucher"]
-            )
-            heures_sommeil = st.slider(
-                "Heures de sommeil cible",
-                min_value=5.0, max_value=10.0,
-                value=data["heures_sommeil_cible"], step=0.5,
-            )
-            # Mapping inverse : trouver la cle a partir des valeurs stockees
-            default_key = "matin"
-            mapping_trouve = False
-            for key, (chrono_val, pic_val) in PRODUCTIVITE.items():
-                if chrono_val == data.get("chronotype") and pic_val == data.get("pic_concentration"):
-                    default_key = key
-                    mapping_trouve = True
-                    break
-            if not mapping_trouve and data.get("chronotype"):
-                st.warning(
-                    f"⚠️ Combinaison chronotype/pic inconnue "
-                    f"({data.get('chronotype')}/{data.get('pic_concentration')}). "
-                    f"Réinitialisé sur « Matin ». Vérifie ton choix ci-dessous."
+            col1, col2 = st.columns(2)
+            with col1:
+                nom = st.text_input(
+                    "Nom", value=data["nom"], placeholder="Ex: Dupont"
                 )
+                prenom = st.text_input(
+                    "Prenom", value=data.get("prenom", ""), placeholder="Ex: Jean"
+                )
+                heure_lever = st.time_input(
+                    "Heure de lever habituelle", value=data["heure_lever"]
+                )
+            with col2:
+                heure_coucher = st.time_input(
+                    "Heure de coucher habituelle", value=data["heure_coucher"]
+                )
+                heures_sommeil = st.slider(
+                    "Heures de sommeil cible",
+                    min_value=5.0, max_value=10.0,
+                    value=data["heures_sommeil_cible"], step=0.5,
+                )
+                # Mapping inverse : trouver la cle a partir des valeurs stockees
                 default_key = "matin"
-            # Sécurité : si la clé n'est pas dans le mapping (corruption DB)
-            if default_key not in PRODUCTIVITE_LABELS:
-                default_key = "matin"
-            productivite_choisie = st.radio(
-                "Je suis le plus productif...",
-                options=list(PRODUCTIVITE_LABELS.keys()),
-                format_func=lambda k: PRODUCTIVITE_LABELS[k],
-                index=list(PRODUCTIVITE_LABELS.keys()).index(default_key),
-                horizontal=True,
+                mapping_trouve = False
+                for key, (chrono_val, pic_val) in PRODUCTIVITE.items():
+                    if chrono_val == data.get("chronotype") and pic_val == data.get("pic_concentration"):
+                        default_key = key
+                        mapping_trouve = True
+                        break
+                if not mapping_trouve and data.get("chronotype"):
+                    st.warning(
+                        f"⚠️ Combinaison chronotype/pic inconnue "
+                        f"({data.get('chronotype')}/{data.get('pic_concentration')}). "
+                        f"Réinitialisé sur « Matin ». Vérifie ton choix ci-dessous."
+                    )
+                    default_key = "matin"
+                # Sécurité : si la clé n'est pas dans le mapping (corruption DB)
+                if default_key not in PRODUCTIVITE_LABELS:
+                    default_key = "matin"
+                productivite_choisie = st.radio(
+                    "Je suis le plus productif...",
+                    options=list(PRODUCTIVITE_LABELS.keys()),
+                    format_func=lambda k: PRODUCTIVITE_LABELS[k],
+                    index=list(PRODUCTIVITE_LABELS.keys()).index(default_key),
+                    horizontal=True,
+                )
+                # Deriver les deux valeurs
+                chronotype, pic_concentration = PRODUCTIVITE[productivite_choisie]
+
+        # === Section 2 - Capacite de travail ===================================
+        with st.expander("💪 Capacite de travail", expanded=is_new):
+            col1, col2 = st.columns(2)
+            with col1:
+                duree_max_session = st.slider(
+                    "Duree maximale d'une session sans pause (min)",
+                    min_value=20, max_value=120,
+                    value=data.get("duree_max_session_min", 50),
+                    step=5,
+                    key="profil_duree_max_session",
+                )
+                pause_entre_sessions = st.slider(
+                    "Duree d'une pause entre sessions (min)",
+                    min_value=5, max_value=20,
+                    value=data["pause_entre_sessions_min"], step=1,
+                )
+            with col2:
+                tolerance_fatigue = st.selectbox(
+                    "Tolerance a la fatigue",
+                    options=list(TOLERANCE_FATIGUE.keys()),
+                    format_func=lambda k: TOLERANCE_FATIGUE[k],
+                    index=list(TOLERANCE_FATIGUE.keys()).index(data["tolerance_fatigue"])
+                    if data.get("tolerance_fatigue") in TOLERANCE_FATIGUE else 0,
+                )
+
+            st.divider()
+            st.markdown("##### 🎯 Quota d'etude (cours + revisions perso)")
+            st.caption(
+                "Definis ton **objectif hebdomadaire** (total d'heures visees sur "
+                "la semaine) et ton **plafond journalier** (ne jamais depasser). "
+                "L'IA repartira intelligemment ton objectif sur les 7 jours sans "
+                "jamais depasser le plafond. Si tu declares ton check-in du jour "
+                "fatigue (> 7/10), le plafond est reduit de 30 % pour ce jour-la."
             )
-            # Deriver les deux valeurs
-            chronotype, pic_concentration = PRODUCTIVITE[productivite_choisie]
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                heures_etude_cible_par_semaine = st.slider(
+                    "📆 Objectif hebdo (total)",
+                    min_value=1.0, max_value=70.0,
+                    value=float(data["heures_etude_cible_par_semaine"]),
+                    step=0.5,
+                    format="%.1f h / semaine",
+                    help="Ex. : 40 h pour un etudiant en periode d'examens, "
+                         "20-25 h en rythme normal avec cours + job.",
+                )
+            with col_h2:
+                heures_etude_plafond_par_jour = st.slider(
+                    "🛑 Plafond / jour",
+                    min_value=1.0, max_value=14.0,
+                    value=float(data["heures_etude_plafond_par_jour"]),
+                    step=0.5,
+                    format="%.1f h / jour",
+                    help="L'IA ne placera jamais plus que ca sur une journee. "
+                         "Au-dela de 8 h, garde en tete que la qualite chute.",
+                )
 
-    # === Section 2 - Capacite de travail ===================================
-    with st.expander("💪 Capacite de travail", expanded=is_new):
-        col1, col2 = st.columns(2)
-        with col1:
-            duree_max_session = st.slider(
-                "Duree maximale d'une session sans pause (min)",
-                min_value=20, max_value=120,
-                value=data.get("duree_max_session_min", 50),
-                step=5,
-                key="profil_duree_max_session",
-            )
-            pause_entre_sessions = st.slider(
-                "Duree d'une pause entre sessions (min)",
-                min_value=5, max_value=20,
-                value=data["pause_entre_sessions_min"], step=1,
-            )
-        with col2:
-            tolerance_fatigue = st.selectbox(
-                "Tolerance a la fatigue",
-                options=list(TOLERANCE_FATIGUE.keys()),
-                format_func=lambda k: TOLERANCE_FATIGUE[k],
-                index=list(TOLERANCE_FATIGUE.keys()).index(data["tolerance_fatigue"])
-                if data.get("tolerance_fatigue") in TOLERANCE_FATIGUE else 0,
-            )
+            # Validation visuelle : objectif hebdo doit etre atteignable avec
+            # le plafond x 7. Sinon l'IA ne pourra jamais le tenir.
+            plafond_x_7 = heures_etude_plafond_par_jour * 7
+            if heures_etude_cible_par_semaine > plafond_x_7:
+                st.error(
+                    f"⚠️ Incoherence : ton objectif ({heures_etude_cible_par_semaine:.1f} h) "
+                    f"est superieur au plafond multiplie par 7 jours "
+                    f"({plafond_x_7:.1f} h). L'IA ne pourra pas l'atteindre. "
+                    f"Augmente le plafond ou baisse l'objectif."
+                )
+            elif heures_etude_cible_par_semaine > plafond_x_7 * 0.9:
+                st.warning(
+                    f"ℹ️ Ton objectif ({heures_etude_cible_par_semaine:.1f} h) est "
+                    f"tres proche du maximum theorique ({plafond_x_7:.1f} h). "
+                    f"L'IA aura peu de marge pour ajuster en cas d'imprevu."
+                )
 
-        st.divider()
-        st.markdown("##### 🎯 Quota d'etude (cours + revisions perso)")
-        st.caption(
-            "Definis ton **objectif hebdomadaire** (total d'heures visees sur "
-            "la semaine) et ton **plafond journalier** (ne jamais depasser). "
-            "L'IA repartira intelligemment ton objectif sur les 7 jours sans "
-            "jamais depasser le plafond. Si tu declares ton check-in du jour "
-            "fatigue (> 7/10), le plafond est reduit de 30 % pour ce jour-la."
-        )
-        col_h1, col_h2 = st.columns(2)
-        with col_h1:
-            heures_etude_cible_par_semaine = st.slider(
-                "📆 Objectif hebdo (total)",
-                min_value=1.0, max_value=70.0,
-                value=float(data["heures_etude_cible_par_semaine"]),
-                step=0.5,
-                format="%.1f h / semaine",
-                help="Ex. : 40 h pour un etudiant en periode d'examens, "
-                     "20-25 h en rythme normal avec cours + job.",
-            )
-        with col_h2:
-            heures_etude_plafond_par_jour = st.slider(
-                "🛑 Plafond / jour",
-                min_value=1.0, max_value=14.0,
-                value=float(data["heures_etude_plafond_par_jour"]),
-                step=0.5,
-                format="%.1f h / jour",
-                help="L'IA ne placera jamais plus que ca sur une journee. "
-                     "Au-dela de 8 h, garde en tete que la qualite chute.",
+        # === Section 3 - Contraintes fixes recurrentes =========================
+        if "profil_contraintes" not in st.session_state:
+            st.session_state.profil_contraintes = list(data.get("contraintes_fixes", []))
+
+        with st.expander("📌 Contraintes fixes recurrentes", expanded=is_new):
+            st.caption(
+                "Creneaux bloques **chaque semaine** : cours en presentiel, job etudiant, "
+                "sport en club... Ces blocs seront verrouilles dans tous les plannings "
+                "generes."
             )
 
-        # Validation visuelle : objectif hebdo doit etre atteignable avec
-        # le plafond x 7. Sinon l'IA ne pourra jamais le tenir.
-        plafond_x_7 = heures_etude_plafond_par_jour * 7
-        if heures_etude_cible_par_semaine > plafond_x_7:
-            st.error(
-                f"⚠️ Incoherence : ton objectif ({heures_etude_cible_par_semaine:.1f} h) "
-                f"est superieur au plafond multiplie par 7 jours "
-                f"({plafond_x_7:.1f} h). L'IA ne pourra pas l'atteindre. "
-                f"Augmente le plafond ou baisse l'objectif."
-            )
-        elif heures_etude_cible_par_semaine > plafond_x_7 * 0.9:
-            st.warning(
-                f"ℹ️ Ton objectif ({heures_etude_cible_par_semaine:.1f} h) est "
-                f"tres proche du maximum theorique ({plafond_x_7:.1f} h). "
-                f"L'IA aura peu de marge pour ajuster en cas d'imprevu."
-            )
+            contraintes_list = st.session_state.profil_contraintes
 
-    # === Section 3 - Contraintes fixes recurrentes =========================
-    if "profil_contraintes" not in st.session_state:
-        st.session_state.profil_contraintes = list(data.get("contraintes_fixes", []))
+            if contraintes_list:
+                for i, c in enumerate(contraintes_list):
+                    col1, col2 = st.columns([11, 1])
+                    with col1:
+                        jour = c.get('jour', '').capitalize()
+                        hd = c.get('heure_debut', '')
+                        hf = c.get('heure_fin', '')
+                        libelle = c.get('libelle', '')
+                        lieu = c.get('lieu', '')
+                        lieu_str = f" ({lieu})" if lieu else ""
+                        st.markdown(f"**{jour} {hd} - {hf}** : {libelle}{lieu_str}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_contrainte_{i}"):
+                            contraintes_list.pop(i)
+                            st.rerun()
+            else:
+                st.info("Aucune contrainte fixe definie.")
 
-    with st.expander("📌 Contraintes fixes recurrentes", expanded=is_new):
-        st.caption(
-            "Creneaux bloques **chaque semaine** : cours en presentiel, job etudiant, "
-            "sport en club... Ces blocs seront verrouilles dans tous les plannings "
-            "generes."
-        )
+            st.divider()
+            st.markdown("##### ➕ Ajouter une contrainte")
+            with st.form("form_add_contrainte", clear_on_submit=True):
+                col_j, col_d, col_f = st.columns(3)
+                with col_j:
+                    new_jour = st.selectbox("Jour", options=JOURS)
+                with col_d:
+                    new_debut = st.time_input("Heure debut", value=None)
+                with col_f:
+                    new_fin = st.time_input("Heure fin", value=None)
 
-        contraintes_list = st.session_state.profil_contraintes
+                col_l, col_lieu = st.columns(2)
+                with col_l:
+                    new_lib = st.text_input("Libelle (ex: TD Droit)")
+                with col_lieu:
+                    new_lieu = st.text_input("Lieu (optionnel)")
 
-        if contraintes_list:
-            for i, c in enumerate(contraintes_list):
-                col1, col2 = st.columns([11, 1])
-                with col1:
-                    jour = c.get('jour', '').capitalize()
-                    hd = c.get('heure_debut', '')
-                    hf = c.get('heure_fin', '')
-                    libelle = c.get('libelle', '')
-                    lieu = c.get('lieu', '')
-                    lieu_str = f" ({lieu})" if lieu else ""
-                    st.markdown(f"**{jour} {hd} - {hf}** : {libelle}{lieu_str}")
-                with col2:
-                    if st.button("🗑️", key=f"del_contrainte_{i}"):
-                        contraintes_list.pop(i)
-                        st.rerun()
-        else:
-            st.info("Aucune contrainte fixe definie.")
-
-        st.divider()
-        st.markdown("##### ➕ Ajouter une contrainte")
-        with st.form("form_add_contrainte", clear_on_submit=True):
-            col_j, col_d, col_f = st.columns(3)
-            with col_j:
-                new_jour = st.selectbox("Jour", options=JOURS)
-            with col_d:
-                new_debut = st.time_input("Heure debut", value=None)
-            with col_f:
-                new_fin = st.time_input("Heure fin", value=None)
-
-            col_l, col_lieu = st.columns(2)
-            with col_l:
-                new_lib = st.text_input("Libelle (ex: TD Droit)")
-            with col_lieu:
-                new_lieu = st.text_input("Lieu (optionnel)")
-
-            if st.form_submit_button("Ajouter", use_container_width=True):
-                if not new_debut or not new_fin or not new_lib:
-                    st.error("Veuillez remplir le jour, les heures et le libellé.")
-                elif new_debut >= new_fin:
-                    st.error("L'heure de fin doit être après l'heure de début.")
-                else:
-                    contraintes_list.append({
-                        "jour": new_jour,
-                        "heure_debut": new_debut.strftime("%H:%M"),
-                        "heure_fin": new_fin.strftime("%H:%M"),
-                        "libelle": new_lib,
-                        "lieu": new_lieu,
-                    })
-                    st.rerun()
-
-        contraintes_brutes = contraintes_list
-
-    # === Section 4 - Transport & Lieux ======================================
-    transport_config: dict[str, Any] = data.get("transport", {})  # défini même si expander fermé
-    with st.expander("🚌 Transport & Lieux", expanded=is_new):
-        st.caption(
-            "Definis tes lieux et les temps de trajet entre eux. "
-            "L'IA utilisera ces durees pour caler tes deplacements dans le planning."
-        )
-
-        transport = data.get("transport", {})
-        lieux: list[str] = transport.get("lieux", [])
-        trajets: dict[str, int] = transport.get("trajets", {})
-        bidirectionnel: bool = transport.get("bidirectionnel", True)
-        mode_principal: str = transport.get("mode", "transit")
-        lieu_principal: str = transport.get("lieu_principal", "")
-
-        if "profil_lieux" not in st.session_state:
-            st.session_state.profil_lieux = list(transport.get("lieux", []))
-            
-        nouveaux_lieux = st.session_state.profil_lieux
-
-        # --- Edition des lieux ---
-        st.markdown("##### 📍 Mes lieux")
-        if nouveaux_lieux:
-            for i, lieu in enumerate(nouveaux_lieux):
-                col1, col2 = st.columns([11, 1])
-                with col1:
-                    st.markdown(f"**{lieu}**")
-                with col2:
-                    if st.button("🗑️", key=f"del_lieu_{i}"):
-                        nouveaux_lieux.pop(i)
-                        st.rerun()
-        else:
-            st.info("Aucun lieu defini.")
-            
-        with st.form("form_add_lieu", clear_on_submit=True):
-            col_l, col_btn = st.columns([4, 1])
-            with col_l:
-                new_lieu_input = st.text_input("Ajouter un lieu", placeholder="ex: Fac, Appartement, Gare", label_visibility="collapsed")
-            with col_btn:
-                submitted = st.form_submit_button("Ajouter", use_container_width=True)
-            if submitted:
-                nl = new_lieu_input.strip()
-                if nl and nl not in nouveaux_lieux:
-                    nouveaux_lieux.append(nl)
-                    st.rerun()
-                elif nl in nouveaux_lieux:
-                    st.error("Ce lieu existe deja.")
-
-        # --- Options ---
-        col_opt1, col_opt2, col_opt3 = st.columns(3)
-        with col_opt1:
-            modes = {"transit": "🚌 Transports", "driving": "🚗 Voiture", "bicycling": "🚲 Velo", "walking": "🚶 A pied"}
-            mode_principal = st.selectbox(
-                "Mode principal", options=list(modes.keys()),
-                format_func=lambda k: modes[k],
-                index=list(modes.keys()).index(mode_principal) if mode_principal in modes else 0,
-                key="transport_mode",
-            )
-        with col_opt2:
-            bidirectionnel = st.checkbox("🔄 Bidirectionnel (A→B = B→A)", value=bidirectionnel, key="transport_bidi")
-        with col_opt3:
-            lieu_options = ["(aucun)"] + nouveaux_lieux
-            lieu_idx = 0
-            if lieu_principal and lieu_principal in nouveaux_lieux:
-                lieu_idx = nouveaux_lieux.index(lieu_principal) + 1
-            lieu_principal = st.selectbox(
-                "⭐ Lieu principal", options=lieu_options, index=lieu_idx, key="transport_home",
-            )
-            if lieu_principal == "(aucun)":
-                lieu_principal = ""
-
-        # --- Matrice des temps ---
-        # Fusion : partir des valeurs existantes, surchargées par les widgets.
-        nouveaux_trajets: dict[str, int] = dict(trajets)
-        if len(nouveaux_lieux) >= 2:
-            st.markdown("##### ⏱️ Temps de trajet (minutes)")
-
-            # Quick-fill
-            col_fill, _ = st.columns([1, 3])
-            with col_fill:
-                default_min = st.number_input("Remplissage rapide (min)", min_value=1, max_value=300, value=20, step=5, key="transport_fill_val")
-                if st.button("⚡ Appliquer aux trajets non definis", key="transport_fill_btn"):
-                    for i, a in enumerate(nouveaux_lieux):
-                        for b in nouveaux_lieux[i+1:]:
-                            k = f"{a}↔{b}"
-                            if k not in nouveaux_trajets or nouveaux_trajets.get(k, 0) == 0:
-                                nouveaux_trajets[k] = int(default_min)
-                                # Injecter dans le session_state pour que la valeur
-                                # survive au st.rerun() et s'affiche dans le widget.
-                                st.session_state[f"trajet_v4_{k}"] = int(default_min)
-                    st.rerun()
-
-            for i, lieu_a in enumerate(nouveaux_lieux):
-                for lieu_b in nouveaux_lieux[i+1:]:
-                    key_ab = f"{lieu_a}↔{lieu_b}"
-                    key_ba = f"{lieu_b}↔{lieu_a}"
-                    existing = nouveaux_trajets.get(key_ab, 0)
-
-                    if bidirectionnel:
-                        duree = st.number_input(
-                            f"{lieu_a} ↔ {lieu_b}",
-                            min_value=0, max_value=600, step=5,
-                            value=int(existing) if existing else 0,
-                            key=f"trajet_v4_{key_ab}",
-                        )
-                        if duree > 0:
-                            nouveaux_trajets[key_ab] = int(duree)
-                            nouveaux_trajets[key_ba] = int(duree)
-                        else:
-                            nouveaux_trajets.pop(key_ab, None)
-                            nouveaux_trajets.pop(key_ba, None)
+                if st.form_submit_button("Ajouter", use_container_width=True):
+                    if not new_debut or not new_fin or not new_lib:
+                        st.error("Veuillez remplir le jour, les heures et le libellé.")
+                    elif new_debut >= new_fin:
+                        st.error("L'heure de fin doit être après l'heure de début.")
                     else:
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            d_ab = st.number_input(
-                                f"{lieu_a} → {lieu_b}",
+                        contraintes_list.append({
+                            "jour": new_jour,
+                            "heure_debut": new_debut.strftime("%H:%M"),
+                            "heure_fin": new_fin.strftime("%H:%M"),
+                            "libelle": new_lib,
+                            "lieu": new_lieu,
+                        })
+                        st.rerun()
+
+            contraintes_brutes = contraintes_list
+
+        # === Section 4 - Transport & Lieux ======================================
+        transport_config: dict[str, Any] = data.get("transport", {})  # défini même si expander fermé
+        with st.expander("🚌 Transport & Lieux", expanded=is_new):
+            st.caption(
+                "Definis tes lieux et les temps de trajet entre eux. "
+                "L'IA utilisera ces durees pour caler tes deplacements dans le planning."
+            )
+
+            transport = data.get("transport", {})
+            lieux: list[str] = transport.get("lieux", [])
+            trajets: dict[str, int] = transport.get("trajets", {})
+            bidirectionnel: bool = transport.get("bidirectionnel", True)
+            mode_principal: str = transport.get("mode", "transit")
+            lieu_principal: str = transport.get("lieu_principal", "")
+
+            if "profil_lieux" not in st.session_state:
+                st.session_state.profil_lieux = list(transport.get("lieux", []))
+            
+            nouveaux_lieux = st.session_state.profil_lieux
+
+            # --- Edition des lieux ---
+            st.markdown("##### 📍 Mes lieux")
+            if nouveaux_lieux:
+                for i, lieu in enumerate(nouveaux_lieux):
+                    col1, col2 = st.columns([11, 1])
+                    with col1:
+                        st.markdown(f"**{lieu}**")
+                    with col2:
+                        if st.button("🗑️", key=f"del_lieu_{i}"):
+                            nouveaux_lieux.pop(i)
+                            st.rerun()
+            else:
+                st.info("Aucun lieu defini.")
+            
+            with st.form("form_add_lieu", clear_on_submit=True):
+                col_l, col_btn = st.columns([4, 1])
+                with col_l:
+                    new_lieu_input = st.text_input("Ajouter un lieu", placeholder="ex: Fac, Appartement, Gare", label_visibility="collapsed")
+                with col_btn:
+                    submitted = st.form_submit_button("Ajouter", use_container_width=True)
+                if submitted:
+                    nl = new_lieu_input.strip()
+                    if nl and nl not in nouveaux_lieux:
+                        nouveaux_lieux.append(nl)
+                        st.rerun()
+                    elif nl in nouveaux_lieux:
+                        st.error("Ce lieu existe deja.")
+
+            # --- Options ---
+            col_opt1, col_opt2, col_opt3 = st.columns(3)
+            with col_opt1:
+                modes = {"transit": "🚌 Transports", "driving": "🚗 Voiture", "bicycling": "🚲 Velo", "walking": "🚶 A pied"}
+                mode_principal = st.selectbox(
+                    "Mode principal", options=list(modes.keys()),
+                    format_func=lambda k: modes[k],
+                    index=list(modes.keys()).index(mode_principal) if mode_principal in modes else 0,
+                    key="transport_mode",
+                )
+            with col_opt2:
+                bidirectionnel = st.checkbox("🔄 Bidirectionnel (A→B = B→A)", value=bidirectionnel, key="transport_bidi")
+            with col_opt3:
+                lieu_options = ["(aucun)"] + nouveaux_lieux
+                lieu_idx = 0
+                if lieu_principal and lieu_principal in nouveaux_lieux:
+                    lieu_idx = nouveaux_lieux.index(lieu_principal) + 1
+                lieu_principal = st.selectbox(
+                    "⭐ Lieu principal", options=lieu_options, index=lieu_idx, key="transport_home",
+                )
+                if lieu_principal == "(aucun)":
+                    lieu_principal = ""
+
+            # --- Matrice des temps ---
+            # Fusion : partir des valeurs existantes, surchargées par les widgets.
+            nouveaux_trajets: dict[str, int] = dict(trajets)
+            if len(nouveaux_lieux) >= 2:
+                st.markdown("##### ⏱️ Temps de trajet (minutes)")
+
+                # Quick-fill
+                col_fill, _ = st.columns([1, 3])
+                with col_fill:
+                    default_min = st.number_input("Remplissage rapide (min)", min_value=1, max_value=300, value=20, step=5, key="transport_fill_val")
+                    if st.button("⚡ Appliquer aux trajets non definis", key="transport_fill_btn"):
+                        for i, a in enumerate(nouveaux_lieux):
+                            for b in nouveaux_lieux[i+1:]:
+                                k = f"{a}↔{b}"
+                                if k not in nouveaux_trajets or nouveaux_trajets.get(k, 0) == 0:
+                                    nouveaux_trajets[k] = int(default_min)
+                                    # Injecter dans le session_state pour que la valeur
+                                    # survive au st.rerun() et s'affiche dans le widget.
+                                    st.session_state[f"trajet_v4_{k}"] = int(default_min)
+                        st.rerun()
+
+                for i, lieu_a in enumerate(nouveaux_lieux):
+                    for lieu_b in nouveaux_lieux[i+1:]:
+                        key_ab = f"{lieu_a}↔{lieu_b}"
+                        key_ba = f"{lieu_b}↔{lieu_a}"
+                        existing = nouveaux_trajets.get(key_ab, 0)
+
+                        if bidirectionnel:
+                            duree = st.number_input(
+                                f"{lieu_a} ↔ {lieu_b}",
                                 min_value=0, max_value=600, step=5,
-                                value=int(nouveaux_trajets.get(key_ab, 0)),
+                                value=int(existing) if existing else 0,
                                 key=f"trajet_v4_{key_ab}",
                             )
-                        with col_b:
-                            d_ba = st.number_input(
-                                f"{lieu_b} → {lieu_a}",
-                                min_value=0, max_value=600, step=5,
-                                value=int(nouveaux_trajets.get(key_ba, 0)),
-                                key=f"trajet_v4_{key_ba}",
-                            )
-                        if d_ab > 0:
-                            nouveaux_trajets[key_ab] = int(d_ab)
+                            if duree > 0:
+                                nouveaux_trajets[key_ab] = int(duree)
+                                nouveaux_trajets[key_ba] = int(duree)
+                            else:
+                                nouveaux_trajets.pop(key_ab, None)
+                                nouveaux_trajets.pop(key_ba, None)
                         else:
-                            nouveaux_trajets.pop(key_ab, None)
-                        if d_ba > 0:
-                            nouveaux_trajets[key_ba] = int(d_ba)
-                        else:
-                            nouveaux_trajets.pop(key_ba, None)
-        else:
-            if nouveaux_lieux:
-                st.info("Ajoute au moins 2 lieux pour definir des trajets.")
-            # Nettoyage : ne garder que les trajets X↔Y / X→Y dont les deux lieux existent
-            lieux_set = set(nouveaux_lieux)
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                d_ab = st.number_input(
+                                    f"{lieu_a} → {lieu_b}",
+                                    min_value=0, max_value=600, step=5,
+                                    value=int(nouveaux_trajets.get(key_ab, 0)),
+                                    key=f"trajet_v4_{key_ab}",
+                                )
+                            with col_b:
+                                d_ba = st.number_input(
+                                    f"{lieu_b} → {lieu_a}",
+                                    min_value=0, max_value=600, step=5,
+                                    value=int(nouveaux_trajets.get(key_ba, 0)),
+                                    key=f"trajet_v4_{key_ba}",
+                                )
+                            if d_ab > 0:
+                                nouveaux_trajets[key_ab] = int(d_ab)
+                            else:
+                                nouveaux_trajets.pop(key_ab, None)
+                            if d_ba > 0:
+                                nouveaux_trajets[key_ba] = int(d_ba)
+                            else:
+                                nouveaux_trajets.pop(key_ba, None)
+            else:
+                if nouveaux_lieux:
+                    st.info("Ajoute au moins 2 lieux pour definir des trajets.")
+                # Nettoyage : ne garder que les trajets X↔Y / X→Y dont les deux lieux existent
+                lieux_set = set(nouveaux_lieux)
+                nouveaux_trajets = {
+                    k: v for k, v in trajets.items()
+                    if _trajet_valide(k, lieux_set)
+                }
+
+            # Nettoyage final : supprimer tout trajet dont au moins un lieu est absent
+            lieux_set_final = set(nouveaux_lieux)
             nouveaux_trajets = {
-                k: v for k, v in trajets.items()
-                if _trajet_valide(k, lieux_set)
+                k: v for k, v in nouveaux_trajets.items()
+                if _trajet_valide(k, lieux_set_final)
             }
 
-        # Nettoyage final : supprimer tout trajet dont au moins un lieu est absent
-        lieux_set_final = set(nouveaux_lieux)
-        nouveaux_trajets = {
-            k: v for k, v in nouveaux_trajets.items()
-            if _trajet_valide(k, lieux_set_final)
-        }
+            # Assembler la config transport
+            transport_config = {
+                "lieux": nouveaux_lieux,
+                "trajets": nouveaux_trajets,
+                "mode": mode_principal,
+                "bidirectionnel": bidirectionnel,
+                "lieu_principal": lieu_principal,
+            }
 
-        # Assembler la config transport
-        transport_config = {
-            "lieux": nouveaux_lieux,
-            "trajets": nouveaux_trajets,
-            "mode": mode_principal,
-            "bidirectionnel": bidirectionnel,
-            "lieu_principal": lieu_principal,
-        }
-
-    # === Section 5 - Sante & alimentation =================================
-    with st.expander("🍽️ Sante & alimentation", expanded=is_new):
-        col1, col2 = st.columns(2)
-        with col1:
-            nb_repas = st.number_input(
-                "Nombre de repas par jour",
-                min_value=1, max_value=5,
-                value=data.get("nb_repas_par_jour", 3), step=1,
-            )
-            duree_repas = st.number_input(
-                "Duree moyenne d'un repas (min)",
-                min_value=10, max_value=120,
-                value=data.get("duree_repas_min", 30), step=5,
-            )
-            duree_prep_repas = st.number_input(
-                "Temps de preparation des repas par jour (min)",
-                min_value=0, max_value=180,
-                value=data.get("duree_prep_repas_min", 30), step=5,
-            )
-        with col2:
-            besoin_sieste = st.checkbox(
-                "Besoin d'une sieste quotidienne",
-                value=data.get("besoin_sieste", False),
-            )
-            duree_sieste = st.number_input(
-                "Duree de la sieste (min)",
-                min_value=10, max_value=90,
-                value=data.get("duree_sieste_min", 20), step=5,
-                disabled=not besoin_sieste,
-            )
-
-    # === Section 6 - Parametres IA (DeepSeek) ==============================
-    with st.expander("🤖 Parametres IA (DeepSeek)", expanded=is_new):
-        st.caption(
-            "🔒 La cle API est **chiffree** (Fernet AES-128) avant stockage en base. "
-            "Elle n'est utilisee que pour les appels a l'API DeepSeek "
-            "(analyse de PDF et generation de planning)."
-        )
-
-        existing_key = data.get("deepseek_api_key", "")
-        delete_key = False
-        if existing_key:
-            st.markdown(
-                f"🔐 Cle configuree : `{mask_for_display(existing_key)}` - "
-                "laisse vide pour conserver, ou colle une nouvelle cle pour la remplacer."
-            )
-            if data.get("deepseek_api_key_encrypted_was_legacy"):
-                st.warning(
-                    "⚠️ Cette cle etait stockee en clair (avant cette version). "
-                    "Elle sera **chiffree automatiquement** au prochain << Enregistrer >>."
+        # === Section 5 - Sante & alimentation =================================
+        with st.expander("🍽️ Sante & alimentation", expanded=is_new):
+            col1, col2 = st.columns(2)
+            with col1:
+                nb_repas = st.number_input(
+                    "Nombre de repas par jour",
+                    min_value=1, max_value=5,
+                    value=data.get("nb_repas_par_jour", 3), step=1,
                 )
-            delete_key = st.checkbox("🗑️ Supprimer la cle existante", key="delete_api_key")
-            if delete_key:
-                api_key_input = ""
-                st.caption("⚠️ La cle sera definitivement supprimee au prochain enregistrement.")
+                duree_repas = st.number_input(
+                    "Duree moyenne d'un repas (min)",
+                    min_value=10, max_value=120,
+                    value=data.get("duree_repas_min", 30), step=5,
+                )
+                duree_prep_repas = st.number_input(
+                    "Temps de preparation des repas par jour (min)",
+                    min_value=0, max_value=180,
+                    value=data.get("duree_prep_repas_min", 30), step=5,
+                )
+            with col2:
+                besoin_sieste = st.checkbox(
+                    "Besoin d'une sieste quotidienne",
+                    value=data.get("besoin_sieste", False),
+                )
+                duree_sieste = st.number_input(
+                    "Duree de la sieste (min)",
+                    min_value=10, max_value=90,
+                    value=data.get("duree_sieste_min", 20), step=5,
+                    disabled=not besoin_sieste,
+                )
+
+        # === Section 6 - Parametres IA (DeepSeek) ==============================
+        with st.expander("🤖 Parametres IA (DeepSeek)", expanded=is_new):
+            st.caption(
+                "🔒 La cle API est **chiffree** (Fernet AES-128) avant stockage en base. "
+                "Elle n'est utilisee que pour les appels a l'API DeepSeek "
+                "(analyse de PDF et generation de planning)."
+            )
+
+            existing_key = data.get("deepseek_api_key", "")
+            delete_key = False
+            if existing_key:
+                st.markdown(
+                    f"🔐 Cle configuree : `{mask_for_display(existing_key)}` - "
+                    "laisse vide pour conserver, ou colle une nouvelle cle pour la remplacer."
+                )
+                if data.get("deepseek_api_key_encrypted_was_legacy"):
+                    st.warning(
+                        "⚠️ Cette cle etait stockee en clair (avant cette version). "
+                        "Elle sera **chiffree automatiquement** au prochain << Enregistrer >>."
+                    )
+                delete_key = st.checkbox("🗑️ Supprimer la cle existante", key="delete_api_key")
+                if delete_key:
+                    api_key_input = ""
+                    st.caption("⚠️ La cle sera definitivement supprimee au prochain enregistrement.")
+                else:
+                    # Bouton pour révéler/masquer la clé
+                    show_key = st.checkbox("👁️ Afficher la cle", key="show_api_key")
+                    api_key_input = st.text_input(
+                        "Cle API DeepSeek",
+                        value=existing_key if show_key else "",
+                        type="default" if show_key else "password",
+                        placeholder="........ (laisser vide pour conserver)",
+                        help="Recupere ta cle sur https://platform.deepseek.com",
+                    )
             else:
-                # Bouton pour révéler/masquer la clé
-                show_key = st.checkbox("👁️ Afficher la cle", key="show_api_key")
                 api_key_input = st.text_input(
                     "Cle API DeepSeek",
-                    value=existing_key if show_key else "",
-                    type="default" if show_key else "password",
-                    placeholder="........ (laisser vide pour conserver)",
+                    value="",
+                    type="password",
+                    placeholder="sk-...",
                     help="Recupere ta cle sur https://platform.deepseek.com",
                 )
-        else:
-            api_key_input = st.text_input(
-                "Cle API DeepSeek",
-                value="",
-                type="password",
-                placeholder="sk-...",
-                help="Recupere ta cle sur https://platform.deepseek.com",
-            )
-        # Logique : suppression explicite => vide, sinon champ vide = on garde l'existante
-        if delete_key:
-            api_key = ""
-        else:
-            api_key = api_key_input.strip() if api_key_input.strip() else existing_key
-
-        # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
-        stored_model = data.get("deepseek_model", "deepseek-chat")
-        models_options = ["deepseek-v4-pro", "deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
-        if stored_model not in models_options:
-            models_options.insert(0, stored_model)
-
-        deepseek_model = st.selectbox(
-            "Modele IA",
-            options=models_options,
-            index=models_options.index(stored_model) if stored_model in models_options else 0,
-            help="**deepseek-reasoner** = raisonnement tres profond.",
-        )
-
-        st.divider()
-        test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
-        if test_clicked:
-            with st.spinner("Test DeepSeek..."):
-                ok, msg = _test_deepseek_connection(api_key, deepseek_model)
-            if ok:
-                st.success(msg)
+            # Logique : suppression explicite => vide, sinon champ vide = on garde l'existante
+            if delete_key:
+                api_key = ""
             else:
-                st.error(msg)
+                api_key = api_key_input.strip() if api_key_input.strip() else existing_key
 
-    # === Bouton enregistrer ===============================================
-    st.divider()
-    col_save, col_save_msg = st.columns([1, 3])
-    with col_save:
-        save_clicked = st.button(
-            "💾 Enregistrer le profil",
-            type="primary", width="stretch",
-        )
+            # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
+            stored_model = data.get("deepseek_model", "deepseek-chat")
+            models_options = ["deepseek-v4-pro", "deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
+            if stored_model not in models_options:
+                models_options.insert(0, stored_model)
 
-    # === Sauvegarde & Restauration =========================================
+            deepseek_model = st.selectbox(
+                "Modele IA",
+                options=models_options,
+                index=models_options.index(stored_model) if stored_model in models_options else 0,
+                help="**deepseek-reasoner** = raisonnement tres profond.",
+            )
+
+            st.divider()
+            test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
+            if test_clicked:
+                with st.spinner("Test DeepSeek..."):
+                    ok, msg = _test_deepseek_connection(api_key, deepseek_model)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+
+        # === Bouton enregistrer ===============================================
+        st.divider()
+        col_save, col_save_msg = st.columns([1, 3])
+        with col_save:
+            save_clicked = st.button(
+                "💾 Enregistrer le profil",
+                type="primary", width="stretch",
+            )
+
+        # === Sauvegarde & Restauration =========================================
     with tab_donnees:
         st.markdown("### 💾 Sauvegarde & Restauration")
         st.caption(
