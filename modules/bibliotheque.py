@@ -1022,7 +1022,7 @@ def _render_ue_header_html(ue: UE, pct: float) -> None:
 # ---------------------------------------------------------------------------
 # Carte d'un Chapitre (refonte UX : confirmation suppression)
 # ---------------------------------------------------------------------------
-def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
+def _render_carte_chapitre(chap: Chapitre, session: Session, prefix: str = "") -> None:
     """Affiche la carte détaillée d'un chapitre."""
     maitrise = chap.maitrise_pct or 0.0
     label_rev, color_rev = label_couleur_status(chap)
@@ -1049,7 +1049,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
             f"</div>",
             unsafe_allow_html=True,
         )
-        if st.button("🧠 Salle d'étude", key=f"btn_study_{chap.id}", type="primary"):
+        if st.button("🧠 Salle d'étude", key=f"btn_study_{prefix}{chap.id}", type="primary"):
             st.session_state.target_chapitre_id = chap.id
             try:
                 st.switch_page("pages/session_etude.py")
@@ -1073,7 +1073,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                         unsafe_allow_html=True,
                     )
                 with col_p2:
-                    if st.button("🗑️", key=f"del_pdf_{chap.id}_{idx}"):
+                    if st.button("🗑️", key=f"del_pdf_{prefix}{chap.id}_{idx}"):
                         try:
                             ch_db = session.get(Chapitre, chap.id)
                             if ch_db:
@@ -1088,9 +1088,9 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                             st.error(f"Erreur : {e}")
 
         with st.expander("➕ Ajouter un PDF"):
-            new_pdf = st.file_uploader("Fichier", type=["pdf"], key=f"pdf_upload_{chap.id}")
-            new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document", key=f"pdf_label_{chap.id}")
-            if st.button("📄 Ajouter", key=f"btn_add_pdf_{chap.id}"):
+            new_pdf = st.file_uploader("Fichier", type=["pdf"], key=f"pdf_upload_{prefix}{chap.id}")
+            new_label = st.text_input("Label (ex: TD, Fiche...)", value="Document", key=f"pdf_label_{prefix}{chap.id}")
+            if st.button("📄 Ajouter", key=f"btn_add_pdf_{prefix}{chap.id}"):
                 if new_pdf:
                     # Validation de sécurité (taille ≤ 25 Mo, signature PDF, anti-path-traversal)
                     try:
@@ -1126,19 +1126,19 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
     # Zone danger — avec confirmation
     st.divider()
     st.markdown("##### 🧨 Zone de danger")
-    confirm_key = f"confirm_del_{chap.id}"
+    confirm_key = f"confirm_del_{prefix}{chap.id}"
     if confirm_key not in st.session_state:
         st.session_state[confirm_key] = False
 
     if not st.session_state[confirm_key]:
-        if st.button("🗑️ Supprimer ce chapitre", key=f"del_chap_{chap.id}", type="secondary"):
+        if st.button("🗑️ Supprimer ce chapitre", key=f"del_chap_{prefix}{chap.id}", type="secondary"):
             st.session_state[confirm_key] = True
             st.rerun()
     else:
         st.warning(f"⚠️ **Confirmation** : supprimer « {chap.titre} » ? Cette action est irréversible.")
         col_yes, col_no = st.columns(2)
         with col_yes:
-            if st.button("✅ Oui, supprimer", key=f"confirm_yes_{chap.id}", type="primary"):
+            if st.button("✅ Oui, supprimer", key=f"confirm_yes_{prefix}{chap.id}", type="primary"):
                 try:
                     from services.revision_service import trash_chapitre
                     success = trash_chapitre(session, chap.id)
@@ -1153,7 +1153,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session) -> None:
                     session.rollback()
                     st.error(f"Erreur : {e}")
         with col_no:
-            if st.button("❌ Annuler", key=f"confirm_no_{chap.id}"):
+            if st.button("❌ Annuler", key=f"confirm_no_{prefix}{chap.id}"):
                 st.session_state.pop(confirm_key, None)
                 st.rerun()
 
