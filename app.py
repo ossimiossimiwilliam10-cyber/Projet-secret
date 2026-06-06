@@ -15,7 +15,6 @@ import streamlit as st
 
 from database.db import init_db, migrate_schema
 from modules import (
-    bibliotheque,
     dashboard,
     generation,
     import_externe,

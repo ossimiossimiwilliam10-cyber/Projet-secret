@@ -40,13 +40,14 @@ def _get_profil_snapshot() -> dict:
                 "xp": 0, "niveau": 1, "streak": 0, "streak_record": 0,
                 "nb_quiz": 0, "nb_maitrise": 0,
             }
+        g = p.gamification
         return {
-            "xp": p.gamification.xp or 0,
-            "niveau": p.gamification.niveau or 1,
-            "streak": p.gamification.streak_jours or 0,
-            "streak_record": p.gamification.streak_record or 0,
-            "nb_quiz": p.gamification.nb_quiz_total or 0,
-            "nb_maitrise": p.gamification.nb_chapitres_maitrise or 0,
+            "xp": g.xp if g and g.xp else 0,
+            "niveau": g.niveau if g and g.niveau else 1,
+            "streak": g.streak_jours if g and g.streak_jours else 0,
+            "streak_record": g.streak_record if g and g.streak_record else 0,
+            "nb_quiz": g.nb_quiz_total if g and g.nb_quiz_total else 0,
+            "nb_maitrise": g.nb_chapitres_maitrise if g and g.nb_chapitres_maitrise else 0,
         }
 
 
