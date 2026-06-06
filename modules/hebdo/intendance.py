@@ -58,6 +58,7 @@ def render() -> None:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.intendance_config = prev
+                st.session_state.pop(f"intendance_config_{saisie.id}", None)
                 st.toast("Corvées reprises !", icon="📋")
                 st.rerun()
             else:
@@ -65,39 +66,63 @@ def render() -> None:
 
     st.subheader("Corvées et tâches administratives")
 
-    if config_db:
-        total_min = sum(int(c.get("duree_min", 0)) for c in config_db)
-        st.caption(f"⏱️ **{len(config_db)} corvée(s) · ~{total_min // 60}h{total_min % 60:02d}** — bien organisé !")
+    state_key = f"intendance_config_{saisie.id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = [dict(c) for c in config_db]
 
-    edited_int = st.data_editor(
-        df_int, num_rows="dynamic", width='stretch',
-        column_config={
-            "activite": st.column_config.SelectboxColumn("Type de tâche", options=TYPES_INTENDANCE, required=True),
-            "duree_min": st.column_config.NumberColumn("Durée (min)", min_value=15, step=15, default=30),
-            "creneau_pref": st.column_config.SelectboxColumn("Moment", options=["Peu importe", "Matin", "Midi", "Après-midi", "Soir", "Week-end"], default="Peu importe"),
-        },
-        key="intendance_editor_v3",
-    )
+    corvees_actuelles = st.session_state[state_key]
+
+    if corvees_actuelles:
+        total_min = sum(int(c.get("duree_min", 0)) for c in corvees_actuelles)
+        st.caption(f"⏱️ **{len(corvees_actuelles)} corvée(s) · ~{total_min // 60}h{total_min % 60:02d}** — bien organisé !")
+    else:
+        st.info("Aucune corvée prévue pour le moment.")
+
+    # Affichage en cartes
+    for idx, corvee in enumerate(corvees_actuelles):
+        activite_full = corvee.get("activite", "📦 Autre")
+        type_icon = activite_full.split(" ")[0] if activite_full else "📦"
+
+        with st.container(border=True):
+            col_icon, col_details, col_del = st.columns([1, 8, 1])
+            with col_icon:
+                st.markdown(f"<h2 style='text-align:center;'>{type_icon}</h2>", unsafe_allow_html=True)
+            with col_details:
+                st.markdown(f"**{activite_full}**")
+                st.caption(f"⏱️ {corvee.get('duree_min', 30)} min | 📅 Moment idéal : {corvee.get('creneau_pref', 'Peu importe')}")
+            with col_del:
+                if st.button("❌", key=f"del_int_{saisie.id}_{idx}", help="Supprimer la corvée"):
+                    corvees_actuelles.pop(idx)
+                    st.rerun()
+
+    # Formulaire d'ajout
+    with st.expander("➕ **Ajouter une corvée**", expanded=len(corvees_actuelles) == 0):
+        with st.form(f"form_add_int_{saisie.id}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                new_activite = st.selectbox("Type de tâche", options=TYPES_INTENDANCE, index=0)
+            with c2:
+                new_duree = st.number_input("Durée (min)", min_value=15, step=15, value=30)
+                new_creneau = st.selectbox("Moment", options=["Peu importe", "Matin", "Midi", "Après-midi", "Soir", "Week-end"], index=0)
+                
+            if st.form_submit_button("✓ Ajouter", type="primary", use_container_width=True):
+                corvees_actuelles.append({
+                    "activite": new_activite,
+                    "duree_min": int(new_duree),
+                    "creneau_pref": new_creneau,
+                })
+                st.rerun()
 
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
         if st.button("💾 Enregistrer corvées", type="primary", width='stretch'):
-            int_propre = []
-            for _, row in edited_int.iterrows():
-                if pd.notna(row.get("activite")):
-                    int_propre.append({
-                        "activite": str(row["activite"]),
-                        "duree_min": int(row.get("duree_min", 30)),
-                        "creneau_pref": str(row.get("creneau_pref", "Peu importe")),
-                    })
+            int_propre = corvees_actuelles
             try:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.intendance_config = int_propre
-                st.success("✅ Intendance enregistrée !")
                 st.toast("Intendance sauvegardée", icon="✅")
-                st.rerun()
             except Exception as e:
                 st.error(f"Erreur : {e}")
     with col_info:
