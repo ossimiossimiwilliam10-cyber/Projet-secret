@@ -98,7 +98,11 @@ def appliquer_resultat_quiz(
         raise ValueError(f"Chapitre #{chapitre_id} introuvable.")
 
     niveau_avant = int(chap.niveau_actuel or 0)
-    score_num = max(0.0, min(1.0, float(score_num)))
+    score_num = float(score_num)
+    # Auto-normalisation : si > 1.0, on suppose un pourcentage 0-100
+    if score_num > 1.0:
+        score_num = score_num / 100.0
+    score_num = max(0.0, min(1.0, score_num))
     today = date.today()
 
     # --- FSRS-lite : Calcul du retard réel ---
