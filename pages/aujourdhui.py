@@ -345,11 +345,9 @@ def render() -> None:
                 "qualite_sommeil": int(checkin_row.qualite_sommeil or 0),
             }
 
-        from modules._widgets_checkin import render_checkin_quotidien_widget
-        render_checkin_quotidien_widget(
-            session, key_prefix="aujourdhui_checkin",
-            titre="📊 Check-in du jour (impacte les suggestions ci-dessous)",
-        )
+        # Note: Le widget de check-in a été retiré à la demande de l'utilisateur.
+        # Les données de checkin sont toujours requêtées ci-dessus si elles existent 
+        # (ex: saisies depuis l'onglet Suivi) pour alimenter _proposer_action.
 
         st.divider()
 
