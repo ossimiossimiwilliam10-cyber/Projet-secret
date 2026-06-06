@@ -99,8 +99,7 @@ def render() -> None:
         # NEW F3a — Barre XP / niveau / streak
         _render_xp_bar(session)
 
-        # Chantier 4 — Check-in biomécanique du jour
-        _render_checkin_quotidien(session)
+
 
         # Auto-Healing : Pousser le retard à aujourd'hui
         _render_auto_healing(session)
@@ -153,13 +152,6 @@ def render() -> None:
         _render_rapport_semaine(session)
 
 
-# ===========================================================================
-# Chantier 4 — Check-in biomécanique quotidien
-# ===========================================================================
-def _render_checkin_quotidien(session: Session) -> None:
-    """Affiche le check-in du jour — délégué au widget partagé."""
-    from modules._widgets_checkin import render_checkin_quotidien_widget
-    render_checkin_quotidien_widget(session, key_prefix="dashboard_checkin")
 
 
 # ===========================================================================
