@@ -504,7 +504,6 @@ def render() -> None:
 
         # Trier les travaux par deadline
         def _parse_deadline(t_dict):
-            import datetime as _dt
             try:
                 return _dt.datetime.strptime(t_dict["deadline"], "%Y-%m-%d %H:%M")
             except Exception:
@@ -548,7 +547,6 @@ def render() -> None:
                     new_duree = st.number_input("Durée estimée (min)", min_value=15, step=15, value=60)
                 with c2:
                     new_date = st.date_input("Date de rendu")
-                    import datetime as _dt
                     new_time = st.time_input("Heure de rendu", value=_dt.time(23, 59))
                     new_prio = st.selectbox("Priorité", options=PRIORITES, index=1) # 1 = Normale
                 
@@ -588,7 +586,6 @@ def render() -> None:
 def _render_alertes_deadlines_list(travaux: list[dict[str, Any]]) -> None:
     if not travaux:
         return
-    import datetime as _dt
     now = _dt.datetime.now()
     seuil = now + _dt.timedelta(days=3)
     alertes: list[str] = []
