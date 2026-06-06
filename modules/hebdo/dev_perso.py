@@ -60,52 +60,75 @@ def render() -> None:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.dev_perso_config = prev
+                st.session_state.pop(f"dev_perso_config_{saisie.id}", None)
                 st.toast("Habitudes reprises !", icon="📋")
                 st.rerun()
             else:
                 st.toast("Aucune habitude la semaine dernière.", icon="ℹ️")
 
     st.subheader("Tes habitudes de croissance")
-    # KPI rapide — la fréquence étant un champ texte libre (ex: \"3x/semaine\"),
-    # on ne peut pas calculer un volume total exact. On affiche le nombre
-    # d'habitudes plutôt qu'un total trompeur.
-    if config_db:
+    state_key = f"dev_perso_config_{saisie.id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = [dict(d) for d in config_db]
+
+    habitudes_actuelles = st.session_state[state_key]
+
+    if habitudes_actuelles:
         st.caption(
-            f"⏱️ **{len(config_db)} habitude(s) planifiée(s)** — "
+            f"⏱️ **{len(habitudes_actuelles)} habitude(s) planifiée(s)** — "
             f"l'IA intégrera ces sessions de croissance à ton planning. 👏"
         )
+    else:
+        st.info("Aucune habitude de développement personnel prévue pour le moment.")
 
-    edited_dev = st.data_editor(
-        df_dev, num_rows="dynamic", width='stretch',
-        column_config={
-            "activite": st.column_config.SelectboxColumn("Activité", options=CATEGORIES, required=True),
-            "frequence": st.column_config.TextColumn("Objectif (ex: Tous les jours, 2x...)"),
-            "duree_min": st.column_config.NumberColumn("Durée / session (min)", min_value=5, step=5, default=20),
-            "creneau_pref": st.column_config.SelectboxColumn("Moment idéal", options=CRENEAUX, default="Matin"),
-        },
-        key="dev_perso_editor_v3",
-    )
+    # Affichage en cartes
+    for idx, habitude in enumerate(habitudes_actuelles):
+        # Extraction de l'icône de l'activité
+        activite_full = habitude.get("activite", "🌱 Autre")
+        type_icon = activite_full.split(" ")[0] if activite_full else "🌱"
+
+        with st.container(border=True):
+            col_icon, col_details, col_del = st.columns([1, 8, 1])
+            with col_icon:
+                st.markdown(f"<h2 style='text-align:center;'>{type_icon}</h2>", unsafe_allow_html=True)
+            with col_details:
+                st.markdown(f"**{activite_full}**")
+                st.caption(f"⏱️ {habitude.get('duree_min', 20)} min | 🔁 {habitude.get('frequence', '1x')} | 📅 Créneau : {habitude.get('creneau_pref', 'Peu importe')}")
+            with col_del:
+                if st.button("❌", key=f"del_dv_{saisie.id}_{idx}", help="Supprimer cette habitude"):
+                    habitudes_actuelles.pop(idx)
+                    st.rerun()
+
+    # Formulaire d'ajout
+    with st.expander("➕ **Ajouter une habitude**", expanded=len(habitudes_actuelles) == 0):
+        with st.form(f"form_add_dv_{saisie.id}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                new_activite = st.selectbox("Activité", options=CATEGORIES, index=0)
+                new_frequence = st.text_input("Objectif (ex: Tous les jours, 2x...)", value="3x par semaine")
+            with c2:
+                new_duree = st.number_input("Durée / session (min)", min_value=5, step=5, value=20)
+                new_creneau = st.selectbox("Moment idéal", options=CRENEAUX, index=0)
+                
+            if st.form_submit_button("✓ Ajouter", type="primary", use_container_width=True):
+                habitudes_actuelles.append({
+                    "activite": new_activite,
+                    "frequence": new_frequence.strip() if new_frequence.strip() else "1x",
+                    "duree_min": int(new_duree),
+                    "creneau_pref": new_creneau,
+                })
+                st.rerun()
 
     st.divider()
     col_save, col_info = st.columns([1, 2])
     with col_save:
         if st.button("💾 Enregistrer mes habitudes", type="primary", width='stretch'):
-            dev_propre = []
-            for _, row in edited_dev.iterrows():
-                if pd.notna(row.get("activite")):
-                    dev_propre.append({
-                        "activite": str(row["activite"]),
-                        "frequence": str(row.get("frequence", "Toutes les fois")).strip(),
-                        "duree_min": int(row.get("duree_min", 20)),
-                        "creneau_pref": str(row.get("creneau_pref", "Peu importe")),
-                    })
+            dev_propre = habitudes_actuelles
             try:
                 with session_scope() as ws:
                     s = ws.get(SaisieHebdo, saisie.id)
                     s.dev_perso_config = dev_propre
-                st.success("✅ Habitudes enregistrées !")
                 st.toast("Dev perso sauvegardé", icon="✅")
-                st.rerun()
             except Exception as e:
                 st.error(f"Erreur : {e}")
     with col_info:
