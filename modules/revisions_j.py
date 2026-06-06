@@ -588,6 +588,21 @@ def _render_liste_detaillee(session, matiere_ids: list[int] | None) -> None:
                     st.switch_page("pages/centre_etude.py")
                 except Exception:  # noqa: BLE001
                     st.session_state.navigate_to_session = True
+            with st.popover("⚙️ Modifier", use_container_width=True):
+                st.caption("Ajuster le niveau actuel.")
+                niv_choisi = st.selectbox(
+                    "Forcer au niveau :",
+                    options=range(len(INTERVALLES_J)),
+                    format_func=lambda x: f"Niv. {x} (J{INTERVALLES_J[x]})",
+                    index=niveau,
+                    key=f"sel_niv_rev_{chap.id}"
+                )
+                if st.button("Valider", key=f"btn_force_rev_{chap.id}", type="primary"):
+                    chap.niveau_actuel = niv_choisi
+                    chap.date_prochaine = date.today() + timedelta(days=INTERVALLES_J[niv_choisi])
+                    session.commit()
+                    st.toast(f"Niveau ajusté à J{INTERVALLES_J[niv_choisi]}.", icon="✅")
+                    st.rerun()
 
 
 def _render_jamais_commences(session, matiere_ids: list[int] | None) -> None:
@@ -620,6 +635,20 @@ def _render_jamais_commences(session, matiere_ids: list[int] | None) -> None:
                         st.switch_page("pages/centre_etude.py")
                     except Exception:  # noqa: BLE001
                         st.session_state.navigate_to_session = True
+                with st.popover("⚙️ Forcer date", use_container_width=True):
+                    st.caption("Définir manuellement le niveau Leitner actuel.")
+                    niv_choisi = st.selectbox(
+                        "Je suis déjà au niveau :",
+                        options=range(len(INTERVALLES_J)),
+                        format_func=lambda x: f"Niv. {x} (J{INTERVALLES_J[x]})",
+                        key=f"sel_niv_{chap.id}"
+                    )
+                    if st.button("Valider", key=f"btn_force_{chap.id}", type="primary"):
+                        chap.niveau_actuel = niv_choisi
+                        chap.date_prochaine = date.today() + timedelta(days=INTERVALLES_J[niv_choisi])
+                        session.commit()
+                        st.toast(f"Niveau forcé à J{INTERVALLES_J[niv_choisi]}.", icon="✅")
+                        st.rerun()
 
 
 # ---------------------------------------------------------------------------
