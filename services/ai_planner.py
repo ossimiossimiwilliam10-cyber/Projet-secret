@@ -46,6 +46,29 @@ def _format_time(t) -> str:
     return t.strftime("%H:%M")
 
 
+def _str_to_time_local(s: str):
+    """Convertit une heure HH:MM en objet time."""
+    import datetime as _dt
+    h, m = map(int, s.split(":"))
+    return _dt.time(h, m)
+
+
+def _tache_to_dict(t, with_status: bool = False) -> dict[str, Any]:
+    """Sérialise une Tache en dict pour le prompt IA."""
+    d = {
+        "titre": t.titre,
+        "type": t.type,
+        "duree_min": int(t.duree_min or 0),
+        "jour_initial": t.jour,
+        "heure_debut": t.heure_debut.strftime("%H:%M"),
+        "heure_fin": t.heure_fin.strftime("%H:%M"),
+        "chapitre_ids": t.chapitre_ids or [],
+    }
+    if with_status:
+        d["statut"] = t.statut
+    return d
+
+
 def _safe_json_str(data: Any) -> str:
     """Convertit un objet en chaîne JSON formatée proprement pour le prompt."""
     if not data:
@@ -54,6 +77,17 @@ def _safe_json_str(data: Any) -> str:
         return json.dumps(data, indent=2, ensure_ascii=False, default=str)
     except Exception:  # noqa: BLE001
         return str(data)
+
+
+def _elaguer_taches(session: Session, taches: list) -> None:
+    """Supprime les tâches d'une liste en base (helper DRY)."""
+    if not taches:
+        return
+    from database.models import Tache as TacheModel
+    session.query(TacheModel).filter(TacheModel.id.in_([t.id for t in taches])).delete(
+        synchronize_session=False,
+    )
+    session.flush()
 
 
 def _get_chapitres_dus_pour_semaine(session: Session, semaine: Semaine) -> list[dict[str, Any]]:
@@ -661,18 +695,10 @@ def integrer_nouveautes_a_semaine(session: Session, semaine_id: int) -> dict[str
         if t.jour in jours_restants and not t.obligatoire and t.statut == "a_faire"
     ]
 
-    def _t_to_dict(t: Tache, with_status: bool = False) -> dict[str, Any]:
-        d = {
-            "titre": t.titre,
-            "type": t.type,
-            "duree_min": int(t.duree_min or 0),
-            "jour_initial": t.jour,
-            "heure_debut": t.heure_debut.strftime("%H:%M"),
-            "heure_fin": t.heure_fin.strftime("%H:%M"),
-            "chapitre_ids": t.chapitre_ids or [],
-        }
-        if with_status:
-            d["statut"] = t.statut
+    def _t_to_dict(t, with_status: bool = False) -> dict[str, Any]:
+        d = _tache_to_dict(t, with_status=with_status)
+        if with_status and t.commentaire_etudiant:
+            d["ce_qui_reste"] = t.commentaire_etudiant
         return d
 
     # 4. Prompt Gemini — ciblé sur l'intégration
@@ -759,16 +785,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     result["chapitre_ids_manquants_detectes"] = chapitre_ids_manquants
 
     # 6. Application en base : suppression des tâches réorganisables + insertion
-    ids_a_supprimer = [t.id for t in taches_a_reorganiser]
-    if ids_a_supprimer:
-        session.query(Tache).filter(Tache.id.in_(ids_a_supprimer)).delete(
-            synchronize_session=False,
-        )
-        session.flush()
-
-    def _str_to_time_local(s: str) -> datetime.time:
-        h, m = map(int, s.split(":"))
-        return datetime.time(h, m)
+    _elaguer_taches(session, taches_a_reorganiser)
 
     planning = result.get("planning_jours_restants", {}) or {}
     nb_ajoutees = 0
@@ -860,20 +877,10 @@ def replan_remaining_week(session: Session, semaine_id: int) -> dict[str, Any]:
         )
     ]
 
-    def _t_to_dict(t: Tache, with_status: bool = False) -> dict[str, Any]:
-        d = {
-            "titre": t.titre,
-            "type": t.type,
-            "duree_min": int(t.duree_min or 0),
-            "jour_initial": t.jour,
-            "heure_debut": t.heure_debut.strftime("%H:%M"),
-            "heure_fin": t.heure_fin.strftime("%H:%M"),
-            "chapitre_ids": t.chapitre_ids or [],
-        }
-        if with_status:
-            d["statut"] = t.statut
-            if t.commentaire_etudiant:
-                d["ce_qui_reste"] = t.commentaire_etudiant
+    def _t_to_dict(t, with_status: bool = False) -> dict[str, Any]:
+        d = _tache_to_dict(t, with_status=with_status)
+        if with_status and t.commentaire_etudiant:
+            d["ce_qui_reste"] = t.commentaire_etudiant
         return d
 
     # Phase D : on inclut aussi les chapitres dus pour révision dans le replan
@@ -951,14 +958,7 @@ Chaque entrée d'un jour : {{"heure_debut": "HH:MM", "heure_fin": "HH:MM", "titr
     )
 
     # Application en base : supprime les tâches à redistribuer, puis re-crée
-    ids_a_supprimer = [t.id for t in taches_a_redistribuer]
-    if ids_a_supprimer:
-        session.query(Tache).filter(Tache.id.in_(ids_a_supprimer)).delete(synchronize_session=False)
-        session.flush()
-
-    def _str_to_time_local(s: str) -> datetime.time:
-        h, m = map(int, s.split(":"))
-        return datetime.time(h, m)
+    _elaguer_taches(session, taches_a_redistribuer)
 
     planning = result.get("planning_jours_restants", {}) or {}
     for jour, taches in planning.items():
