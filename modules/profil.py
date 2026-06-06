@@ -366,8 +366,11 @@ def render() -> None:
             else:
                 st.info(text)
 
-    # === Section 1 - Identite & rythme =====================================
-    with st.expander("🌅 Identite & rythme", expanded=is_new):
+    tab_profil, tab_donnees = st.tabs(["⚙️ Mon Profil", "💾 Données & Sauvegarde"])
+
+    with tab_profil:
+        # === Section 1 - Identite & rythme =====================================
+        with st.expander("🌅 Identite & rythme", expanded=is_new):
         col1, col2 = st.columns(2)
         with col1:
             nom = st.text_input(
@@ -827,8 +830,8 @@ def render() -> None:
         )
 
     # === Sauvegarde & Restauration =========================================
-    st.divider()
-    with st.expander("💾 Sauvegarde & Restauration", expanded=False):
+    with tab_donnees:
+        st.markdown("### 💾 Sauvegarde & Restauration")
         st.caption(
             "Streamlit Cloud peut perdre les fichiers locaux en cas de "
             "redeploiement d'instance. **Telecharge ta sauvegarde regulierement** "
@@ -899,8 +902,8 @@ def render() -> None:
                         st.rerun()
 
     # === Zone de danger (Phase de test) ===================================
-    st.divider()
-    with st.expander("🧨 Zone de danger (Reinitialisation)"):
+        st.divider()
+        st.markdown("### 🧨 Zone de danger (Reinitialisation)")
         st.warning(
             "Tu es en phase de test ? Ce bouton effacera absolument TOUT : "
             "ton profil, tes cours, tes PDFs importes et tous les plannings generes. "
