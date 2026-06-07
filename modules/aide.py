@@ -90,13 +90,11 @@ def _render_navigation() -> None:
         st.markdown(
             """
 **👤 Utilisateur** — Ton chronotype, plafond d'étude, objectif hebdo,
-trajets, clé API. À remplir une fois. La section 🤖 supporte
-**DeepSeek** (modèle deepseek-v4-pro pour l'analyse de PDF et la
-génération de planning). Pense à télécharger un backup (section
+trajets. À remplir une fois. Pense à télécharger un backup (section
 💾 Sauvegarde & Restauration en bas de la page).
 
 **📚 Bibliothèque** — Hiérarchie **📅 Semestre ▸ 🎓 UE ▸ 📘 Matière ▸ 📑 Chapitre**.
-Importe un ou plusieurs PDFs → DeepSeek détecte les chapitres.
+Importe un ou plusieurs PDFs et ajoute tes chapitres.
 Dans l'onglet ⚙️ Gérer, crée tes Semestres, UE et Matières.
 """
         )
@@ -113,9 +111,6 @@ lundi. Bandeau live : ta charge vs objectif hebdo.
 
 **💼 Jobs & Travail** — Horaires fixes (alternance, job). L'algorithme bloque
 ces créneaux.
-
-**📸 Import Photo (IA)** — Photo de ton emploi du temps papier →
-l'algorithme extrait les créneaux.
 """
         )
 
@@ -130,13 +125,12 @@ génération.
 **📊 Suivi quotidien** — Valide tes tâches (✅ / ⚠️ / ❌). Bilan
 auto du jour + semaine, comparaison à ton objectif.
 
-**🧠 Salle d'étude** — Fiche IA, QCM auto, quiz corrigé, **Feynman
-audio** (tu expliques à voix haute, l'algorithme évalue).
+**🧠 Salle d'étude** — Évalue manuellement ta révision (À retravailler, Correct, Excellent)
+pour faire avancer ton niveau Leitner.
 
 **🏆 Achievements** — Badges débloqués et à venir.
 
-**🎯 Objectifs** — Objectifs long terme (« 15 au partiel d'algèbre »).
-DeepSeek propose une stratégie qui booste les bons chapitres.
+**🎯 Objectifs** — Suivi de tes objectifs long terme (« 15 au partiel d'algèbre »).
 """
         )
 
@@ -224,9 +218,6 @@ le même jour (import en lot) ?
             """
 1. **Action → 🎯 Objectifs → ➕ Nouvel objectif**.
 2. Renseigne : titre, matière, note cible, date.
-3. Clique **🧠 Demander une stratégie à l'algorithme**.
-4. L'algorithme analyse ton état et propose des pondérations par chapitre.
-   **Adopte** la stratégie → appliquée dans tous tes futurs plannings.
 """
         )
 
@@ -267,10 +258,8 @@ def _render_faq() -> None:
     with st.expander("Pourquoi le planning ne change pas quand je clique « Régénérer » ?", expanded=expanded):
         st.markdown(
             """
-Il change ! Mais comme tes contraintes sont identiques, DeepSeek
-sort un planning souvent proche. Vérifie le **bandeau vert** (« 🔄 Planning
-régénéré à HH:MM ») et la **stratégie** — elle est régénérée à
-chaque fois.
+Il change ! Mais comme tes contraintes sont identiques, l'algorithme déterministe
+sortira le même planning ou un planning très proche.
 """
         )
 
@@ -302,22 +291,7 @@ Révisions, ou laisse l'algorithme répartir à la prochaine génération.
 """
         )
 
-    with st.expander("Quel modèle d'IA est utilisé ?", expanded=expanded):
-        st.markdown(
-            """
-L'app utilise **DeepSeek-V4-Pro**, un modèle de raisonnement très
-profond, sélectionné pour sa qualité d'analyse et la précision de ses
-plannings. Il excelle pour :
 
-- L'**analyse de PDF** (détection des chapitres dans tes cours).
-- La **génération de planning** (répartition intelligente de ta charge).
-- Les **stratégies d'objectifs** (plan d'action pour tes partiels).
-- Les **corrections détaillées** (QCM, fiches, méthode Feynman audio).
-
-Tu configures ta clé API une seule fois dans **👤 Utilisateur → 🤖 Paramètres IA**.
-Elle reste chiffrée (Fernet AES-128) dans la base de données.
-"""
-        )
 
     with st.expander("C'est quoi la différence entre UE et Matière ?", expanded=expanded):
         st.markdown(
@@ -349,9 +323,7 @@ def _render_tips() -> None:
         ("💾", "Backup = tranquillité", "Télécharge un backup chaque dimanche. 30 secondes qui "
          "peuvent sauver des semaines de progression Leitner et d'XP."),
         ("🧠", "Salle d'étude", "Accessible depuis la Bibliothèque (bouton 🧠 sur chaque chapitre) "
-         "OU depuis la sidebar. Idéal pour réviser activement un chapitre."),
-        ("📸", "Import photo", "Si ton prof donne un EDT papier, prends-le en photo → "
-         "l'algorithme extrait les créneaux automatiquement."),
+         "OU depuis la sidebar. Idéal pour valider activement un chapitre."),
         ("📊", "Check-in quotidien", "Plus tu es honnête sur ta fatigue/charge mentale, "
          "plus l'algorithme ajuste intelligemment ton planning. 10 secondes par jour."),
     ]
