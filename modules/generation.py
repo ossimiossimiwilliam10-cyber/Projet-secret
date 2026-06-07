@@ -14,11 +14,7 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database import CheckInQuotidien, Utilisateur, Semaine, Tache, get_session, session_scope
-from services.ai_planner import (
-    detecter_chapitres_manquants,
-    generate_schedule_from_ai,
-    integrer_nouveautes_a_semaine,
-)
+from services.deterministic_planner import generate_deterministic_schedule
 from services.scheduler_engine import (
     calculer_cible_hebdo_minutes,
     calculer_quota_etude_minutes,
@@ -493,122 +489,27 @@ def render() -> None:
                 "s'est mise à jour dans la section 2."
             )
 
-        consignes_manuelles = st.text_area(
-            "💬 Consignes exceptionnelles pour cette semaine (optionnel)",
-            value="",
-            placeholder="Ex : Jeudi je dois finir avant 18h. Pas de sport mardi car genou. "
-                        "Priorise les maths cette semaine.",
-            help="L'IA appliquera ces consignes en plus des règles habituelles.",
-            max_chars=2000,
-        )
-
-        # 🎛️ Curseur d'équilibre de vie
-        st.caption("**🎛️ Équilibre de vie** — ajuste la priorité donnée aux études vs vie perso :")
-        balance = st.select_slider(
-            "Priorité",
-            options=["📚 Max études", "⚖️ Équilibré", "🌴 Semaine light"],
-            value="⚖️ Équilibré",
-            key="gen_balance",
-            help="L'IA adaptera la densité du planning selon ton choix.",
-        )
-
-        # 🔮 Simulation "Et si..."
-        with st.expander("🔮 Simulation : impact de ma fatigue sur le planning", expanded=False):
-            sim_fatigue = st.slider("Si ma fatigue est de...", 1, 10, 5, key="sim_fatigue")
-            reduc = 30 if sim_fatigue > 7 else 0
-            sim_plafond = quota_etude_jour_min
-            if reduc:
-                sim_plafond = int(sim_plafond * 0.7)
-            st.caption(
-                f"Plafond estimé : **{sim_plafond / 60:.1f}h/jour** "
-                f"{'(−30% fatigue)' if reduc else '(inchangé)'} "
-                f"→ ~{sim_plafond * 7 / 60:.0f}h max cette semaine"
-            )
-
-        label_btn = "🔄 Régénérer le planning" if is_generee else "🚀 Générer le planning avec DeepSeek"
+        label_btn = "🔄 Régénérer le planning" if is_generee else "🚀 Générer le planning automatique"
         if st.button(label_btn, type="primary", width="stretch"):
-            with st.spinner("🧠 DeepSeek construit ton planning… (15-30 secondes)"):
+            with st.spinner("⚙️ Construction du planning déterministe…"):
                 try:
-                    resultat_json = generate_schedule_from_ai(
-                        semaine.id,
-                        consignes_manuelles=consignes_manuelles,
+                    resultat_json = generate_deterministic_schedule(
+                        semaine.id, session
                     )
                     nb_taches = _save_planning_to_db(semaine.id, resultat_json)
-                    # Feedback persistant via session_state — survit au rerun.
                     st.session_state["dernier_resultat_ia"] = resultat_json
                     st.session_state["generation_flash"] = {
                         "nb_taches": nb_taches,
-                        "score": int(resultat_json.get("score_realisme", 0) or 0),
+                        "score": 100,
                         "kind": "regen" if is_generee else "first",
                         "ts": datetime.datetime.now().strftime("%H:%M:%S"),
                     }
                     st.toast("Planning prêt !", icon="🎉")
                     st.rerun()
-                except (ValueError, RuntimeError) as exc:
-                    # Erreurs métier connues : clé manquante, Gemini KO,
-                    # JSON cabossé, schéma invalide. Message clair à l'utilisateur.
-                    st.error(f"❌ Erreur lors de la génération : {exc}")
                 except Exception as exc:  # noqa: BLE001
-                    # Filet de sécurité : on log pour debug mais on ne crash pas l'UI.
-                    import logging
-                    logging.getLogger("llm").exception("planner_generate failed")
-                    st.error(
-                        f"❌ Erreur inattendue lors de la génération : {exc}. "
-                        "Consulte les logs pour le détail."
-                    )
+                    st.error(f"❌ Erreur inattendue lors de la génération : {exc}")
 
-        # === Bouton incrémental : intégrer les nouveautés sans tout casser ===
-        # Visible uniquement si un planning existe ET qu'on détecte au moins un
-        # chapitre manquant (ajouté en biblio après génération OU révision
-        # Leitner dont la date est tombée dans la semaine après coup).
-        if is_generee:
-            try:
-                ids_manquants = detecter_chapitres_manquants(session, semaine)
-            except Exception:  # noqa: BLE001
-                ids_manquants = []
 
-            if ids_manquants:
-                st.info(
-                    f"➕ **{len(ids_manquants)} nouveauté(s) détectée(s)** : "
-                    "chapitres ajoutés ou révisions Leitner nouvellement dues, "
-                    "qui ne sont pas encore dans ton planning."
-                )
-                if st.button(
-                    "🔁 Intégrer mes nouveautés (sans perdre ma progression)",
-                    type="secondary",
-                    width="stretch",
-                    help="Préserve toutes tes tâches validées (fait/partiel/non fait) "
-                         "et tes tâches obligatoires. Ajoute juste les nouveaux "
-                         "chapitres dans les créneaux libres restants.",
-                ):
-                    with st.spinner("🧠 DeepSeek intègre tes nouveautés…"):
-                        try:
-                            resultat_inc = integrer_nouveautes_a_semaine(
-                                session, semaine.id,
-                            )
-                            nb_int = resultat_inc.get("nb_taches_ajoutees", 0)
-                            st.session_state["dernier_resultat_ia"] = resultat_inc
-                            st.session_state["generation_flash"] = {
-                                "nb_taches": nb_int,
-                                "score": int(resultat_inc.get("score_realisme", 0) or 0),
-                                "kind": "integration",
-                                "ts": datetime.datetime.now().strftime("%H:%M:%S"),
-                            }
-                            st.toast("Nouveautés intégrées !", icon="🔁")
-                            st.rerun()
-                        except ValueError as exc:
-                            st.warning(f"ℹ️ {exc}")
-                        except RuntimeError as exc:
-                            st.error(f"❌ Configuration ou SDK manquant : {exc}")
-                        except Exception as exc:  # noqa: BLE001
-                            import logging
-                            logging.getLogger("llm").exception(
-                                "planner_integrer_nouveautes failed"
-                            )
-                            st.error(
-                                f"❌ Erreur inattendue lors de l'intégration : {exc}. "
-                                "Consulte les logs pour le détail."
-                            )
 
         # Insights de la dernière génération (consignes / alertes / suggestions /
         # tâches écartées). On les garde en session_state pour qu'ils survivent
@@ -629,15 +530,10 @@ def render() -> None:
 
         st.subheader(f"2. Planning de la Semaine {semaine.numero_semaine}")
 
-        # Score + stratégie
+        # Titre (sans score, le score n'a plus de sens en déterministe, c'est toujours 100%)
         col_strat, col_score = st.columns([3, 1])
         with col_strat:
-            if semaine.bilan_ia:
-                st.markdown(f"**🧠 Stratégie de l'IA**\n\n_{semaine.bilan_ia}_")
-            else:
-                st.caption("L'IA n'a pas fourni de stratégie pour cette semaine.")
-        with col_score:
-            _render_score_card(int(semaine.score_realisme or 0))
+            st.caption("Le planning est optimisé selon tes objectifs et ton rythme circadien.")
 
         # === Export iCal (pour Google Calendar / Apple Calendar / etc.) ===
         try:

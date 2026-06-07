@@ -21,7 +21,7 @@ import streamlit as st
 from sqlalchemy.orm import Session
 
 from database import Chapitre, Utilisateur, Semaine, Tache, get_session, session_scope
-from services.ai_planner import replan_remaining_week
+from services.deterministic_planner import replan_remaining_week_deterministic
 from services.scheduler_engine import calculer_cible_hebdo_minutes
 from services import gamification_service
 
@@ -409,12 +409,12 @@ def _render_replan_section(session: Session, semaine: Semaine) -> None:
 
     st.warning(
         f"⚠️ Tu as **{retard} tâches en retard** sur les jours passés. "
-        "Souhaites-tu que Gemini redistribue le reste de la semaine ?"
+        "Souhaites-tu reporter ces tâches ou les réorganiser ?"
     )
     col1, _ = st.columns([1, 2])
     with col1:
         clicked = st.button(
-            "🔄 Recalculer avec Gemini", type="primary", width="stretch",
+            "🔄 Reporter automatiquement", type="primary", width="stretch",
         )
 
     if not clicked:
@@ -424,35 +424,16 @@ def _render_replan_section(session: Session, semaine: Semaine) -> None:
         try:
             st.write("📊 Analyse de l'état actuel de la semaine…")
             with session_scope() as write_session:
-                result = replan_remaining_week(write_session, semaine.id)
+                messages = replan_remaining_week_deterministic(write_session, profil, semaine)
 
-            st.write(f"✓ Score de réalisme : **{result.get('score_realisme', '?')}/100**")
-            if result.get("justification_globale"):
-                st.write(f"💭 _{result['justification_globale']}_")
-            if result.get("taches_ecartees"):
-                st.write(f"📤 **{len(result['taches_ecartees'])} tâches écartées** par manque de temps :")
-                for t in result["taches_ecartees"][:5]:
-                    if isinstance(t, dict):
-                        st.write(f"  • {t.get('titre', '?')} — _{t.get('raison', '')}_")
-                    else:
-                        st.write(f"  • {t}")
-            if result.get("alertes"):
-                for a in result["alertes"]:
-                    st.warning(f"⚠️ {a}")
+            for m in messages:
+                st.info(m)
 
             status.update(label="✅ Planning mis à jour", state="complete")
             st.toast("Recalcul réussi", icon="🎉")
-        except (ValueError, RuntimeError) as exc:
-            status.update(label=f"❌ Erreur : {exc}", state="error")
-            st.error(str(exc))
         except Exception as exc:  # noqa: BLE001
-            import logging
-            logging.getLogger("llm").exception("replan_remaining_week failed")
             status.update(label="❌ Erreur inattendue", state="error")
-            st.error(
-                f"Erreur inattendue lors du recalcul : {exc}. "
-                "Consulte les logs pour le détail."
-            )
+            st.error(f"Erreur inattendue lors du recalcul : {exc}")
 
 
 # ---------------------------------------------------------------------------

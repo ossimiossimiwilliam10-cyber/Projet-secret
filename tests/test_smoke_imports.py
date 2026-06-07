@@ -17,31 +17,23 @@ import pytest
 
 
 # Liste explicite — plus prédictible qu'une découverte dynamique, et
-# documente les modules attendus.
 _MODULES = [
     # Couche database
     "database.db",
     "database.models",
     # Couche services
-    "services.ai_exam_service",
-    "services.ai_flashcards_service",
-    "services.ai_planner",
+    "services.deterministic_planner",
     "services.backup_service",
-    "services.cache_versioning",
     "services.crypto",
     "services.data_integrity",
     "services.gamification_service",
-    "services.llm_utils",
     "services.ical_exporter",
     "services.matiere_stats",
     "services.objectif_service",
     "services.optimistic_lock",
-    "services.pdf_analyzer",
-    "services.pdf_storage",
     "services.planner_validator",
     "services.profil_service",
     "services.profil_validator",
-    "services.qcm_validator",
     "services.report_service",
     "services.revision_service",
     "services.scheduler_engine",
@@ -52,7 +44,6 @@ _MODULES = [
     "modules.dashboard",
     "modules.generation",
     "modules.historique",
-    "modules.import_externe",
     "modules.objectifs",
     "modules.preparer_semaine",
     "modules.profil",

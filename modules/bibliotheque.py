@@ -18,17 +18,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.orm import Session, selectinload
 
-from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, session_scope, PDF_DIR
-from services.pdf_analyzer import analyze_pdf, apply_analysis_to_matiere
-from services.pdf_storage import (
-    PdfValidationError,
-    cleanup_orphan_pdfs,
-    compute_sha256,
-    find_existing_upload,
-    record_upload,
-    safe_pdf_filename,
-    validate_pdf_upload,
-)
+from database import Chapitre, Matiere, Semestre, UE, Utilisateur, get_session, session_scope
 from services.profil_service import get_llm_api_key
 from services.revision_service import (
     INTERVALLES_J,
@@ -714,150 +704,10 @@ def _render_matiere_edit_form(m: dict, ue_items: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Import unifié — 1 ou N PDFs vers une Matière (refonte bibliothèque)
+# Ajout manuel de Chapitres
 # ---------------------------------------------------------------------------
-def _process_import_unifie(
-    uploaded_pdfs: list,
-    matiere_id: int,
-    labels: list[str],
-    api_key: str,
-    model: str,
-    niveau_initial: int = 0,
-) -> tuple[int, int, list[tuple[str, str]]]:
-    """Analyse un ou plusieurs PDFs et crée les chapitres rattachés à la Matière.
-
-    Chaque PDF est analysé indépendamment par Gemini, qui détecte les chapitres
-    présents dans le document. Chaque chapitre détecté devient une ligne en
-    base, avec le PDF source référencé dans le champ ``pdfs``.
-
-    Returns:
-        ``(nb_pdfs_ok, nb_chapitres_total, erreurs)`` où ``erreurs`` est une
-        liste de tuples ``(nom_fichier, message)``.
-    """
-    with session_scope() as session:
-        matiere = session.get(Matiere, matiere_id)
-        matiere_nom = matiere.nom if matiere else "?"
-
-    total = len(uploaded_pdfs)
-    progress = st.progress(0.0, text="Initialisation…")
-    placeholder = st.empty()
-
-    pdfs_ok = 0
-    chapitres_total = 0
-    erreurs: list[tuple[str, str]] = []
-
-    for i, (pdf_file, label) in enumerate(zip(uploaded_pdfs, labels), 1):
-        label_clean = (label or "").strip() or _nom_cours_from_filename(pdf_file.name)
-        progress.progress((i - 1) / total, text=f"PDF {i}/{total} : {label_clean}…")
-        placeholder.info(
-            f"🧠 Analyse DeepSeek en cours pour **{label_clean}** "
-            f"({pdf_file.name}) — PDF {i}/{total}"
-        )
-
-        try:
-            # 1. Validation + empreinte SHA-256.
-            pdf_bytes = pdf_file.getvalue()
-            validate_pdf_upload(pdf_bytes, pdf_file.name)
-            sha = compute_sha256(pdf_bytes)
-
-            # 2. Idempotence : si ce PDF a déjà été ingéré sur cette matière,
-            # on saute l'analyse Gemini (économie d'argent).
-            with session_scope() as session:
-                existing = find_existing_upload(session, sha, matiere_id)
-                already_imported = existing is not None
-                existing_nb_chap = existing.nb_chapitres_crees if existing else 0
-
-            if already_imported:
-                erreurs.append((
-                    pdf_file.name,
-                    f"Déjà importé sur cette matière "
-                    f"({existing_nb_chap} chapitres existants) — ignoré.",
-                ))
-                continue
-
-            # 3. Écriture sur disque (nom déterministe, pas de path traversal).
-            pdf_filename = safe_pdf_filename(matiere_id, int(_time.time()), i)
-            pdf_path = PDF_DIR / pdf_filename
-            pdf_path.write_bytes(pdf_bytes)
-            pdf_rel = str(pdf_path.relative_to(PDF_DIR.parent.parent))
-
-            # Lancement asynchrone / background de l'upload vers Supabase
-            from services.pdf_storage import upload_pdf_to_cloud
-            import threading
-            threading.Thread(target=upload_pdf_to_cloud, args=(pdf_filename, pdf_bytes), daemon=True).start()
-
-            # 4. Analyse Gemini du PDF. Si ça échoue (après retry), on
-            # supprime le PDF qu'on vient d'écrire pour ne pas laisser
-            # d'orphelin sur disque (atomicité).
-            try:
-                analyse = analyze_pdf(
-                    pdf_path=pdf_path,
-                    cours_nom=label_clean,
-                    matiere=matiere_nom,
-                    api_key=api_key,
-                    model=model,
-                )
-            except Exception:
-                pdf_path.unlink(missing_ok=True)
-                raise
-
-            # 5. Création des chapitres + trace de l'upload (atomique côté DB).
-            # Si la transaction échoue, on supprime aussi le PDF.
-            try:
-                with session_scope() as session:
-                    new_ids = apply_analysis_to_matiere(
-                        session=session,
-                        matiere_id=matiere_id,
-                        analysis=analyse,
-                        pdf_path=pdf_rel,
-                        pdf_label=label_clean,
-                    )
-                    for chap_id in new_ids:
-                        initialiser_chapitre_pour_revision(
-                            session, chap_id, niveau_initial=niveau_initial,
-                        )
-                    record_upload(
-                        session,
-                        sha=sha,
-                        matiere_id=matiere_id,
-                        filename_original=pdf_file.name,
-                        filename_stored=pdf_filename,
-                        label=label_clean,
-                        nb_chapitres=len(new_ids),
-                    )
-            except Exception:
-                pdf_path.unlink(missing_ok=True)
-                raise
-
-            pdfs_ok += 1
-            chapitres_total += len(new_ids)
-        except PdfValidationError as exc:
-            erreurs.append((pdf_file.name, f"Validation : {exc}"))
-        except Exception as exc:
-            erreurs.append((pdf_file.name, str(exc)))
-
-    progress.progress(1.0, text=f"Terminé : {pdfs_ok}/{total} PDFs traités.")
-    placeholder.empty()
-    return pdfs_ok, chapitres_total, erreurs
-
-
 def _render_import_unifie() -> None:
-    """Section d'import unifiée — 1 ou plusieurs PDFs rattachés à une Matière.
-
-    Remplace les deux anciens formulaires séparés ("formulaire détaillé" avec
-    coef/ECTS/dates d'examen, et "import batch multi-PDFs"). Tout passe par
-    un seul mécanisme : tu choisis une matière, tu déposes 1 à N PDFs,
-    Gemini détecte les chapitres dans chacun et les crée.
-    """
-    api_key, model = _get_api_config()
-    if not api_key:
-        st.warning(
-            "⚠️ Aucune clé API n'est configurée. "
-            "Rends-toi dans l'onglet **Profil & Réglages** pour ajouter ta clé "
-            "DeepSeek avant d'importer un PDF."
-        )
-        return
-
+    """Remplace l'ancien import PDF par un ajout manuel rapide."""
     with get_session() as session:
         matieres = (
             session.query(Matiere)
@@ -868,119 +718,23 @@ def _render_import_unifie() -> None:
         matiere_options = {m.nom: m.id for m in matieres}
 
     if not matiere_options:
-        st.info(
-            "📘 Crée d'abord une **Matière** dans la section ci-dessus avant "
-            "d'importer des PDFs."
-        )
+        st.info("📘 Crée d'abord une **Matière** dans la section ci-dessus avant d'ajouter des chapitres.")
         return
 
-    with st.expander("📥 Importer des PDFs (1 ou plusieurs)", expanded=False):
-        st.caption(
-            "Sélectionne **la matière** de rattachement, puis dépose **un ou "
-            "plusieurs PDFs**. Pour chacun, l'IA détecte les chapitres et "
-            "les crée. Un même chapitre peut recueillir plusieurs PDFs plus "
-            "tard via sa carte ci-dessous."
-        )
-
-        matiere_label = st.selectbox(
-            "📘 Matière de rattachement*",
-            options=list(matiere_options.keys()),
-            key="import_unifie_matiere",
-        )
+    with st.expander("➕ Ajouter un Chapitre manuellement", expanded=False):
+        matiere_label = st.selectbox("📘 Matière", options=list(matiere_options.keys()), key="add_chap_mat")
         matiere_id = matiere_options[matiere_label]
-
-        uploaded_pdfs = st.file_uploader(
-            "Dépose 1 à N PDFs*",
-            type=["pdf"],
-            accept_multiple_files=True,
-            key="import_unifie_uploader",
-        )
-
-        if not uploaded_pdfs:
-            return
-
-        # Sélecteur de niveau J initial
+        
+        titre = st.text_input("Titre du chapitre*", key="add_chap_titre")
+        numero = st.number_input("Numéro (optionnel)", min_value=1, value=1, key="add_chap_num")
+        
         niveau_options = {
             f"J0 (Nouveau — révision dans {INTERVALLES_J[0]}j)": 0,
         }
         for i in range(1, len(INTERVALLES_J)):
             niveau_options[f"J{INTERVALLES_J[i]} (Déjà vu — prochaine révision dans {INTERVALLES_J[i]}j)"] = i
-        niveau_label = st.selectbox(
-            "🎯 Niveau J initial des chapitres",
-            options=list(niveau_options.keys()),
-            index=0,
-            key="import_unifie_niveau_j",
-            help="Si tu as déjà révisé ces chapitres, choisis un niveau plus avancé "
-                 "pour ne pas repartir de zéro.",
-        )
+        niveau_label = st.selectbox("🎯 Niveau J initial", options=list(niveau_options.keys()), index=0)
         niveau_initial = niveau_options[niveau_label]
-
-        st.caption(
-            f"📄 **{len(uploaded_pdfs)} PDF(s) sélectionné(s)** — "
-            "le libellé sert juste de mémo (modifiable) :"
-        )
-        df_preview = pd.DataFrame([
-            {
-                "Fichier": pdf.name,
-                "Taille": f"{len(pdf.getvalue()) / 1024:.0f} ko",
-                "Libellé": _nom_cours_from_filename(pdf.name),
-            }
-            for pdf in uploaded_pdfs
-        ])
-        edited_df = st.data_editor(
-            df_preview,
-            hide_index=True,
-            width="stretch",
-            disabled=["Fichier", "Taille"],
-            column_config={
-                "Fichier":  st.column_config.TextColumn(width="medium"),
-                "Taille":   st.column_config.TextColumn(width="small"),
-                "Libellé":  st.column_config.TextColumn(
-                    width="medium", required=True,
-                    help="Ex. : « Cours magistral », « Polycopié », « TD série 1 »",
-                ),
-            },
-            key="import_unifie_editor",
-        )
-
-        eta_min = len(uploaded_pdfs) * 45 / 60
-        st.caption(
-            f"⏱️ Temps estimé : ~**{eta_min:.1f} min** "
-            f"({len(uploaded_pdfs)} PDF × ~45 s d'analyse IA)."
-        )
-
-        if st.button(
-            f"🚀 Importer et analyser ({len(uploaded_pdfs)} PDF{'s' if len(uploaded_pdfs) > 1 else ''})",
-            type="primary",
-            width="stretch",
-            key="btn_import_unifie",
-        ):
-            labels = edited_df["Libellé"].fillna("").tolist()
-            pdfs_ok, chapitres_total, erreurs = _process_import_unifie(
-                uploaded_pdfs, matiere_id, labels, api_key, model,
-                niveau_initial=niveau_initial,
-            )
-
-            total = len(uploaded_pdfs)
-            if pdfs_ok == total and not erreurs:
-                st.success(
-                    f"✅ **{pdfs_ok}/{total}** PDF(s) analysé(s), "
-                    f"**{chapitres_total}** chapitre(s) créé(s) dans « {matiere_label} »."
-                )
-                st.balloons()
-                st.rerun()
-            elif pdfs_ok > 0:
-                st.warning(
-                    f"⚠️ **{pdfs_ok}/{total}** PDFs traités "
-                    f"({chapitres_total} chapitres), **{len(erreurs)}** erreur(s) :"
-                )
-                for nom, err in erreurs:
-                    st.error(f"**{nom}** : {err}")
-            else:
-                st.error("❌ Aucun PDF n'a pu être importé.")
-                for nom, err in erreurs:
-                    st.error(f"**{nom}** : {err}")
-
 
 # ---------------------------------------------------------------------------
 # Helpers d'import — utilisés par _render_import_unifie
@@ -1431,12 +1185,7 @@ def render() -> None:
 
     _render_kpis()
 
-    # Nettoyage des PDFs orphelins au démarrage (fichiers sur disque
-    # qui ne sont plus référencés par aucun chapitre).
-    with get_session() as s:
-        orphans = cleanup_orphan_pdfs(s, dry_run=False)
-    if orphans:
-        st.toast(f"🧹 {len(orphans)} PDF(s) orphelin(s) nettoyé(s)", icon="🧹")
+
 
     st.divider()
 

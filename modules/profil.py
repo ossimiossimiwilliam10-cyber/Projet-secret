@@ -135,11 +135,6 @@ def load_profil() -> dict[str, Any]:
             "duree_sieste_min": int(bio.duree_sieste_min if bio and bio.duree_sieste_min else 20),
             "contraintes_fixes": list(logis.contraintes_fixes if logis and logis.contraintes_fixes else []),
             "transport": _load_transport_config(dict(logis.trajets_habituels if logis and logis.trajets_habituels else {})),
-            "deepseek_api_key": key_clear,
-            "deepseek_api_key_encrypted_was_legacy": (
-                bool(key_stored) and not is_encrypted(key_stored)
-            ),
-            "deepseek_model": sys.deepseek_model if sys and sys.deepseek_model else "deepseek-chat",
         }
 
 
@@ -148,7 +143,7 @@ _GAMIFICATION_ATTRS = frozenset([
     "nb_quiz_total", "nb_chapitres_maitrise", "nb_seances_sport_total",
 ])
 _SYSTEME_ATTRS = frozenset([
-    "llm_api_key", "llm_model", "deepseek_api_key", "deepseek_model", "google_maps_api_key", "replanning_auto_actif",
+    "replanning_auto_actif",
 ])
 _BIOMETRIE_ATTRS = frozenset([
     "heure_lever", "heure_coucher", "heures_sommeil_cible", "chronotype",
@@ -162,7 +157,7 @@ _LOGISTIQUE_ATTRS = frozenset([
     "duree_repas_min", "duree_prep_repas_min", "contraintes_fixes",
 ])
 # Champs internes qui ne doivent jamais etre ecrits en base.
-_TRANSIENT_KEYS = frozenset(["id", "deepseek_api_key_encrypted_was_legacy"])
+_TRANSIENT_KEYS = frozenset(["id"])
 
 
 def save_profil(data: dict[str, Any]) -> None:
@@ -203,11 +198,6 @@ def save_profil(data: dict[str, Any]) -> None:
         for key, value in data.items():
             if key in _TRANSIENT_KEYS:
                 continue
-            # Chiffrement transparent de la cle DeepSeek avant persistance.
-            if key == "deepseek_api_key":
-                value = encrypt_api_key(value)
-            elif key == "llm_api_key":
-                value = encrypt_api_key(value)
             # Mapping : cle UI "transport" → colonne DB "trajets_habituels"
             if key == "transport":
                 key = "trajets_habituels"
@@ -221,63 +211,6 @@ def save_profil(data: dict[str, Any]) -> None:
                 setattr(p.logistique, key, value)
             else:
                 setattr(p, key, value)
-
-
-# ---------------------------------------------------------------------------
-# Test de connexion DeepSeek
-# ---------------------------------------------------------------------------
-_RETRYABLE_HINTS = ("timeout", "timed out", "503", "502", "504", "connection reset")
-
-
-def _is_retryable_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(h in msg for h in _RETRYABLE_HINTS)
-
-
-def _test_deepseek_connection(api_key: str, model: str, max_retries: int = 3) -> tuple[bool, str]:
-    """Test minimal de l'API DeepSeek (compatible OpenAI)."""
-    if not api_key.strip():
-        return False, "Cle API vide."
-
-    try:
-        import openai
-    except ImportError:
-        return False, "Package `openai` non installe. Lance : pip install openai"
-
-    last_exc: Exception | None = None
-    for attempt in range(max_retries):
-        try:
-            client = openai.OpenAI(
-                api_key=api_key.strip(),
-                base_url="https://api.deepseek.com/v1",
-            )
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "Dis juste OK"}],
-                max_tokens=50,
-            )
-            text = resp.choices[0].message.content or ""
-            if not text.strip():
-                text = getattr(resp.choices[0].message, "reasoning_content", "") or ""
-            if text.strip():
-                return True, f"Connexion DeepSeek reussie. Reponse : << {text.strip()[:80]} >>"
-            return True, "Connexion DeepSeek OK - cle valide, modele operationnel ✅"
-        except Exception as exc:
-            last_exc = exc
-            msg = str(exc)[:300]
-            if "401" in msg or "403" in msg or "unauthor" in msg.lower() or "invalid" in msg.lower():
-                return False, f"🔐 Cle DeepSeek refusee. Verifie ta cle sur platform.deepseek.com.\n\nDetail : {msg}"
-            if "404" in msg:
-                return False, f"❓ Modele DeepSeek introuvable (`{model}`).\n\nDetail : {msg}"
-            if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
-                return False, f"⏱️ Quota DeepSeek depasse. Reessaie dans quelques minutes.\n\nDetail : {msg}"
-            if attempt < max_retries - 1 and _is_retryable_error(exc):
-                _time_mod.sleep(2 ** attempt)
-                continue
-            return False, f"Echec DeepSeek : {type(exc).__name__} - {msg}"
-
-    assert last_exc is not None
-    return False, f"Echec DeepSeek apres {max_retries} tentatives."
 
 
 # ---------------------------------------------------------------------------
@@ -749,76 +682,7 @@ def render() -> None:
                     disabled=not besoin_sieste,
                 )
 
-        # === Section 6 - Parametres IA (DeepSeek) ==============================
-        with st.expander("🤖 Parametres IA (DeepSeek)", expanded=is_new):
-            st.caption(
-                "🔒 La cle API est **chiffree** (Fernet AES-128) avant stockage en base. "
-                "Elle n'est utilisee que pour les appels a l'API DeepSeek "
-                "(analyse de PDF et generation de planning)."
-            )
 
-            existing_key = data.get("deepseek_api_key", "")
-            delete_key = False
-            if existing_key:
-                st.markdown(
-                    f"🔐 Cle configuree : `{mask_for_display(existing_key)}` - "
-                    "laisse vide pour conserver, ou colle une nouvelle cle pour la remplacer."
-                )
-                if data.get("deepseek_api_key_encrypted_was_legacy"):
-                    st.warning(
-                        "⚠️ Cette cle etait stockee en clair (avant cette version). "
-                        "Elle sera **chiffree automatiquement** au prochain << Enregistrer >>."
-                    )
-                delete_key = st.checkbox("🗑️ Supprimer la cle existante", key="delete_api_key")
-                if delete_key:
-                    api_key_input = ""
-                    st.caption("⚠️ La cle sera definitivement supprimee au prochain enregistrement.")
-                else:
-                    # Bouton pour révéler/masquer la clé
-                    show_key = st.checkbox("👁️ Afficher la cle", key="show_api_key")
-                    api_key_input = st.text_input(
-                        "Cle API DeepSeek",
-                        value=existing_key if show_key else "",
-                        type="default" if show_key else "password",
-                        placeholder="........ (laisser vide pour conserver)",
-                        help="Recupere ta cle sur https://platform.deepseek.com",
-                    )
-            else:
-                api_key_input = st.text_input(
-                    "Cle API DeepSeek",
-                    value="",
-                    type="password",
-                    placeholder="sk-...",
-                    help="Recupere ta cle sur https://platform.deepseek.com",
-                )
-            # Logique : suppression explicite => vide, sinon champ vide = on garde l'existante
-            if delete_key:
-                api_key = ""
-            else:
-                api_key = api_key_input.strip() if api_key_input.strip() else existing_key
-
-            # Si le modele stocke n'est plus dans la liste, on l'ajoute pour ne pas perdre l'info
-            stored_model = data.get("deepseek_model", "deepseek-chat")
-            models_options = ["deepseek-v4-pro", "deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
-            if stored_model not in models_options:
-                models_options.insert(0, stored_model)
-
-            deepseek_model = st.selectbox(
-                "Modele IA",
-                options=models_options,
-                index=models_options.index(stored_model) if stored_model in models_options else 0,
-                help="**deepseek-reasoner** = raisonnement tres profond.",
-            )
-
-            st.divider()
-            test_clicked = st.button("🔌 Tester DeepSeek", width="stretch")
-            if test_clicked:
-                with st.spinner("Test DeepSeek..."):
-                    ok, msg = _test_deepseek_connection(api_key, deepseek_model)
-                if ok:
-                    st.success(msg)
-                else:
-                    st.error(msg)
 
         # === Bouton enregistrer ===============================================
         st.divider()

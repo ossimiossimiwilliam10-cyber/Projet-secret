@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import streamlit as st
-from modules import profil, import_externe, aide
+from modules import profil, aide
 
 TABS = [
     "👤 Profil & Réglages",
-    "📸 Import Photo (IA)",
     "❓ Aide"
 ]
 
 MODULES = {
     "👤 Profil & Réglages": profil,
-    "📸 Import Photo (IA)": import_externe,
     "❓ Aide": aide
 }
 

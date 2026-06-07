@@ -114,12 +114,13 @@ class SystemeConfig(Base):
     __tablename__ = "systeme_config"
     id = Column(Integer, primary_key=True, autoincrement=True)
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    # --- DEPRECATED : Colonnes IA obsolètes ---
+    llm_api_key = Column(String(500), default="", name="gemini_api_key")  # deprecated
+    llm_model = Column(String(50), default="deepseek-v4-pro", name="gemini_model")  # deprecated
+    deepseek_api_key = Column(String(500), default="")  # deprecated
+    deepseek_model = Column(String(50), default="deepseek-chat")  # deprecated
+    google_maps_api_key = Column(String(200), default="")  # deprecated
     
-    llm_api_key = Column(String(500), default="", name="gemini_api_key")  # colonne legacy "gemini_api_key"
-    llm_model = Column(String(50), default="deepseek-v4-pro", name="gemini_model")  # colonne legacy "gemini_model"
-    deepseek_api_key = Column(String(500), default="")
-    deepseek_model = Column(String(50), default="deepseek-chat")
-    google_maps_api_key = Column(String(200), default="")
     replanning_auto_actif = Column(Boolean, default=True)
 
     utilisateur = relationship("Utilisateur", back_populates="systeme")
@@ -334,24 +335,21 @@ class Chapitre(Base):
     date_prochaine = Column(Date, nullable=True)
     historique_quiz = Column(JSON, default=list)
 
-    # --- Caches IA (évitent de re-payer le LLM à chaque ouverture) -------
-    fiche_ia = Column(Text, nullable=True)
-    qcm_cache = Column(JSON, nullable=True)
-    quiz_cache = Column(JSON, nullable=True)
-    texte_cache = Column(Text, nullable=True)
-    # Métadonnées de cache versionné — voir services.cache_versioning.
-    # Permettent d'invalider automatiquement les caches IA quand le modèle
-    # Gemini, le prompt, ou le contenu PDF change.
-    fiche_ia_model = Column(String(100), nullable=True)
-    fiche_ia_prompt_version = Column(Integer, nullable=True)
-    fiche_ia_texte_sha = Column(String(64), nullable=True)
-    fiche_ia_generated_at = Column(DateTime, nullable=True)
-    qcm_cache_model = Column(String(100), nullable=True)
-    qcm_cache_prompt_version = Column(Integer, nullable=True)
-    qcm_cache_texte_sha = Column(String(64), nullable=True)
-    quiz_cache_model = Column(String(100), nullable=True)
-    quiz_cache_prompt_version = Column(Integer, nullable=True)
-    quiz_cache_texte_sha = Column(String(64), nullable=True)
+    # --- DEPRECATED : Caches IA obsolètes -------------------------------
+    fiche_ia = Column(Text, nullable=True)  # deprecated
+    qcm_cache = Column(JSON, nullable=True)  # deprecated
+    quiz_cache = Column(JSON, nullable=True)  # deprecated
+    texte_cache = Column(Text, nullable=True)  # deprecated
+    fiche_ia_model = Column(String(100), nullable=True)  # deprecated
+    fiche_ia_prompt_version = Column(Integer, nullable=True)  # deprecated
+    fiche_ia_texte_sha = Column(String(64), nullable=True)  # deprecated
+    fiche_ia_generated_at = Column(DateTime, nullable=True)  # deprecated
+    qcm_cache_model = Column(String(100), nullable=True)  # deprecated
+    qcm_cache_prompt_version = Column(Integer, nullable=True)  # deprecated
+    qcm_cache_texte_sha = Column(String(64), nullable=True)  # deprecated
+    quiz_cache_model = Column(String(100), nullable=True)  # deprecated
+    quiz_cache_prompt_version = Column(Integer, nullable=True)  # deprecated
+    quiz_cache_texte_sha = Column(String(64), nullable=True)  # deprecated
 
     # --- Flashcards & Corbeille (V2) -------------------------------------
     flashcards_cache = Column(JSON, nullable=True)
@@ -428,9 +426,11 @@ class Semaine(Base):
     date_fin = Column(Date, nullable=False)
 
     statut = Column(String(20), default="en_cours")
-    score_realisme = Column(Integer, nullable=True)
     taux_completion_pct = Column(Float, default=0.0)
-    bilan_ia = Column(Text, default="")
+    
+    # --- DEPRECATED : Colonnes IA obsolètes ---
+    score_realisme = Column(Integer, nullable=True)  # deprecated
+    bilan_ia = Column(Text, default="")  # deprecated
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -494,8 +494,10 @@ class Tache(Base):
         nullable=True,
     )
 
-    justification_ia = Column(Text, default="")
     commentaire_etudiant = Column(Text, default="")
+    
+    # --- DEPRECATED : Colonnes IA obsolètes ---
+    justification_ia = Column(Text, default="")  # deprecated
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -618,22 +620,9 @@ class Objectif(Base):
     # --- État ---
     statut = Column(String(20), default="actif")          # "actif" | "atteint" | "abandonne"
 
-    # --- Stratégie IA proposée par Gemini ---
-    # Structure typique :
-    # {
-    #   "realisme": "ambitieux",
-    #   "justification": "Tu es à 60% de maîtrise, il te reste 3 semaines.",
-    #   "heures_total_estimees": 25,
-    #   "heures_par_semaine": 8.5,
-    #   "ponderations_chapitres": {"5": 2.5, "7": 1.8, ...},
-    #   "ordre_priorite": [5, 7, 3, ...],
-    #   "conseils": ["Concentre-toi sur les chapitres 5 et 7", ...]
-    # }
-    strategie_ia = Column(JSON, nullable=True)
-    # Cache rapide des pondérations (extrait de strategie_ia pour query rapide).
-    # Format : {"<chapitre_id>": float}. Utilisé par ai_planner pour booster
-    # les priorités dans les plannings futurs.
-    ponderations = Column(JSON, default=dict)
+    # --- DEPRECATED : Stratégie IA proposée par Gemini ---
+    strategie_ia = Column(JSON, nullable=True)  # deprecated
+    ponderations = Column(JSON, default=dict)  # deprecated
 
     # --- Horodatages ---
     date_creation = Column(DateTime, default=lambda: datetime.now(timezone.utc))

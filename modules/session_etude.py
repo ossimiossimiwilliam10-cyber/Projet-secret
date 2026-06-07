@@ -62,18 +62,7 @@ def render() -> None:
     _render_manual_validation(chap_id)
     _render_pomodoro()
     st.divider()
-
-    tab_fiche, tab_flashcards, tab_qcm, tab_quiz, tab_feynman = st.tabs(["📋 Fiche IA", "🗂️ Flashcards", "🔘 QCM", "✍️ Quiz ouvert", "🎙️ Feynman"])
-    with tab_fiche:
-        _render_fiche_tab(chap_id, chap_snapshot)
-    with tab_flashcards:
-        _render_flashcards_tab(chap_id, chap_snapshot)
-    with tab_qcm:
-        _render_qcm_tab(chap_id)
-    with tab_quiz:
-        _render_quiz_tab(chap_id)
-    with tab_feynman:
-        _render_feynman_tab(chap_id)
+    _render_notes_perso(chap_id, chap_snapshot)
 
 
 # ===========================================================================
@@ -89,11 +78,8 @@ def _snapshot_chapitre(chap: Chapitre, matiere: Matiere | None) -> dict:
         "niveau_actuel": int(chap.niveau_actuel or 0),
         "date_prochaine": chap.date_prochaine,
         "maitrise_pct": float(chap.maitrise_pct or 0),
-        "fiche_ia": chap.fiche_ia,
         "notes": chap.notes or "",
         "version": int(chap.version or 1),
-        "has_qcm_cache": bool(chap.qcm_cache),
-        "has_quiz_cache": bool(chap.quiz_cache),
         "matiere_nom": matiere.nom if matiere else "(matière inconnue)",
         "ue_nom": (matiere.ue.nom if matiere and matiere.ue else ""),
         "status_label": label,
@@ -323,45 +309,20 @@ def _render_no_chapter_view() -> None:
 
 
 # ===========================================================================
-# Onglet 1 — Fiche IA + Notes perso
+# Notes personnelles
 # ===========================================================================
-def _render_fiche_tab(chap_id: int, snap: dict) -> None:
-    """Affiche / génère la fiche IA, plus la zone de notes personnelles."""
-    fiche = snap["fiche_ia"]
-
-    if not fiche:
-        st.info(
-            "ℹ️ Aucune fiche IA pour ce chapitre. La générer prend ~30-60 sec "
-            "et **coûte une requête Gemini** (puis elle est mise en cache)."
-        )
-        if st.button(
-            "✨ Générer la fiche avec Gemini",
-            type="primary",
-            key=f"gen_fiche_{chap_id}",
-            width='stretch',
-        ):
-            _generate_fiche(chap_id, force=False)
-    else:
-        with st.expander("📄 Fiche de révision", expanded=True):
-            st.markdown(fiche)
-
-        col_a, col_b = st.columns([1, 5])
-        with col_a:
-            if st.button("🔄 Regénérer", key=f"regen_fiche_{chap_id}", help="Force une nouvelle génération"):
-                _generate_fiche(chap_id, force=True)
-
-    # --- Notes personnelles -------------------------------------------------
-    st.divider()
+def _render_notes_perso(chap_id: int, snap: dict) -> None:
+    """Affiche la zone de notes personnelles."""
     st.subheader("✍️ Mes notes personnelles")
     notes = st.text_area(
         "Notes",
         value=snap["notes"],
-        height=150,
+        height=300,
         key=f"notes_input_{chap_id}",
         label_visibility="collapsed",
         placeholder="Ce que tu retiens, tes propres exemples, tes confusions...",
     )
-    if st.button("💾 Sauvegarder mes notes", key=f"save_notes_{chap_id}"):
+    if st.button("💾 Sauvegarder mes notes", key=f"save_notes_{chap_id}", type="primary"):
         try:
             with session_scope() as session:
                 update_chapitre_safe(
@@ -378,217 +339,6 @@ def _render_fiche_tab(chap_id: int, snap: dict) -> None:
                 "Recharge la page pour récupérer la dernière version "
                 "avant de sauvegarder à nouveau."
             )
-
-
-def _generate_fiche(chap_id: int, force: bool) -> None:
-    """Encapsule l'appel LLM de génération de fiche avec gestion d'erreur."""
-    with st.spinner("🧠 Gemini compose la fiche... (30-60 sec)"):
-        try:
-            with session_scope() as session:
-                rs.generer_fiche_ia(session, chap_id, force_regenerate=force)
-            st.toast("Fiche générée ✅")
-            st.rerun()
-        except Exception as exc:
-            st.error(f"❌ Erreur de génération : {exc}")
-
-# ===========================================================================
-# Onglet Flashcards
-# ===========================================================================
-def _render_flashcards_tab(chap_id: int, snap: dict) -> None:
-    """Affiche et gère les flashcards générées par l'IA."""
-    with get_session() as session:
-        chap = session.get(Chapitre, chap_id)
-        flashcards = list(chap.flashcards_cache or [])
-
-    if not flashcards:
-        st.info("ℹ️ Aucune flashcard générée pour ce chapitre. La génération prend ~30 sec.")
-        if st.button("✨ Générer des Flashcards", type="primary", key=f"gen_fc_{chap_id}", width='stretch'):
-            with st.spinner("🧠 L'IA compose les flashcards..."):
-                try:
-                    with session_scope() as session:
-                        from services.ai_flashcards_service import generer_flashcards
-                        chap_obj = session.get(Chapitre, chap_id)
-                        fcs = generer_flashcards(session, chap_obj, nb_cartes=8)
-                        chap_obj.flashcards_cache = fcs
-                    st.toast("Flashcards générées ✅")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"❌ Erreur de génération : {exc}")
-        return
-
-    st.subheader(f"🗂️ Flashcards ({len(flashcards)})")
-    
-    # State pour le parcours des flashcards
-    fc_index_key = f"fc_idx_{chap_id}"
-    fc_flipped_key = f"fc_flipped_{chap_id}"
-    if fc_index_key not in st.session_state:
-        st.session_state[fc_index_key] = 0
-    if fc_flipped_key not in st.session_state:
-        st.session_state[fc_flipped_key] = False
-
-    idx = st.session_state[fc_index_key]
-    flipped = st.session_state[fc_flipped_key]
-
-    if idx >= len(flashcards):
-        st.success("🎉 Vous avez terminé toutes les flashcards de ce paquet !")
-        if st.button("🔄 Recommencer"):
-            st.session_state[fc_index_key] = 0
-            st.session_state[fc_flipped_key] = False
-            st.rerun()
-        return
-
-    fc = flashcards[idx]
-    
-    # Affichage de la carte
-    st.markdown(f"**Carte {idx + 1} / {len(flashcards)}**")
-    with st.container(border=True):
-        st.markdown(f"### 🤔 {fc.get('front', '')}")
-        if flipped:
-            st.divider()
-            st.markdown(f"### 💡 {fc.get('back', '')}")
-            
-    # Actions
-    if not flipped:
-        if st.button("🔄 Révéler la réponse", use_container_width=True, type="primary"):
-            st.session_state[fc_flipped_key] = True
-            st.rerun()
-    else:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("🔴 Difficile", use_container_width=True):
-                # À l'avenir, pourrait impacter Leitner
-                st.session_state[fc_index_key] += 1
-                st.session_state[fc_flipped_key] = False
-                st.rerun()
-        with col2:
-            if st.button("🟠 Correct", use_container_width=True):
-                st.session_state[fc_index_key] += 1
-                st.session_state[fc_flipped_key] = False
-                st.rerun()
-        with col3:
-            if st.button("🟢 Facile", use_container_width=True):
-                st.session_state[fc_index_key] += 1
-                st.session_state[fc_flipped_key] = False
-                st.rerun()
-
-
-# ===========================================================================
-# Onglet 2 — QCM
-# ===========================================================================
-def _render_qcm_tab(chap_id: int) -> None:
-    """QCM 4 choix interactif : génère → l'utilisateur répond → score → Leitner."""
-    k_submitted = f"qcm_submitted_{chap_id}"
-
-    # Charge le QCM en cache (s'il existe)
-    with get_session() as session:
-        chap = session.get(Chapitre, chap_id)
-        questions = list(chap.qcm_cache or [])
-
-    if not questions:
-        st.info(
-            "ℹ️ Aucun QCM généré pour ce chapitre. La 1ʳᵉ génération prend ~30 sec "
-            "et te donne 5 questions à 4 choix."
-        )
-        if st.button(
-            "✨ Générer un QCM (5 questions)",
-            type="primary",
-            key=f"gen_qcm_{chap_id}",
-            width='stretch',
-        ):
-            _generate_qcm(chap_id, force=False)
-        return
-
-    # Si déjà soumis, on affiche les résultats
-    if st.session_state.get(k_submitted):
-        _render_qcm_results(chap_id, questions)
-        return
-
-    # Sinon : formulaire interactif
-    st.subheader(f"🔘 QCM — {len(questions)} questions")
-    st.caption("Réponds à toutes les questions, puis valide en bas.")
-
-    for i, q in enumerate(questions, 1):
-        with st.container(border=True):
-            st.markdown(f"**Q{i}.** {q['question']}")
-            st.radio(
-                f"Réponse Q{i}",
-                options=q["options"],
-                key=f"qcm_choice_{chap_id}_{i}",
-                label_visibility="collapsed",
-                index=None,
-            )
-
-    if st.button(
-        "✅ Valider mon QCM",
-        type="primary",
-        key=f"submit_qcm_{chap_id}",
-        width='stretch',
-    ):
-        _submit_qcm(chap_id, questions)
-
-
-def _submit_qcm(chap_id: int, questions: list[dict]) -> None:
-    """Calcule le score du QCM et applique Leitner."""
-    user_details = []
-    nb_correct = 0
-    for i, q in enumerate(questions, 1):
-        chosen = st.session_state.get(f"qcm_choice_{chap_id}_{i}")
-        if chosen is None:
-            st.error(f"❌ Tu n'as pas répondu à la Q{i}.")
-            return
-        # La 1ʳᵉ lettre de l'option choisie (A, B, C, D)
-        letter = chosen.strip()[0].upper() if chosen.strip() else ""
-        is_correct = (letter == q["correct"].upper())
-        if is_correct:
-            nb_correct += 1
-        user_details.append({
-            "chosen_text": chosen,
-            "chosen_letter": letter,
-            "is_correct": is_correct,
-        })
-
-    score_num = nb_correct / len(questions) if questions else 0.0
-
-    gains_xp: list[dict] = []
-    replanning_auto_fait = False
-    try:
-        with session_scope() as session:
-            leitner = rs.appliquer_resultat_quiz(session, chap_id, score_num, mode="qcm")
-            # --- F3a : XP du quiz + éventuelle promotion Leitner ----------
-            profil = get_or_create_utilisateur(session)
-            chap_obj = session.get(Chapitre, chap_id)
-            g_quiz = attribuer_xp_quiz(session, profil, score_num, chap_obj)
-            gains_xp.append({"type": "quiz", "gain": _serialize_gain(g_quiz)})
-            if leitner["niveau_apres"] > leitner["niveau_avant"]:
-                g_promo = attribuer_xp_promotion_leitner(
-                    session, profil,
-                    leitner["niveau_avant"], leitner["niveau_apres"],
-                    chap_obj, niveau_max_leitner=rs.MAX_NIVEAU,
-                )
-                if g_promo:
-                    gains_xp.append({"type": "promotion", "gain": _serialize_gain(g_promo)})
-            # --- A1 : Replanning auto silencieux si quiz raté ------------
-            replan_auto = bool(profil.systeme.replanning_auto_actif and score_num < 0.5)
-    except Exception as exc:
-        st.error(f"❌ Erreur lors de l'application de Leitner : {exc}")
-        return
-
-    # Replanning auto (en dehors du scope pour avoir un session_scope dédié)
-    if replan_auto:
-        replanning_auto_fait = _try_replan_auto()
-
-    st.session_state[f"qcm_submitted_{chap_id}"] = True
-    st.session_state[f"qcm_result_{chap_id}"] = {
-        "score_num": score_num,
-        "nb_correct": nb_correct,
-        "nb_total": len(questions),
-        "details": user_details,
-        "leitner": leitner,
-        "gains_xp": gains_xp,
-        "replanning_auto_fait": replanning_auto_fait,
-    }
-    st.rerun()
-
 
 def _serialize_gain(g: GainXP) -> dict:
     """Sérialise un GainXP en dict pour stocker dans session_state."""
@@ -608,10 +358,10 @@ def _serialize_gain(g: GainXP) -> dict:
     }
 
 
-def _try_replan_auto() -> bool:
+def _try_replan_auto(profil) -> bool:
     """A1 — replanning auto silencieux. Retourne True si fait avec succès."""
     try:
-        from services.ai_planner import replan_remaining_week
+        from services.deterministic_planner import replan_remaining_week_deterministic
         from database.models import Semaine
         from datetime import date as _date
         today = _date.today()
@@ -623,285 +373,13 @@ def _try_replan_auto() -> bool:
             )
             if not semaine:
                 return False
-            replan_remaining_week(session, semaine.id)
+            replan_remaining_week_deterministic(session, profil, semaine)
         return True
     except Exception:
         # On ne plante pas le quiz si le replanning échoue (Gemini down, etc.)
         return False
 
 
-def _render_qcm_results(chap_id: int, questions: list[dict]) -> None:
-    """Affiche le bilan détaillé du QCM + bouton replan."""
-    result = st.session_state.get(f"qcm_result_{chap_id}", {})
-    if not result:
-        st.warning("⚠️ Résultat introuvable. Recommence le QCM.")
-        return
-
-    score = result["score_num"]
-    leitner = result["leitner"]
-
-    # Banner principal
-    pct = int(score * 100)
-    if score >= 0.9:
-        st.success(f"🏆 **Excellent !** {result['nb_correct']}/{result['nb_total']} ({pct}%)")
-        st.balloons()
-    elif score >= 0.5:
-        st.info(f"⚡ **Correct.** {result['nb_correct']}/{result['nb_total']} ({pct}%)")
-    else:
-        st.warning(f"📚 **À retravailler.** {result['nb_correct']}/{result['nb_total']} ({pct}%)")
-
-    # Évolution Leitner
-    _render_leitner_evolution(leitner)
-
-    # F3a : XP gagnés + achievements + replanning auto
-    _render_gains_xp_block(result.get("gains_xp", []), result.get("replanning_auto_fait", False))
-
-    # Détail Q par Q
-    with st.expander("🔍 Détail des questions", expanded=False):
-        for i, (q, d) in enumerate(zip(questions, result["details"]), 1):
-            icon = "✅" if d["is_correct"] else "❌"
-            st.markdown(f"{icon} **Q{i}.** {q['question']}")
-            if d["is_correct"]:
-                st.caption(f"Bonne réponse : **{q['correct']}**. _{q.get('explication', '')}_")
-            else:
-                st.caption(
-                    f"Tu as répondu **{d['chosen_letter']}**, "
-                    f"la bonne réponse était **{q['correct']}**. "
-                    f"_{q.get('explication', '')}_"
-                )
-            st.write("")
-
-    # Actions
-    st.divider()
-    a, b, c = st.columns(3)
-    with a:
-        if st.button("🔄 Recommencer ce QCM", key=f"retry_qcm_{chap_id}", width='stretch'):
-            _reset_qcm_state(chap_id, len(questions))
-            st.rerun()
-    with b:
-        if st.button("✨ Générer un nouveau QCM", key=f"new_qcm_{chap_id}", width='stretch'):
-            _generate_qcm(chap_id, force=True)
-    with c:
-        if st.button("⚙️ Réajuster ma semaine", key=f"replan_qcm_{chap_id}",
-                     type="primary", width='stretch'):
-            _trigger_replan()
-
-
-def _generate_qcm(chap_id: int, force: bool) -> None:
-    """Encapsule l'appel LLM de génération de QCM."""
-    with st.spinner("🧠 Gemini crée le QCM... (~30 sec)"):
-        try:
-            with session_scope() as session:
-                rs.generer_qcm(session, chap_id, nb=5, force_regenerate=force)
-            if force:
-                # Force = on regénère ; on reset aussi l'état précédent
-                _reset_qcm_state(chap_id, 5)
-            st.toast("QCM prêt ✅")
-            st.rerun()
-        except Exception as exc:
-            st.error(f"❌ Erreur de génération : {exc}")
-
-
-def _reset_qcm_state(chap_id: int, nb_questions: int) -> None:
-    """Nettoie l'état de session du QCM pour permettre de recommencer."""
-    st.session_state.pop(f"qcm_submitted_{chap_id}", None)
-    st.session_state.pop(f"qcm_result_{chap_id}", None)
-    for i in range(1, nb_questions + 1):
-        st.session_state.pop(f"qcm_choice_{chap_id}_{i}", None)
-
-
-# ===========================================================================
-# Onglet 3 — Quiz ouvert
-# ===========================================================================
-def _render_quiz_tab(chap_id: int) -> None:
-    """Quiz à questions ouvertes : Gemini génère, l'étudiant répond en texte,
-    Gemini évalue, Leitner s'applique."""
-    k_submitted = f"quiz_submitted_{chap_id}"
-
-    with get_session() as session:
-        chap = session.get(Chapitre, chap_id)
-        questions = list(chap.quiz_cache or [])
-
-    if not questions:
-        st.info(
-            "ℹ️ Aucun quiz ouvert généré. Plus exigeant que le QCM, mais aussi "
-            "plus formateur : Gemini évaluera tes réponses libres."
-        )
-        if st.button(
-            "✨ Générer un quiz (5 questions ouvertes)",
-            type="primary",
-            key=f"gen_quiz_{chap_id}",
-            width='stretch',
-        ):
-            _generate_quiz(chap_id, force=False)
-        return
-
-    if st.session_state.get(k_submitted):
-        _render_quiz_results(chap_id, questions)
-        return
-
-    st.subheader(f"✍️ Quiz ouvert — {len(questions)} questions")
-    st.caption("Réponds avec tes propres mots. Gemini évaluera chaque réponse.")
-
-    for i, q in enumerate(questions, 1):
-        with st.container(border=True):
-            st.markdown(f"**Q{i}.** {q}")
-            st.text_area(
-                f"Réponse Q{i}",
-                key=f"quiz_rep_{chap_id}_{i}",
-                height=120,
-                label_visibility="collapsed",
-                placeholder="Ta réponse...",
-            )
-
-    if st.button(
-        "✅ Soumettre mes réponses",
-        type="primary",
-        key=f"submit_quiz_{chap_id}",
-        width='stretch',
-    ):
-        _submit_quiz(chap_id, questions)
-
-
-def _submit_quiz(chap_id: int, questions: list[str]) -> None:
-    """Récupère les réponses, demande au LLM d'évaluer, applique Leitner."""
-    reponses = [
-        st.session_state.get(f"quiz_rep_{chap_id}_{i}", "") for i in range(1, len(questions) + 1)
-    ]
-    if not any(r.strip() for r in reponses):
-        st.error("❌ Tu n'as répondu à aucune question.")
-        return
-
-    gains_xp: list[dict] = []
-    replanning_auto_fait = False
-    with st.spinner("🧠 Gemini évalue tes réponses... (~30-60 sec)"):
-        try:
-            with session_scope() as session:
-                evaluation = rs.evaluer_quiz_ouvert(session, chap_id, questions, reponses)
-                leitner = rs.appliquer_resultat_quiz(
-                    session, chap_id, evaluation["score_num"], mode="quiz"
-                )
-                # --- F3a : XP --------------------------------------------
-                profil = get_or_create_utilisateur(session)
-                chap_obj = session.get(Chapitre, chap_id)
-                g_quiz = attribuer_xp_quiz(session, profil, evaluation["score_num"], chap_obj)
-                gains_xp.append({"type": "quiz", "gain": _serialize_gain(g_quiz)})
-                if leitner["niveau_apres"] > leitner["niveau_avant"]:
-                    g_promo = attribuer_xp_promotion_leitner(
-                        session, profil,
-                        leitner["niveau_avant"], leitner["niveau_apres"],
-                        chap_obj, niveau_max_leitner=rs.MAX_NIVEAU,
-                    )
-                    if g_promo:
-                        gains_xp.append({"type": "promotion", "gain": _serialize_gain(g_promo)})
-                replan_auto = bool(
-                    profil.systeme.replanning_auto_actif and evaluation["score_num"] < 0.5
-                )
-        except Exception as exc:
-            st.error(f"❌ Erreur d'évaluation : {exc}")
-            return
-
-    if replan_auto:
-        replanning_auto_fait = _try_replan_auto()
-
-    st.session_state[f"quiz_submitted_{chap_id}"] = True
-    st.session_state[f"quiz_result_{chap_id}"] = {
-        "evaluation": evaluation,
-        "leitner": leitner,
-        "reponses": reponses,
-        "gains_xp": gains_xp,
-        "replanning_auto_fait": replanning_auto_fait,
-    }
-    st.rerun()
-
-
-def _render_quiz_results(chap_id: int, questions: list[str]) -> None:
-    """Affiche le bilan du quiz ouvert avec feedback Gemini."""
-    result = st.session_state.get(f"quiz_result_{chap_id}", {})
-    if not result:
-        st.warning("⚠️ Résultat introuvable.")
-        return
-
-    evaluation = result["evaluation"]
-    leitner = result["leitner"]
-    score = evaluation.get("score_num", 0.0)
-    pct = int(score * 100)
-    verdict = (evaluation.get("verdict") or "").lower()
-    message = evaluation.get("message", "")
-
-    # Banner
-    if score >= 0.9:
-        st.success(f"🏆 **{verdict.capitalize() or 'Excellent'}** ({pct}%)")
-        if message:
-            st.caption(message)
-        st.balloons()
-    elif score >= 0.5:
-        st.info(f"⚡ **{verdict.capitalize() or 'Correct'}** ({pct}%)")
-        if message:
-            st.caption(message)
-    else:
-        st.warning(f"📚 **{verdict.capitalize() or 'À retravailler'}** ({pct}%)")
-        if message:
-            st.caption(message)
-
-    _render_leitner_evolution(leitner)
-
-    # F3a : XP gagnés + achievements + replanning auto
-    _render_gains_xp_block(result.get("gains_xp", []), result.get("replanning_auto_fait", False))
-
-    # Détail correction
-    with st.expander("🔍 Correction détaillée par Gemini", expanded=True):
-        resultats = evaluation.get("resultats") or []
-        for i, (q, rep, res) in enumerate(zip(questions, result["reponses"], resultats), 1):
-            score_q = (res.get("score") or "incorrect").lower()
-            icon = {"correct": "✅", "partiel": "🟡", "incorrect": "❌"}.get(score_q, "❓")
-            st.markdown(f"{icon} **Q{i}.** {q}")
-            st.caption(f"💬 _Ta réponse :_ {rep.strip() or '*(vide)*'}")
-            feedback = res.get("feedback", "").strip()
-            if feedback:
-                st.caption(f"🎓 _Feedback :_ {feedback}")
-            st.write("")
-
-    st.divider()
-    a, b, c = st.columns(3)
-    with a:
-        if st.button("🔄 Recommencer", key=f"retry_quiz_{chap_id}", width='stretch'):
-            _reset_quiz_state(chap_id, len(questions))
-            st.rerun()
-    with b:
-        if st.button("✨ Nouvelles questions", key=f"new_quiz_{chap_id}", width='stretch'):
-            _generate_quiz(chap_id, force=True)
-    with c:
-        if st.button("⚙️ Réajuster ma semaine", key=f"replan_quiz_{chap_id}",
-                     type="primary", width='stretch'):
-            _trigger_replan()
-
-
-def _generate_quiz(chap_id: int, force: bool) -> None:
-    """Encapsule l'appel LLM pour générer un quiz ouvert."""
-    with st.spinner("🧠 Gemini compose les questions... (~30 sec)"):
-        try:
-            with session_scope() as session:
-                rs.generer_quiz_ouvert(session, chap_id, nb=5, force_regenerate=force)
-            if force:
-                _reset_quiz_state(chap_id, 5)
-            st.toast("Quiz prêt ✅")
-            st.rerun()
-        except Exception as exc:
-            st.error(f"❌ Erreur de génération : {exc}")
-
-
-def _reset_quiz_state(chap_id: int, nb_questions: int) -> None:
-    """Nettoie l'état de session du quiz ouvert."""
-    st.session_state.pop(f"quiz_submitted_{chap_id}", None)
-    st.session_state.pop(f"quiz_result_{chap_id}", None)
-    for i in range(1, nb_questions + 1):
-        st.session_state.pop(f"quiz_rep_{chap_id}_{i}", None)
-
-
-# ===========================================================================
-# Helpers partagés
-# ===========================================================================
 def _render_leitner_evolution(leitner: dict) -> None:
     """Affiche la card 'Évolution Leitner' après quiz/QCM."""
     delta = leitner.get("delta", 0)
@@ -927,39 +405,25 @@ def _render_leitner_evolution(leitner: dict) -> None:
     st.caption(f"📅 Prochaine révision suggérée : **{date_str}** (dans {jours_avant}j)")
 
 
-def _trigger_replan() -> None:
-    """Lance ai_planner.replan_remaining_week() pour redistribuer les tâches restantes."""
+def _trigger_replan(profil) -> None:
+    """Lance replan_remaining_week_deterministic() pour redistribuer les tâches restantes."""
     try:
         from utils.helpers import get_or_create_current_week
-        from services.ai_planner import replan_remaining_week
+        from services.deterministic_planner import replan_remaining_week_deterministic
     except ImportError as exc:
         st.error(f"❌ Impossible d'importer le planner : {exc}")
         return
 
-    with st.spinner("🧠 Gemini réorganise tes jours restants... (~30-45 sec)"):
+    with st.spinner("⚙️ Réorganisation des jours restants..."):
         try:
             with session_scope() as session:
                 semaine, _, _ = get_or_create_current_week(session, transfer_reported=False)
-                result = replan_remaining_week(session, semaine.id)
+                replan_remaining_week_deterministic(session, profil, semaine)
         except Exception as exc:
             st.error(f"❌ Erreur de réajustement : {exc}")
             return
 
     st.success("✅ Planning réajusté !")
-    score = result.get("score_realisme")
-    if score is not None:
-        st.caption(f"📊 Score de réalisme : **{score}/100**")
-    justif = result.get("justification_globale")
-    if justif:
-        st.info(f"💡 **Stratégie :** {justif}")
-    ecartees = result.get("taches_ecartees") or []
-    if ecartees:
-        with st.expander(f"⚠️ Tâches écartées ({len(ecartees)})", expanded=False):
-            for t in ecartees:
-                if isinstance(t, dict):
-                    st.markdown(f"- **{t.get('titre', '?')}** — {t.get('raison', '')}")
-                else:
-                    st.markdown(f"- {t}")
 
 
 # ===========================================================================
@@ -1056,104 +520,3 @@ def _achievement_couleur(rarete: str) -> str:
         "epique": "#a855f7",
         "legendaire": "#f59e0b",
     }.get(rarete, "#9ca3af")
-
-# ===========================================================================
-# Onglet 4 — Simulateur Feynman (Évaluation IA)
-# ===========================================================================
-def _render_feynman_tab(chap_id: int) -> None:
-    """Interface pour capturer l'audio de l'étudiant et l'évaluer."""
-    st.subheader("🎙️ Simulateur Feynman")
-    st.caption("Explique les concepts de ce chapitre à voix haute, sans regarder tes notes. L'IA corrigera tes erreurs.")
-
-    # On utilise le tout nouveau micro NATIVEMENT intégré à Streamlit (sans bug !)
-    audio_file = st.audio_input("Enregistre ton explication ici")
-
-    # Si un audio a bien été enregistré
-    if audio_file is not None:
-        # st.audio_input affiche déjà un petit lecteur audio intégré, c'est magique.
-        
-        if st.button("🧠 Évaluer mon explication", type="primary"):
-            # L'audio est sous forme de fichier, on le convertit en "bytes" pour Gemini
-            audio_bytes = audio_file.read()
-            _evaluer_feynman(audio_bytes, chap_id)
-
-def _evaluer_feynman(audio_bytes: bytes, chap_id: int) -> None:
-    """Envoie l'audio au LLM pour le comparer avec la fiche de cours."""
-    import logging
-    import tempfile
-    import os
-    from google import genai
-    from database.models import Utilisateur, Chapitre
-    from services.llm_utils import llm_call_with_retry
-
-    logger = logging.getLogger(__name__)
-
-    with st.spinner("🧠 Gemini écoute, transcrit et évalue ta démonstration... (ça peut prendre 30 sec)"):
-        try:
-            # 1. On récupère la clé API ET le contenu du chapitre
-            with get_session() as session:
-                chapitre = session.get(Chapitre, chap_id)
-                api_key, model_name = get_llm_api_key(session)
-
-                if not api_key:
-                    st.error("❌ Clé API Gemini introuvable.")
-                    return
-                
-                titre_chapitre = chapitre.titre if chapitre else "Inconnu"
-                # On utilise la fiche IA comme correction officielle. 
-                # Si elle n'existe pas, on prévient Gemini.
-                fiche_cours = chapitre.fiche_ia if (chapitre and chapitre.fiche_ia) else "(Aucune fiche IA générée. Base ton évaluation sur le titre du chapitre uniquement.)"
-
-            if model_name.startswith("deepseek"):
-                st.error("L'évaluation audio avec la technique de Feynman n'est pas encore supportée par DeepSeek. Veuillez utiliser un modèle LLM.")
-                return
-
-            client = genai.Client(api_key=api_key)
-
-            # 2. Sauvegarde temporaire du fichier audio
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-                tmp_file.write(audio_bytes)
-                tmp_path = tmp_file.name
-
-            try:
-                # 3. Upload et Prompt magistral pour l'IA
-                uploaded_file = client.files.upload(file=tmp_path)
-                
-                prompt = f"""Tu es un professeur de sciences de niveau universitaire, expert et très exigeant. 
-Ton étudiant s'entraîne avec la technique de Feynman.
-
-Voici le sujet précis du chapitre : {titre_chapitre}
-Voici les points clés théoriques attendus (issus de sa Fiche de Révision) :
-{fiche_cours}
-
-Ta tâche :
-1. Écoute l'explication audio de l'étudiant.
-2. Fais une courte transcription (résumé) de ce qu'il a dit dans une section "📝 Ce que j'ai entendu".
-3. Rédige une évaluation stricte dans une section "🎓 Retour du Professeur" :
-   - ✅ Ce qui est mathématiquement ou théoriquement exact.
-   - ❌ Ce qui est faux, confus, ou les termes techniques mal employés (corrige-les de manière didactique).
-   - ⚠️ Les éléments cruciaux de la fiche qu'il a oublié de mentionner.
-4. Donne-lui une note sur 10 de clarté et de maîtrise.
-"""
-                # Wrapper l'appel LLM avec retry réseau automatique
-                def _call_llm():
-                    return client.models.generate_content(
-                        model=model_name,
-                        contents=[uploaded_file, prompt]
-                    )
-                
-                response = llm_call_with_retry(_call_llm, context="feynman_audio_evaluation")
-                
-                # 4. Affichage du résultat
-                st.success("Analyse terminée !")
-                st.markdown(response.text)
-                
-            finally:
-                # Nettoyage rigoureux des fichiers
-                if 'uploaded_file' in locals():
-                    client.files.delete(name=uploaded_file.name)
-                os.remove(tmp_path)
-                
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Erreur lors de l'évaluation Feynman audio")
-            st.error(f"❌ Erreur lors de l'analyse : {e}")
