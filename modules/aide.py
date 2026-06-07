@@ -111,18 +111,18 @@ lundi. Bandeau live : ta charge vs objectif hebdo.
 **🥊 Sport · 🛒 Courses · 🎯 Projets · 🌱 Dev perso · 🍹 Social · 🧹 Intendance · ⚖️ Ajustements**
 — Une section par catégorie de vie.
 
-**💼 Jobs & Travail** — Horaires fixes (alternance, job). L'IA bloque
+**💼 Jobs & Travail** — Horaires fixes (alternance, job). L'algorithme bloque
 ces créneaux.
 
 **📸 Import Photo (IA)** — Photo de ton emploi du temps papier →
-l'IA extrait les créneaux.
+l'algorithme extrait les créneaux.
 """
         )
 
     with st.expander("⚡ Action", expanded=False):
         st.markdown(
             """
-**✨ Génération du planning** — L'IA construit ton planning. Sélecteur
+**✨ Génération du planning** — L'algorithme construit ton planning. Sélecteur
 « cette semaine / semaine prochaine ». Check-in biomécanique (impacte
 le plafond). Bouton **🔁 Intégrer mes nouveautés** si ajouts après
 génération.
@@ -131,7 +131,7 @@ génération.
 auto du jour + semaine, comparaison à ton objectif.
 
 **🧠 Salle d'étude** — Fiche IA, QCM auto, quiz corrigé, **Feynman
-audio** (tu expliques à voix haute, l'IA évalue).
+audio** (tu expliques à voix haute, l'algorithme évalue).
 
 **🏆 Achievements** — Badges débloqués et à venir.
 
@@ -201,7 +201,7 @@ def _render_workflows() -> None:
 2. **📖 Études** → coche le nouveau chapitre.
 3. **✨ Génération du planning** → un bandeau bleu apparaît :
    *« ➕ 1 nouveauté détectée »*. Clique **🔁 Intégrer mes nouveautés**.
-4. L'IA ajoute le chapitre dans les créneaux libres, **sans toucher**
+4. L'algorithme ajoute le chapitre dans les créneaux libres, **sans toucher**
    aux tâches déjà validées.
 """
         )
@@ -224,8 +224,8 @@ le même jour (import en lot) ?
             """
 1. **Action → 🎯 Objectifs → ➕ Nouvel objectif**.
 2. Renseigne : titre, matière, note cible, date.
-3. Clique **🧠 Demander une stratégie à l'IA**.
-4. L'IA analyse ton état et propose des pondérations par chapitre.
+3. Clique **🧠 Demander une stratégie à l'algorithme**.
+4. L'algorithme analyse ton état et propose des pondérations par chapitre.
    **Adopte** la stratégie → appliquée dans tous tes futurs plannings.
 """
         )
@@ -269,7 +269,7 @@ def _render_faq() -> None:
             """
 Il change ! Mais comme tes contraintes sont identiques, DeepSeek
 sort un planning souvent proche. Vérifie le **bandeau vert** (« 🔄 Planning
-régénéré à HH:MM ») et la **stratégie de l'IA** — elle est régénérée à
+régénéré à HH:MM ») et la **stratégie** — elle est régénérée à
 chaque fois.
 """
         )
@@ -298,7 +298,7 @@ surcharges.
             """
 Import en lot → tous initialisés à J1 (= +1 jour). C'est l'algo Leitner
 standard. Pour étaler : **🪄 Lisser automatiquement** sur la page
-Révisions, ou laisse l'IA répartir à la prochaine génération.
+Révisions, ou laisse l'algorithme répartir à la prochaine génération.
 """
         )
 
@@ -342,7 +342,7 @@ def _render_tips() -> None:
     st.header("💡 Astuces & raccourcis")
 
     tips = [
-        ("🎯", "Objectif hebdo", "Définis un objectif réaliste dans ton profil. L'IA répartit "
+        ("🎯", "Objectif hebdo", "Définis un objectif réaliste dans ton profil. L'algorithme répartit "
          "tes heures sur 7 jours sans dépasser ton plafond journalier."),
         ("🔄", "Intégrer les nouveautés", "Ajouté un PDF après génération ? Pas besoin de tout "
          "regénérer — clique « 🔁 Intégrer mes nouveautés » dans Génération du planning."),
@@ -351,9 +351,9 @@ def _render_tips() -> None:
         ("🧠", "Salle d'étude", "Accessible depuis la Bibliothèque (bouton 🧠 sur chaque chapitre) "
          "OU depuis la sidebar. Idéal pour réviser activement un chapitre."),
         ("📸", "Import photo", "Si ton prof donne un EDT papier, prends-le en photo → "
-         "l'IA extrait les créneaux automatiquement."),
+         "l'algorithme extrait les créneaux automatiquement."),
         ("📊", "Check-in quotidien", "Plus tu es honnête sur ta fatigue/charge mentale, "
-         "plus l'IA ajuste intelligemment ton planning. 10 secondes par jour."),
+         "plus l'algorithme ajuste intelligemment ton planning. 10 secondes par jour."),
     ]
 
     for emoji, titre, desc in tips:

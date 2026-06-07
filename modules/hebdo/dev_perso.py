@@ -36,7 +36,7 @@ def _get_prev_dev(session, offset: int) -> list[dict]:
 
 def render() -> None:
     st.subheader("🌱 Développement Personnel")
-    st.caption("Investis en toi-même. L'IA utilisera ces blocs comme des respirations productives.")
+    st.caption("Investis en toi-même. L'algorithme utilisera ces blocs comme des respirations productives.")
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
 
@@ -76,7 +76,7 @@ def render() -> None:
     if habitudes_actuelles:
         st.caption(
             f"⏱️ **{len(habitudes_actuelles)} habitude(s) planifiée(s)** — "
-            f"l'IA intégrera ces sessions de croissance à ton planning. 👏"
+            f"l'algorithme intégrera ces sessions de croissance à ton planning. 👏"
         )
     else:
         st.info("Aucune habitude de développement personnel prévue pour le moment.")

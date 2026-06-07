@@ -82,7 +82,7 @@ def _render_grille_hebdo(sport_config: list[dict[str, Any]]) -> None:
     """Affiche une mini-grille par créneau (Matin / Midi / Après-midi / Soir).
 
     L'utilisateur choisit un créneau préféré, pas un jour précis.
-    L'IA positionnera les séances lors de la génération du planning.
+    L'algorithme positionnera les séances lors de la génération du planning.
     """
     if not sport_config:
         st.caption("Aucune séance prévue cette semaine.")
@@ -129,7 +129,7 @@ def render() -> None:
     st.subheader("🥊 Sport & Entraînement")
     st.caption(
         "Planifie tes séances physiques. "
-        "L'IA évitera de placer des révisions denses après une séance intense."
+        "L'algorithme évitera de placer des révisions denses après une séance intense."
     )
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
@@ -159,7 +159,7 @@ def render() -> None:
     if stats["nb_intense"] >= 3:
         st.warning(
             f"⚠️ **{stats['nb_intense']} séances intenses** cette semaine. "
-            "L'IA évitera les révisions denses dans les 2h suivant ces créneaux. "
+            "L'algorithme évitera les révisions denses dans les 2h suivant ces créneaux. "
             "Pense à bien dormir (≥ 8h) pour la récupération."
         )
     elif stats["nb_seances"] == 0:
@@ -171,7 +171,7 @@ def render() -> None:
         )
 
     # Grille par créneau
-    st.caption("**📅 Aperçu par créneau** (indicatif — l'IA positionnera précisément) :")
+    st.caption("**📅 Aperçu par créneau** (indicatif — l'algorithme positionnera précisément) :")
     _render_grille_hebdo(sport_config_db)
 
     # --- Bouton reprendre semaine précédente ---

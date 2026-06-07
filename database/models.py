@@ -572,9 +572,9 @@ class Job(Base):
     heure_fin = Column(Time, nullable=False)
 
     # Lieu du job — sert à croiser avec ``Profil.trajets_habituels`` pour
-    # que l'IA calcule automatiquement le bon temps de trajet.
+    # que l'algorithme calcule automatiquement le bon temps de trajet.
     # Ex. : "Luxembourg" → matche le trajet "Strasbourg-Luxembourg".
-    # Optionnel ; si vide, l'IA utilise ``Profil.temps_transport_min``.
+    # Optionnel ; si vide, l'algorithme utilise ``Profil.temps_transport_min``.
     lieu = Column(String(200), default="")
 
     date_debut = Column(Date, nullable=True)
@@ -589,7 +589,7 @@ class Job(Base):
 
 
 # ---------------------------------------------------------------------------
-# Objectif — objectif personnel de l'étudiant, avec stratégie IA (F3b)
+# Objectif — objectif personnel de l'étudiant, avec stratégie (F3b)
 # ---------------------------------------------------------------------------
 class Objectif(Base):
     """Un objectif académique personnalisé de l'étudiant.
@@ -620,7 +620,7 @@ class Objectif(Base):
     # --- État ---
     statut = Column(String(20), default="actif")          # "actif" | "atteint" | "abandonne"
 
-    # --- DEPRECATED : Stratégie IA proposée par Gemini ---
+    # --- DEPRECATED : Stratégie proposée par Gemini ---
     strategie_ia = Column(JSON, nullable=True)  # deprecated
     ponderations = Column(JSON, default=dict)  # deprecated
 

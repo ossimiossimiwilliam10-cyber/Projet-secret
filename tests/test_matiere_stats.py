@@ -145,7 +145,7 @@ def test_estimer_charge_minutes_somme_les_temps_estimes(session):
 
 def test_estimer_charge_minutes_ignore_selection_sans_chapitres(session):
     """Une matière sans ``chapitre_ids`` explicites compte pour 0 — son
-    temps sera estimé par l'IA au moment de la génération."""
+    temps sera estimé par l'algorithme au moment de la génération."""
     m = _make_matiere(session, "Maths")
     _make_chap(session, m, 1, temps_estime_h=3.0)
 

@@ -53,7 +53,7 @@ def _get_prev_projets(session, offset: int) -> list[dict]:
 
 def render() -> None:
     st.subheader("🎯 Projets & Tâches Ponctuelles")
-    st.caption("L'IA placera tes tâches prioritaires dans tes meilleurs créneaux de concentration.")
+    st.caption("L'algorithme placera tes tâches prioritaires dans tes meilleurs créneaux de concentration.")
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
 

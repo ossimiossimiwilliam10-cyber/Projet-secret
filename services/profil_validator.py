@@ -113,7 +113,7 @@ def validate_biometrie(payload: dict[str, Any]) -> list[ValidationError]:
             champ="heures_etude_cible_par_semaine",
             message=(
                 f"Objectif hebdo ({cible_hebdo:.1f} h) > plafond × 7 jours "
-                f"({plafond_x_7:.1f} h). L'IA ne pourra jamais le tenir. "
+                f"({plafond_x_7:.1f} h). L'algorithme ne pourra jamais le tenir. "
                 "Augmente le plafond ou baisse l'objectif."
             ),
         ))

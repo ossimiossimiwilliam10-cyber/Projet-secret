@@ -254,7 +254,7 @@ def render() -> None:
 
     st.title("👤 Utilisateur etudiant")
     st.caption(
-        "Ces reglages alimentent l'IA a chaque generation de planning. "
+        "Ces reglages alimentent l'algorithme a chaque generation de planning. "
         "Pas besoin de tout remplir d'un coup - tu peux y revenir."
     )
 
@@ -382,7 +382,7 @@ def render() -> None:
             st.caption(
                 "Definis ton **objectif hebdomadaire** (total d'heures visees sur "
                 "la semaine) et ton **plafond journalier** (ne jamais depasser). "
-                "L'IA repartira intelligemment ton objectif sur les 7 jours sans "
+                "L'algorithme repartira intelligemment ton objectif sur les 7 jours sans "
                 "jamais depasser le plafond. Si tu declares ton check-in du jour "
                 "fatigue (> 7/10), le plafond est reduit de 30 % pour ce jour-la."
             )
@@ -404,25 +404,25 @@ def render() -> None:
                     value=float(data["heures_etude_plafond_par_jour"]),
                     step=0.5,
                     format="%.1f h / jour",
-                    help="L'IA ne placera jamais plus que ca sur une journee. "
+                    help="L'algorithme ne placera jamais plus que ca sur une journee. "
                          "Au-dela de 8 h, garde en tete que la qualite chute.",
                 )
 
             # Validation visuelle : objectif hebdo doit etre atteignable avec
-            # le plafond x 7. Sinon l'IA ne pourra jamais le tenir.
+            # le plafond x 7. Sinon l'algorithme ne pourra jamais le tenir.
             plafond_x_7 = heures_etude_plafond_par_jour * 7
             if heures_etude_cible_par_semaine > plafond_x_7:
                 st.error(
                     f"⚠️ Incoherence : ton objectif ({heures_etude_cible_par_semaine:.1f} h) "
                     f"est superieur au plafond multiplie par 7 jours "
-                    f"({plafond_x_7:.1f} h). L'IA ne pourra pas l'atteindre. "
+                    f"({plafond_x_7:.1f} h). L'algorithme ne pourra pas l'atteindre. "
                     f"Augmente le plafond ou baisse l'objectif."
                 )
             elif heures_etude_cible_par_semaine > plafond_x_7 * 0.9:
                 st.warning(
                     f"ℹ️ Ton objectif ({heures_etude_cible_par_semaine:.1f} h) est "
                     f"tres proche du maximum theorique ({plafond_x_7:.1f} h). "
-                    f"L'IA aura peu de marge pour ajuster en cas d'imprevu."
+                    f"L'algorithme aura peu de marge pour ajuster en cas d'imprevu."
                 )
 
         # === Section 3 - Contraintes fixes recurrentes =========================
@@ -495,7 +495,7 @@ def render() -> None:
         with st.expander("🚌 Transport & Lieux", expanded=is_new):
             st.caption(
                 "Definis tes lieux et les temps de trajet entre eux. "
-                "L'IA utilisera ces durees pour caler tes deplacements dans le planning."
+                "L'algorithme utilisera ces durees pour caler tes deplacements dans le planning."
             )
 
             transport = data.get("transport", {})

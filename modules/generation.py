@@ -2,7 +2,7 @@
 
 Pilote la génération hebdomadaire par Gemini, sauvegarde le résultat
 en base et affiche le planning généré avec ses indicateurs (score de
-réalisme, stratégie IA, alertes, suggestions, statistiques).
+réalisme, stratégie, alertes, suggestions, statistiques).
 """
 
 from __future__ import annotations
@@ -392,7 +392,7 @@ def _render_jour_tab(jour_cible: str, taches_du_jour: list[Tache]) -> None:
 def render() -> None:
     st.title("✨ Génération du planning")
     st.caption(
-        "Laisse l'IA construire ton emploi du temps de la semaine. "
+        "Laisse l'algorithme construire ton emploi du temps de la semaine. "
         "Elle s'appuie sur ton profil, ta sélection d'études et le check-in du jour."
     )
 
@@ -485,7 +485,7 @@ def render() -> None:
                 f"{titre} à **{flash['ts']}** · "
                 f"**{flash['nb_taches']} tâche(s)** · "
                 f"score de réalisme **{flash['score']}/100**. "
-                "Vérifie le planning ci-dessous, et la stratégie de l'IA "
+                "Vérifie le planning ci-dessous, et la stratégie "
                 "s'est mise à jour dans la section 2."
             )
 

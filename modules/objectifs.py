@@ -1,4 +1,4 @@
-"""Page **🎯 Objectifs** — gestion des objectifs personnalisés avec stratégie IA.
+"""Page **🎯 Objectifs** — gestion des objectifs personnalisés avec stratégie.
 
 L'utilisateur :
 1. Voit la liste de ses objectifs (actifs + atteints + abandonnés).
@@ -26,7 +26,7 @@ def render() -> None:
     st.title("🎯 Mes objectifs")
     st.caption(
         "Définis tes objectifs personnels (notes, maîtrise, deadlines) et "
-        "laisse l'IA te proposer une stratégie sur-mesure."
+        "laisse l'algorithme te proposer une stratégie sur-mesure."
     )
 
     # Choix du sous-mode (création / vue)
@@ -134,10 +134,10 @@ def _render_card_objectif(snap: dict, statut: str) -> None:
             prog = snap["progression"]
             _render_progression_bar(prog)
 
-        # Stratégie IA (expander)
+        # Stratégie (expander)
         strat = snap["strategie"]
         if strat:
-            with st.expander("🧠 Stratégie IA", expanded=False):
+            with st.expander("🧠 Stratégie", expanded=False):
                 _render_strategie_recap(strat)
 
         # Boutons d'action
@@ -212,7 +212,7 @@ def _render_progression_bar(prog: dict) -> None:
 
 
 def _render_strategie_recap(strat: dict) -> None:
-    """Affiche le récap de la stratégie IA dans un expander."""
+    """Affiche le récap de la stratégie dans un expander."""
     realisme_labels = {
         "facile": ("🟢", "Facile", "#10b981"),
         "realiste": ("🟡", "Réaliste", "#84cc16"),
@@ -293,7 +293,7 @@ def _render_form_creation() -> None:
                 min_value=datetime.date.today(),
             )
 
-        submitted = st.form_submit_button("🧠 Demander une stratégie à l'IA", type="primary")
+        submitted = st.form_submit_button("🧠 Demander une stratégie à l'algorithme", type="primary")
 
     if submitted:
         if not nom.strip():
@@ -332,7 +332,7 @@ def _render_form_creation() -> None:
     preview = st.session_state.get("objectif_preview")
     if preview:
         st.divider()
-        st.markdown("### 🧠 Stratégie proposée par l'IA")
+        st.markdown("### 🧠 Stratégie proposée par l'algorithme")
         _render_strategie_recap(preview["strategie"])
 
         st.divider()

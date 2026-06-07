@@ -406,7 +406,7 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
         # === Bouton d'auto-lissage (tolérance ±3 jours) ===
         st.warning(
             f"⚠️ **{len(jours_problematiques)} jour(s) en conflit** détectés dans "
-            "la projection. Tu peux laisser l'IA répartir automatiquement avec "
+            "la projection. Tu peux laisser l'algorithme répartir automatiquement avec "
             "une tolérance de ±4 jours."
         )
 

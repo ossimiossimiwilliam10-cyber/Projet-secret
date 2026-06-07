@@ -9,7 +9,7 @@ chapitres. L'app l'aide activement avec :
 - **Indicateurs cognitifs** par matière (révisions Leitner dues,
   nouveaux chapitres, % maîtrise).
 - **Cartes de chapitres** avec jauges visuelles.
-- **Champ note pour l'IA** par matière.
+- **Champ note pour l'algorithme** par matière.
 - **Reprise de la sélection** de la semaine précédente.
 """
 
@@ -129,7 +129,7 @@ def render() -> None:
     st.subheader("📚 Études de la semaine")
     st.caption(
         "Sélectionne tes matières et chapitres. "
-        "L'IA s'occupera ensuite de la répartition."
+        "L'algorithme s'occupera ensuite de la répartition."
     )
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
@@ -449,9 +449,9 @@ def render() -> None:
                             key=f"urg_{matiere.id}",
                         )
 
-                    # --- Note pour l'IA (Idée 6) ---
+                    # --- Note pour l'algorithme (Idée 6) ---
                     note_ia = st.text_input(
-                        "📝 Note pour l'IA (optionnel)",
+                        "📝 Note pour l'algorithme (optionnel)",
                         value=config_existante.get("note_ia", ""),
                         placeholder="Ex: Priorise les exos du ch.5, évite le jeudi...",
                         key=f"note_ia_{matiere.id}",
@@ -487,7 +487,7 @@ def render() -> None:
             elif charge_min <= cible_hebdo_min * 1.05:
                 st.success(f"🎯 **Volume estimé : {heures_str}** — aligné sur {cible_str} ({pct:.0f}%). Plafond : {plafond_str}.")
             elif charge_min <= cible_hebdo_min * 1.2:
-                st.warning(f"⚠️ **Volume estimé : {heures_str}** — au-dessus de {cible_str} ({pct:.0f}%). L'IA ajustera.")
+                st.warning(f"⚠️ **Volume estimé : {heures_str}** — au-dessus de {cible_str} ({pct:.0f}%). L'algorithme ajustera.")
             else:
                 st.error(f"🚨 **Surcharge : {heures_str}** / {cible_str} ({pct:.0f}%). Allège ta sélection.")
 

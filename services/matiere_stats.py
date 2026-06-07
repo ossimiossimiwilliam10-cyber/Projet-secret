@@ -113,7 +113,7 @@ def estimer_charge_minutes(
     Pour chaque entrée de la sélection hebdo qui contient des ``chapitre_ids``
     explicites, on additionne les temps estimés. Une matière sans
     ``chapitre_ids`` (« révision globale ») compte pour 0 — son temps
-    sera estimé par l'IA au moment de la génération.
+    sera estimé par l'algorithme au moment de la génération.
     """
     if not matieres_selectionnees:
         return 0

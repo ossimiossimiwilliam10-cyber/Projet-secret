@@ -251,7 +251,7 @@ def test_partial_planning_tolere_0_tache_valide():
 
 
 def test_partial_planning_filtre_jours_non_autorises():
-    """Si l'IA renvoie des jours passés alors qu'on n'en voulait pas."""
+    """Si l'algorithme renvoie des jours passés alors qu'on n'en voulait pas."""
     raw = {
         "planning_jours_restants": {
             "lundi": [_tache_valide()],  # jour passé, non autorisé

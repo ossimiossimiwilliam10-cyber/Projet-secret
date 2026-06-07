@@ -2,7 +2,7 @@
 
 Cette fonction n'avait aucun test malgré sa centralité dans le pipeline
 de prompt Gemini (les créneaux d'énergie sont injectés dans le prompt
-hebdo pour aider l'IA à placer les blocs cognitifs aux bons moments).
+hebdo pour aider l'algorithme à placer les blocs cognitifs aux bons moments).
 """
 
 from __future__ import annotations

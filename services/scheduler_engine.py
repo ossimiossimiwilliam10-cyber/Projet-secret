@@ -2,7 +2,7 @@
 
 Ce module fait en Python tout ce qu'un LLM fait mal : compter, équilibrer,
 lisser. Il ne touche jamais au LLM ; il fournit à ``build_planner_prompt``
-une répartition par jour déjà calculée, que l'IA n'aura plus qu'à habiller
+une répartition par jour déjà calculée, que l'algorithme n'aura plus qu'à habiller
 en créneaux horaires.
 
 Trois responsabilités :
@@ -211,7 +211,7 @@ def calculer_quota_etude_minutes(
 ) -> int:
     """**Plafond** d'étude max autorisé sur UNE journée, en minutes.
 
-    C'est la limite que l'IA ne doit pas dépasser un jour donné (pour
+    C'est la limite que l'algorithme ne doit pas dépasser un jour donné (pour
     respecter le rythme et éviter la sur-charge), peu importe l'objectif
     hebdomadaire.
 
@@ -245,7 +245,7 @@ def calculer_quota_etude_minutes(
 def calculer_cible_hebdo_minutes(profil: Any) -> int:
     """Total d'heures d'étude visé sur la **semaine** (en minutes).
 
-    C'est l'objectif que l'IA cherche à atteindre en répartissant les
+    C'est l'objectif que l'algorithme cherche à atteindre en répartissant les
     chapitres sur les 7 jours, sans dépasser le plafond journalier.
 
     Source (ordre de priorité) :
@@ -429,7 +429,7 @@ def lisser_revisions_leitner(
 
         if not place:
             # Plus de place nulle part dans la fenêtre ±1 jour : on laisse
-            # au jour cible et on marque la surcharge pour que l'IA en soit
+            # au jour cible et on marque la surcharge pour que l'algorithme en soit
             # informée et puisse écarter des tâches non-prioritaires.
             revision["decale"] = False
             revision["surcharge"] = True

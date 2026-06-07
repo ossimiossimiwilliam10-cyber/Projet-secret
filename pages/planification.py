@@ -17,7 +17,7 @@ MODULES = {
 
 def render() -> None:
     st.title("📅 Planification")
-    st.caption("Organise tes semaines et laisse l'IA générer le planning optimal.")
+    st.caption("Organise tes semaines et laisse l'algorithme générer le planning optimal.")
     
     if "active_planif_tab" not in st.session_state:
         st.session_state.active_planif_tab = TABS[0]

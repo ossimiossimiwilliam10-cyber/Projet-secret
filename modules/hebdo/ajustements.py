@@ -73,7 +73,7 @@ def render() -> None:
     # --- 2. Événements exceptionnels ---
     st.divider()
     st.subheader("2. Événements exceptionnels")
-    st.caption("Ex: 'Trajet imprévu vendredi 18h', 'Visite médicale mercredi matin'. L'IA en tiendra compte.")
+    st.caption("Ex: 'Trajet imprévu vendredi 18h', 'Visite médicale mercredi matin'. L'algorithme en tiendra compte.")
     evenements_db = config_db.get("evenements_exceptionnels", [])
 
     state_key = f"ajustements_ev_{saisie.id}"
@@ -123,7 +123,7 @@ def render() -> None:
 
     # --- 4. Consigne libre ---
     st.divider()
-    st.subheader("4. Consigne libre pour l'IA")
+    st.subheader("4. Consigne libre pour l'algorithme")
     commentaire_libre = st.text_area(
         "Un message pour Gemini / DeepSeek ?",
         value=config_db.get("commentaire_libre", ""),

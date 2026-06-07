@@ -1,4 +1,4 @@
-"""Service de planification déterministe (remplace l'IA).
+"""Service de planification déterministe (remplace l'algorithme).
 
 Utilise un algorithme heuristique pur Python (Bin-packing temporel) pour placer :
 1. Les contraintes vitales et fixes (sommeil, repas, transport, jobs, etc.)

@@ -444,7 +444,7 @@ def _render_planning_grid(session: Session) -> None:
 
     # --- Justification IA (si présente) ----------------------------------
     if semaine.bilan_ia:
-        with st.expander("💡 Stratégie de l'IA pour cette semaine", expanded=False):
+        with st.expander("💡 Stratégie pour cette semaine", expanded=False):
             st.info(semaine.bilan_ia)
 
 
@@ -884,7 +884,7 @@ def _render_prediction_ia(session: Session) -> None:
         f"<div style='padding:1rem; border-left:5px solid {color}; background-color:{color}10; border-radius:4px;'>"
         f"<h4 style='margin:0 0 0.5rem 0;'>🤖 Prédiction de note IA</h4>"
         f"Basé sur ta maîtrise actuelle de <b>{maitrise_moy:.1f}%</b> sur l'ensemble du programme, "
-        f"l'IA estime ta note moyenne globale à <span style='font-size:1.2rem; font-weight:bold; color:{color};'> {note_estimee:.1f} / 20</span>."
+        f"l'algorithme estime ta note moyenne globale à <span style='font-size:1.2rem; font-weight:bold; color:{color};'> {note_estimee:.1f} / 20</span>."
         f"</div>",
         unsafe_allow_html=True
     )
@@ -1163,7 +1163,7 @@ def _render_rapport_semaine(session) -> None:
     col_gen, _ = st.columns([1, 3])
     with col_gen:
         if st.button("🧠 Générer mon bilan de semaine", type="primary", width="stretch"):
-            with st.spinner("🧠 L'IA analyse ta semaine… (~20s)"):
+            with st.spinner("🧠 L'algorithme analyse ta semaine… (~20s)"):
                 try:
                     rapport = _generer_rapport_semaine(session)
                     st.session_state["rapport_cache"] = rapport

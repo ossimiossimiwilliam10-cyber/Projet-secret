@@ -59,7 +59,7 @@ def render_checkin_quotidien_widget(
     with st.expander(titre, expanded=expanded_by_default):
         st.caption(
             "Évalue ton état actuel sur une échelle de 1 à 10. "
-            "L'IA s'en servira pour adapter la difficulté des sessions d'étude. "
+            "L'algorithme s'en servira pour adapter la difficulté des sessions d'étude. "
             "(1 = forme olympique, 10 = épuisé)"
         )
         col1, col2, col3 = st.columns(3)

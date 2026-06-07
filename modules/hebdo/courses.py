@@ -102,7 +102,7 @@ def render() -> None:
             value=config_db.get("meal_prep", False),
         )
         if meal_prep:
-            st.info("💡 L'IA réduira automatiquement ton temps de préparation quotidien dans le planning.")
+            st.info("💡 L'algorithme réduira automatiquement ton temps de préparation quotidien dans le planning.")
     with col_mp2:
         duree_meal_prep = st.number_input(
             "Durée session (min)", min_value=30, max_value=240, step=30,

@@ -181,7 +181,7 @@ def _persist_weekly_score(semaine_id: int, score: float) -> None:
 # ---------------------------------------------------------------------------
 def render() -> None:
     st.title("📊 Suivi quotidien")
-    st.caption("Valide tes tâches au fil de la journée. L'IA peut redistribuer le reste de la semaine si tu prends du retard.")
+    st.caption("Valide tes tâches au fil de la journée. L'algorithme peut redistribuer le reste de la semaine si tu prends du retard.")
 
     # --- Afficher le gain stocké en session (Bug 1 : récompenses visibles) ---
     gain = st.session_state.pop("suivi_gain", None)
@@ -395,7 +395,7 @@ def _render_replan_section(session: Session, semaine: Semaine) -> None:
             Tache.semaine_id == semaine.id,
             Tache.jour.in_(jours_passes),
             Tache.obligatoire.is_(False),
-            # Seules les tâches « à faire » sont recyclables par l'IA
+            # Seules les tâches « à faire » sont recyclables par l'algorithme
             # (cf. taches_a_redistribuer dans ai_planner.py).
             # Les tâches « non_fait » ou « partiellement » sont considérées
             # comme tranchées par l'étudiant et ne sont pas redistribuées.

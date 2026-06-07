@@ -505,7 +505,7 @@ def _render_gains_xp_block(gains_xp: list[dict], replanning_auto_fait: bool) -> 
     # Notification du replanning auto
     if replanning_auto_fait:
         st.info(
-            "📅 **Planning ajusté automatiquement** — Vu ton score, l'IA a "
+            "📅 **Planning ajusté automatiquement** — Vu ton score, l'algorithme a "
             "redistribué tes tâches d'étude restantes cette semaine pour "
             "renforcer ce chapitre. Va voir le tableau de bord."
         )

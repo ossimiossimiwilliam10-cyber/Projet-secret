@@ -1,7 +1,7 @@
 """Onglet **Social & Loisirs** de la saisie hebdomadaire.
 
 Planifie tes moments de détente, sorties entre amis ou temps de repos.
-L'IA adapte le planning du lendemain selon l'intensité des sorties.
+L'algorithme adapte le planning du lendemain selon l'intensité des sorties.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def _get_prev_social(session, offset: int) -> list[dict]:
 
 def render() -> None:
     st.subheader("🍹 Social & Loisirs")
-    st.caption("Équilibre ta vie d'étudiant. L'IA protègera tes temps de récupération.")
+    st.caption("Équilibre ta vie d'étudiant. L'algorithme protègera tes temps de récupération.")
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
 
@@ -152,4 +152,4 @@ def render() -> None:
             except Exception as e:
                 st.error(f"Erreur : {e}")
     with col_info:
-        st.caption("💡 Si tu prévois une 'Sortie / Fête', l'IA placera ton lever plus tard le lendemain et évitera les révisions denses le matin.")
+        st.caption("💡 Si tu prévois une 'Sortie / Fête', l'algorithme placera ton lever plus tard le lendemain et évitera les révisions denses le matin.")

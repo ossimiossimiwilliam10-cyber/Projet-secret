@@ -22,7 +22,7 @@ def render() -> None:
     st.subheader("💼 Emplois & Activités Professionnelles")
     st.caption(
         "Renseigne tes contrats à long terme ou tes shifts ponctuels. "
-        "L'IA verrouillera automatiquement ces créneaux dans ton planning."
+        "L'algorithme verrouillera automatiquement ces créneaux dans ton planning."
     )
 
     offset_courant = int(st.session_state.get("semaine_target_offset", 0))
@@ -62,7 +62,7 @@ def render() -> None:
                     )
 
                 # 📍 Lieu du job — pour croiser avec les trajets habituels
-                # du Utilisateur. Si un trajet correspond, l'IA utilise sa durée
+                # du Utilisateur. Si un trajet correspond, l'algorithme utilise sa durée
                 # exacte au lieu du temps par défaut.
                 lieu_options = ["(aucun)"] + list(trajets_habituels.keys()) + ["✏️ Saisir un autre lieu…"]
                 lieu_choisi = st.selectbox(
@@ -70,7 +70,7 @@ def render() -> None:
                     options=lieu_options,
                     index=0,
                     help="Choisis un trajet déclaré dans ton Utilisateur pour que "
-                         "l'IA calcule exactement le bon temps de déplacement. "
+                         "l'algorithme calcule exactement le bon temps de déplacement. "
                          "Ex. : « Strasbourg-Luxembourg » → 150 min de trajet.",
                 )
                 if lieu_choisi == "✏️ Saisir un autre lieu…":
