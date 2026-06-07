@@ -744,7 +744,7 @@ def _render_import_unifie() -> None:
                     with session_scope() as s:
                         ch = Chapitre(
                             matiere_id=matiere_id,
-                            nom=titre.strip(),
+                            titre=titre.strip(),
                             numero=numero,
                             niveau_actuel=niveau_initial,
                             maitrise_pct=float(round(niveau_initial / MAX_NIVEAU * 100, 1)),
