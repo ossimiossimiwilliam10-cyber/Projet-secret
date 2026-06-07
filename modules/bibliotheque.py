@@ -31,6 +31,7 @@ from services.pdf_storage import (
 )
 from services.profil_service import get_llm_api_key
 from services.revision_service import (
+    INTERVALLES_J,
     initialiser_chapitre_pour_revision,
     label_couleur_status,
     MAX_NIVEAU,
@@ -721,6 +722,7 @@ def _process_import_unifie(
     labels: list[str],
     api_key: str,
     model: str,
+    niveau_initial: int = 0,
 ) -> tuple[int, int, list[tuple[str, str]]]:
     """Analyse un ou plusieurs PDFs et crée les chapitres rattachés à la Matière.
 
@@ -811,7 +813,9 @@ def _process_import_unifie(
                         pdf_label=label_clean,
                     )
                     for chap_id in new_ids:
-                        initialiser_chapitre_pour_revision(session, chap_id)
+                        initialiser_chapitre_pour_revision(
+                            session, chap_id, niveau_initial=niveau_initial,
+                        )
                     record_upload(
                         session,
                         sha=sha,
@@ -895,6 +899,22 @@ def _render_import_unifie() -> None:
         if not uploaded_pdfs:
             return
 
+        # Sélecteur de niveau J initial
+        niveau_options = {
+            f"J0 (Nouveau — révision dans {INTERVALLES_J[0]}j)": 0,
+        }
+        for i in range(1, len(INTERVALLES_J)):
+            niveau_options[f"J{INTERVALLES_J[i]} (Déjà vu — prochaine révision dans {INTERVALLES_J[i]}j)"] = i
+        niveau_label = st.selectbox(
+            "🎯 Niveau J initial des chapitres",
+            options=list(niveau_options.keys()),
+            index=0,
+            key="import_unifie_niveau_j",
+            help="Si tu as déjà révisé ces chapitres, choisis un niveau plus avancé "
+                 "pour ne pas repartir de zéro.",
+        )
+        niveau_initial = niveau_options[niveau_label]
+
         st.caption(
             f"📄 **{len(uploaded_pdfs)} PDF(s) sélectionné(s)** — "
             "le libellé sert juste de mémo (modifiable) :"
@@ -938,6 +958,7 @@ def _render_import_unifie() -> None:
             labels = edited_df["Libellé"].fillna("").tolist()
             pdfs_ok, chapitres_total, erreurs = _process_import_unifie(
                 uploaded_pdfs, matiere_id, labels, api_key, model,
+                niveau_initial=niveau_initial,
             )
 
             total = len(uploaded_pdfs)
@@ -1052,7 +1073,7 @@ def _render_carte_chapitre(chap: Chapitre, session: Session, prefix: str = "") -
         if st.button("🧠 Salle d'étude", key=f"btn_study_{prefix}{chap.id}", type="primary"):
             st.session_state.target_chapitre_id = chap.id
             try:
-                st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                st.session_state.active_etude_tab = "📚 Ma Bibliothèque"
                 st.switch_page("pages/centre_etude.py")
             except Exception:
                 st.rerun()

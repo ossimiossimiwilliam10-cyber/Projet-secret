@@ -289,7 +289,7 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
     st.subheader("📈 Projection long terme (Méthode des J)")
     st.caption(
         "Vue **théorique** des futures révisions en supposant que chaque "
-        "quiz est réussi (J1 → J3 → J7 → J14 → J30 → J60 → J90 → J180 → …). "
+        "quiz est réussi (J1 → J3 → J5 → J7 → J14 → J30 → J60 → J90 → J180 → …). "
         "Idéal pour anticiper les périodes chargées (vacances, été, examens). "
         "Cette projection est recalculée à chaque ouverture de la page — "
         "elle reflète l'état Leitner actuel, pas une décision figée."
@@ -407,7 +407,7 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
         st.warning(
             f"⚠️ **{len(jours_problematiques)} jour(s) en conflit** détectés dans "
             "la projection. Tu peux laisser l'IA répartir automatiquement avec "
-            "une tolérance de ±3 jours."
+            "une tolérance de ±4 jours."
         )
 
         col_btn, col_desc = st.columns([1, 2])
@@ -416,13 +416,13 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
                 "🪄 Lisser automatiquement",
                 type="primary", width="stretch",
                 help="Décale les dates_prochaine en conflit dans une fenêtre "
-                     "de [J, J+3] pour respecter (1) max 1 nouveau chapitre "
+                     "de [J, J+4] pour respecter (1) max 1 nouveau chapitre "
                      "par matière par jour et (2) ton plafond horaire.",
             )
         with col_desc:
             st.caption(
                 "Préserve l'esprit de la méthode des J (un décalage maximum "
-                "de 3 jours reste pédagogiquement valide). Les chapitres déjà "
+                "de 4 jours reste pédagogiquement valide). Les chapitres déjà "
                 "à jour ne sont pas touchés."
             )
 
@@ -433,7 +433,7 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
                 with session_scope() as write_session:
                     resultat = lisser_automatiquement_dates_leitner(
                         write_session,
-                        tolerance_jours=3,
+                        tolerance_jours=4,
                         plafond_minutes_par_jour=plafond_min if plafond_min > 0 else None,
                         today=today,
                         matiere_ids=matiere_ids,
@@ -446,7 +446,7 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
                 elif nb_d > 0 and nb_nd == 0:
                     st.success(
                         f"✅ **{nb_d} chapitre(s) décalé(s)** dans la "
-                        f"tolérance ±3 jours. Le calendrier ci-dessus va "
+                        f"tolérance ±4 jours. Le calendrier ci-dessus va "
                         f"se rafraîchir."
                     )
                 else:
@@ -584,7 +584,7 @@ def _render_liste_detaillee(session, matiere_ids: list[int] | None) -> None:
             if st.button("🧠 Réviser", key=f"goto_rev_{chap.id}", width="stretch"):
                 st.session_state.target_chapitre_id = chap.id
                 try:
-                    st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                    st.session_state.active_etude_tab = "📚 Ma Bibliothèque"
                     st.switch_page("pages/centre_etude.py")
                 except Exception:  # noqa: BLE001
                     st.session_state.navigate_to_session = True
@@ -631,7 +631,7 @@ def _render_jamais_commences(session, matiere_ids: list[int] | None) -> None:
                 if st.button("▶️ Ouvrir", key=f"goto_new_{chap.id}", width="stretch"):
                     st.session_state.target_chapitre_id = chap.id
                     try:
-                        st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                        st.session_state.active_etude_tab = "📚 Ma Bibliothèque"
                         st.switch_page("pages/centre_etude.py")
                     except Exception:  # noqa: BLE001
                         st.session_state.navigate_to_session = True
@@ -658,14 +658,14 @@ def render() -> None:
     st.title("🧠 Vue d'ensemble — Méthode des J")
     st.caption(
         "Supervision globale de ta répétition espacée. Tous tes chapitres, "
-        "où ils en sont dans le cycle Leitner (J1 → J3 → J7 → J14 → J30 → "
+        "où ils en sont dans le cycle Leitner (J1 → J3 → J5 → J7 → J14 → J30 → "
         "J60 → J90 → J180 → …), et ce qui tombe les prochaines semaines."
     )
     
     col_rev, col_exam = st.columns(2)
     with col_rev:
         if st.button("⚡ Lancer la révision rapide", use_container_width=True, type="primary"):
-            st.session_state.active_etude_tab = "⚡ Quiz Flash"
+            st.session_state.active_etude_tab = "📚 Ma Bibliothèque"
             st.switch_page("pages/centre_etude.py")
     with col_exam:
         if st.button("📝 Lancer un examen blanc", use_container_width=True):
@@ -681,7 +681,7 @@ def render() -> None:
         elif nb_d > 0 and nb_nd == 0:
             st.success(
                 f"✅ **{nb_d} chapitre(s) décalé(s)** dans la "
-                f"tolérance ±3 jours. Le calendrier ci-dessus va "
+                f"tolérance ±4 jours. Le calendrier ci-dessus va "
                 f"se rafraîchir."
             )
         else:

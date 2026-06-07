@@ -240,13 +240,13 @@ def _render_bouton_magique(action: dict[str, Any]) -> None:
     chap_id = action.get("chapitre_id")
     if chap_id:
         if st.button(
-            "🧠 Ouvrir dans la Salle d'étude",
+            "📚 Ouvrir dans la Bibliothèque",
             type="primary", width="stretch",
             key=f"goto_chap_aujourdhui_{chap_id}",
         ):
             st.session_state.target_chapitre_id = chap_id
             try:
-                st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                st.session_state.active_etude_tab = "📚 Ma Bibliothèque"
                 st.switch_page("pages/centre_etude.py")
             except Exception:  # noqa: BLE001
                 st.session_state.navigate_to_session = True

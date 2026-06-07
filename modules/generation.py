@@ -375,7 +375,7 @@ def _render_jour_tab(jour_cible: str, taches_du_jour: list[Tache]) -> None:
             if is_etude:
                 st.session_state.target_chapitre_id = t.chapitre_ids[0]
                 try:
-                    st.session_state.active_etude_tab = "🧠 Salle d'Étude"
+                    st.session_state.active_etude_tab = "📚 Ma Bibliothèque"
                     st.switch_page("pages/centre_etude.py")
                 except Exception:  # noqa: BLE001
                     st.session_state.navigate_to_session = True

@@ -257,6 +257,7 @@ def migrate_schema(verbose: bool = True) -> dict[str, list[str]]:
         )
 
     _backfill_duree_min(verbose=verbose)
+    _backfill_j5_insertion(verbose=verbose)
     return ajouts
 
 
@@ -312,6 +313,65 @@ def _backfill_duree_min(verbose: bool = True) -> int:
             logging.getLogger(__name__).info(
                 "[backfill] ✓ Tache.duree_min : %d ligne(s) recalculée(s)", nb,
             )
+        return nb
+
+
+def _backfill_j5_insertion(verbose: bool = True) -> int:
+    """Backfill des `niveau_actuel` après l'insertion du J5 dans INTERVALLES_J.
+
+    Avant : index 2 correspondait à J7.  Après : index 2 correspond à J5.
+    Pour que les chapitres existants gardent le même intervalle effectif,
+    on incrémente `niveau_actuel` de 1 pour tous ceux dont le niveau >= 2.
+
+    Idempotent : vérifie un flag `j5_migrated` dans `systeme_config`.
+    """
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+
+    if "chapitres" not in tables:
+        return 0
+
+    with engine.begin() as conn:
+        # Vérifier si la migration a déjà eu lieu
+        if "systeme_config" in tables:
+            cols = {c["name"] for c in inspector.get_columns("systeme_config")}
+            # On utilise une colonne temporaire pour le flag
+            if "j5_migrated" not in cols:
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE systeme_config ADD COLUMN j5_migrated BOOLEAN DEFAULT 0"
+                    ))
+                except Exception:  # noqa: BLE001
+                    pass  # Colonne déjà présente (race condition)
+
+            row = conn.execute(text(
+                "SELECT j5_migrated FROM systeme_config LIMIT 1"
+            )).fetchone()
+            if row and row[0]:
+                return 0  # Déjà migré
+
+        # Incrémenter niveau_actuel de 1 pour les chapitres >= 2
+        result = conn.execute(text(
+            "UPDATE chapitres SET niveau_actuel = niveau_actuel + 1 "
+            "WHERE niveau_actuel IS NOT NULL AND niveau_actuel >= 2"
+        ))
+        nb = result.rowcount or 0
+
+        # Marquer la migration comme faite
+        if "systeme_config" in tables:
+            conn.execute(text(
+                "UPDATE systeme_config SET j5_migrated = 1"
+            ))
+
+        if verbose:
+            if nb > 0:
+                logging.getLogger(__name__).info(
+                    "[backfill] ✓ J5 insertion : %d chapitre(s) niveau_actuel incrémenté(s)", nb,
+                )
+            else:
+                logging.getLogger(__name__).info(
+                    "[backfill] J5 insertion : aucun chapitre à migrer."
+                )
         return nb
 
 

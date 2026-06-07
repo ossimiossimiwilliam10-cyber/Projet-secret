@@ -1,35 +1,33 @@
-"""Centre d'Études unifié : regroupe la Bibliothèque, la Salle d'Étude, les Flash Quiz et la Méthode des J."""
+"""Centre d'Études unifié : regroupe la Bibliothèque et la Méthode des J."""
 
 import streamlit as st
 
-# Importer les modules qui ont été migrés
+# Importer les modules conservés
 from modules import bibliotheque
-from modules import session_etude
-from modules import revision_rapide
 from modules import revisions_j
 
 # Définition des onglets disponibles
 TABS = [
     "📚 Ma Bibliothèque",
-    "🧠 Salle d'Étude",
-    "⚡ Quiz Flash",
     "📅 Méthode des J"
 ]
 
 # Mapping vers le module correspondant
 MODULES = {
     "📚 Ma Bibliothèque": bibliotheque,
-    "🧠 Salle d'Étude": session_etude,
-    "⚡ Quiz Flash": revision_rapide,
     "📅 Méthode des J": revisions_j
 }
 
 def render():
     st.title("🎓 Centre d'Études")
-    st.caption("Ton espace de travail unifié. Navigue entre tes cours, tes sessions d'étude et tes révisions espacées.")
+    st.caption("Ton espace de travail unifié. Gère tes cours et pilote tes révisions espacées.")
 
-    # Si une autre page (comme le Dashboard) a demandé à ouvrir la salle d'étude
+    # Si une autre page (comme le Dashboard) a demandé à ouvrir un onglet
     if "active_etude_tab" not in st.session_state:
+        st.session_state.active_etude_tab = TABS[0]
+
+    # Normalisation : si l'onglet stocké n'existe plus, fallback
+    if st.session_state.active_etude_tab not in TABS:
         st.session_state.active_etude_tab = TABS[0]
         
     # Determine the index for the radio based on the active tab state

@@ -52,9 +52,9 @@ from services.qcm_validator import validate_qcm_questions, validate_quiz_questio
 # Niveau 0 = vu pour la première fois → revoir dans 1 jour.
 # Niveau 13 = chapitre maîtrisé long-terme → revoir dans 6 ans (sécurité).
 INTERVALLES_J: list[int] = [
-    1, 3, 7, 14, 30, 60, 90, 180, 365, 730, 1095, 1460, 1825, 2190,
+    1, 3, 5, 7, 14, 30, 60, 90, 180, 365, 730, 1095, 1460, 1825, 2190,
 ]
-MAX_NIVEAU: int = len(INTERVALLES_J) - 1  # = 13
+MAX_NIVEAU: int = len(INTERVALLES_J) - 1  # = 14
 
 # Limite de caractères stockés dans ``Chapitre.texte_cache``. Au-delà, on coupe
 # (Gemini reste très efficace même sur un sous-extrait dense). ~20 k tokens.
@@ -264,24 +264,36 @@ def initialiser_chapitre_pour_revision(
     session: Session,
     chapitre_id: int,
     delai_initial_jours: int | None = None,
+    niveau_initial: int | None = None,
 ) -> bool:
     """Pose une date_prochaine sur UN chapitre s'il n'en a pas encore.
 
     Utilisée par ``modules/bibliotheque._process_import_unifie`` après la
     création d'un chapitre via ``apply_analysis_to_matiere``.
 
+    Args:
+        delai_initial_jours: délai avant la première révision (en jours).
+            Si None, utilise INTERVALLES_J[niveau_initial] ou INTERVALLES_J[0].
+        niveau_initial: niveau Leitner de départ (0 par défaut). Permet
+            de ne pas repartir de zéro pour des chapitres déjà révisés.
+
     Returns:
         ``True`` si le chapitre a reçu une date_prochaine, ``False`` s'il
         en avait déjà une (ou s'il n'existe pas).
     """
+    if niveau_initial is not None:
+        niveau_initial = max(0, min(niveau_initial, MAX_NIVEAU))
+    else:
+        niveau_initial = 0
+
     if delai_initial_jours is None:
-        delai_initial_jours = INTERVALLES_J[0]
+        delai_initial_jours = INTERVALLES_J[niveau_initial]
 
     chap = session.get(Chapitre, chapitre_id)
     if chap is None or chap.date_prochaine is not None:
         return False
 
-    chap.niveau_actuel = int(chap.niveau_actuel or 0)
+    chap.niveau_actuel = niveau_initial
     chap.date_prochaine = date.today() + timedelta(days=delai_initial_jours)
     return True
 
@@ -581,7 +593,7 @@ def detecter_conflits_jour(
 
 def lisser_automatiquement_dates_leitner(
     session: Session,
-    tolerance_jours: int = 3,
+    tolerance_jours: int = 4,
     plafond_minutes_par_jour: int | None = None,
     today: date | None = None,
     matiere_ids: list[int] | None = None,
