@@ -842,9 +842,9 @@ def render() -> None:
         "duree_sieste_min": int(duree_sieste),
         "contraintes_fixes": contraintes_validees,
         "trajets_habituels": transport_config,
-        "llm_api_key": (api_key or "").strip(),
-        "llm_model": deepseek_model,
-        "google_maps_api_key": data.get("google_maps_api_key", ""),
+        "llm_api_key": "",
+        "llm_model": "",
+        "google_maps_api_key": "",
     }
 
     # --- Validation biometrique stricte (6 invariants) ---
