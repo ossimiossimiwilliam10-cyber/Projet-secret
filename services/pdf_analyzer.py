@@ -317,13 +317,8 @@ def analyze_pdf(
         context="pdf_analyze",
     )
 
-    text = getattr(response, "text", "") or ""
     if not text.strip():
-        # Tente de remonter la raison (safety filter, etc.).
-        feedback = getattr(response, "prompt_feedback", None)
-        raise ValueError(
-            f"Réponse vide de Gemini. prompt_feedback = {feedback!r}"
-        )
+        raise ValueError("Réponse vide de l'API LLM.")
 
     analysis = parse_llm_json(text)
     analysis = _validate_and_normalize(analysis)
