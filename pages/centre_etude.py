@@ -56,5 +56,5 @@ def render():
     module_to_render = MODULES.get(st.session_state.active_etude_tab, bibliotheque)
     module_to_render.render()
 
-# Si ce fichier est appelé par st.navigation, le code à la racine s'exécute.
-render()
+if __name__ == "__main__":
+    render()

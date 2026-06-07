@@ -24,7 +24,7 @@ import streamlit as st
 from database import Chapitre, Matiere, get_session, session_scope
 from services import revision_service as rs
 from services.optimistic_lock import ConflictError, update_chapitre_safe
-from services.profil_service import get_llm_api_key
+
 from services.gamification_service import (
     attribuer_xp_quiz,
     attribuer_xp_promotion_leitner,
@@ -206,7 +206,7 @@ def _render_manual_validation(chap_id: int) -> None:
                         
                 # A1 : Replanning auto si activé
                 if profil.replanning_auto_actif:
-                    replanning_auto_fait = _try_replan_auto()
+                    replanning_auto_fait = _try_replan_auto(profil)
 
             st.session_state[f"leitner_feedback_{chap_id}"] = {
                 "leitner": leitner,

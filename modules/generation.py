@@ -102,8 +102,6 @@ def _save_planning_to_db(semaine_id: int, planning_json: dict[str, Any]) -> int:
         if not semaine:
             return 0
 
-        semaine.score_realisme = planning_json.get("score_realisme", 0)
-        semaine.bilan_ia = planning_json.get("justification_globale", "")
         semaine.statut = "generee"
 
         # Reset des anciennes tâches en cas de régénération.
@@ -151,24 +149,7 @@ def _save_planning_to_db(semaine_id: int, planning_json: dict[str, Any]) -> int:
 # ---------------------------------------------------------------------------
 # Helpers d'affichage
 # ---------------------------------------------------------------------------
-def _render_score_card(score: int) -> None:
-    """Carte du score de réalisme du planning."""
-    if score >= 80:
-        bg, fg, label = "#10b981", "#ffffff", "✅ Très réaliste"
-    elif score >= 50:
-        bg, fg, label = "#f59e0b", "#ffffff", "⚠️ Tendu mais faisable"
-    else:
-        bg, fg, label = "#ef4444", "#ffffff", "🚨 Irréaliste"
 
-    st.markdown(
-        f"<div style='background:{bg};color:{fg};padding:18px;"
-        f"border-radius:10px;text-align:center;'>"
-        f"<div style='font-size:0.85rem;opacity:0.85;letter-spacing:0.04em;'>SCORE DE RÉALISME</div>"
-        f"<div style='font-size:2.6rem;font-weight:800;line-height:1;'>{score}<span style='font-size:1.2rem;opacity:0.7;'>/100</span></div>"
-        f"<div style='font-size:0.9rem;opacity:0.95;margin-top:2px;'>{label}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
 
 
 def _compute_planning_stats(taches: list[Tache]) -> dict[str, Any]:

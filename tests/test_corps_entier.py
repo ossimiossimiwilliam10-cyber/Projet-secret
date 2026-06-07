@@ -18,6 +18,13 @@ print("=" * 55)
 tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 tmp_path = tmp_db.name; tmp_db.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path}"
+
+import database.db
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+database.db.engine = create_engine(os.environ["DATABASE_URL"])
+database.db.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=database.db.engine)
+
 log("🔧", f"DB temporaire: ok")
 
 from database.db import init_db, get_session, Base, engine
@@ -25,7 +32,7 @@ from database.models import (
     Utilisateur, BiometrieConfig, LogistiqueConfig, SystemeConfig,
     GamificationState, UE, Matiere, Chapitre, Semaine, Tache, SaisieHebdo,
 )
-Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=database.db.engine)
 log("✅", "DB OK")
 
 # 1. ETUDIANT
@@ -101,4 +108,9 @@ passed = sum(1 for r in REPORT if "✅" in r)
 failed = sum(1 for r in REPORT if "❌" in r)
 print(f"  ✅ {passed}  ❌ {failed}")
 print("\n  🏆 CORPS ENTIER OK" if failed == 0 else f"\n  ⚠️ {failed} echec(s)")
-os.unlink(tmp_path)
+import database.db
+database.db.engine.dispose()
+try:
+    os.unlink(tmp_path)
+except PermissionError:
+    pass

@@ -9,10 +9,16 @@ tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 tmp_path = tmp.name; tmp.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path}"
 
+import database.db
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+database.db.engine = create_engine(os.environ["DATABASE_URL"])
+database.db.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=database.db.engine)
+
 from database.db import Base, engine, get_session
 from database.models import (Utilisateur, BiometrieConfig, LogistiqueConfig, SystemeConfig,
     GamificationState, UE, Matiere, Chapitre, Semaine, Tache, SaisieHebdo)
-Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=database.db.engine)
 
 print("="*55)
 print("TEST INTEGRATION — Centre d'Etudes + Methode des J")
@@ -66,10 +72,10 @@ with get_session() as s:
     
     from services.scheduler_engine import (repartir_nouveaux_chapitres, lisser_revisions_leitner,
         calculer_quota_etude_minutes, JOURS)
-    from services.ai_planner import _get_chapitres_dus_pour_semaine
+    from services.deterministic_planner import _get_chapitres_dus_pour_semaine
     
-    chapitres_dus = _get_chapitres_dus_pour_semaine(s, sem)
     utilisateur = s.query(Utilisateur).first(); quota = calculer_quota_etude_minutes(utilisateur, None)
+    chapitres_dus = _get_chapitres_dus_pour_semaine(s, sem, utilisateur)
     
     chaps_db = s.query(Chapitre).all()
     matieres_sel = [{"chapitre_ids": [ch.id for ch in chaps_db], "matiere_nom": "Toutes"}]
@@ -113,4 +119,9 @@ with get_session() as s:
 
 print(f"\n{'='*55}")
 print("TEST D'INTEGRATION REUSSI")
-os.unlink(tmp_path)
+import database.db
+database.db.engine.dispose()
+try:
+    os.unlink(tmp_path)
+except PermissionError:
+    pass

@@ -143,9 +143,6 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
             from services.revision_service import appliquer_resultat_quiz
             for ch_id in t.chapitre_ids:
                 ch = s.get(Chapitre, ch_id)
-                if ch and (ch.maitrise_pct or 0) < 100:
-                    ch.maitrise_pct = min(100, int(ch.maitrise_pct or 0) + bump)
-                
                 # Auto-validation J si la tâche d'étude est complétée
                 if statut == "fait":
                     try:
@@ -153,6 +150,9 @@ def _update_task_status(task_id: int, statut: str, commentaire: str = "") -> gam
                     except Exception as e:
                         import logging
                         logging.getLogger(__name__).warning(f"Erreur auto-validation J chap {ch_id}: {e}")
+                
+                if ch and (ch.maitrise_pct or 0) < 100:
+                    ch.maitrise_pct = min(100, int(ch.maitrise_pct or 0) + bump)
     return gain
 
 

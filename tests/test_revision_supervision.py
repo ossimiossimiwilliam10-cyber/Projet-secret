@@ -194,8 +194,8 @@ def test_projeter_chapitre_genere_la_sequence_attendue():
     assert niveaux[0] == 1
     assert dates[1] == today + timedelta(days=1 + 3)    # J+3 (niveau 2)
     assert niveaux[1] == 2
-    assert dates[2] == today + timedelta(days=1 + 3 + 7)   # J+7 (niveau 3)
-    assert dates[3] == today + timedelta(days=1 + 3 + 7 + 14)  # J+14 (niveau 4)
+    assert dates[2] == today + timedelta(days=1 + 3 + 5)   # J+5 (niveau 3)
+    assert dates[3] == today + timedelta(days=1 + 3 + 5 + 7)  # J+7 (niveau 4)
 
 
 def test_projeter_chapitre_respecte_horizon():

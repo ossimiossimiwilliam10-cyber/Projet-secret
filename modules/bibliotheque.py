@@ -736,6 +736,25 @@ def _render_import_unifie() -> None:
         niveau_label = st.selectbox("🎯 Niveau J initial", options=list(niveau_options.keys()), index=0)
         niveau_initial = niveau_options[niveau_label]
 
+        if st.button("➕ Ajouter ce chapitre", type="primary", use_container_width=True):
+            if not titre.strip():
+                st.error("Le titre est obligatoire.")
+            else:
+                try:
+                    with session_scope() as s:
+                        ch = Chapitre(
+                            matiere_id=matiere_id,
+                            nom=titre.strip(),
+                            numero=numero,
+                            niveau_actuel=niveau_initial,
+                            maitrise_pct=float(round(niveau_initial / MAX_NIVEAU * 100, 1)),
+                        )
+                        s.add(ch)
+                    st.toast(f"Chapitre '{titre}' ajouté !", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+
 # ---------------------------------------------------------------------------
 # Helpers d'import — utilisés par _render_import_unifie
 # ---------------------------------------------------------------------------

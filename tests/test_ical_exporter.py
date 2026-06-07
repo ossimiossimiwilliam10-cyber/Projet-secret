@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.db import Base
+import database.models  # Force load all models for metadata.create_all
 from database.models import Semaine, Tache
 from services.ical_exporter import build_ics_for_semaine, make_ics_filename
 

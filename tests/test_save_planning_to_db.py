@@ -97,14 +97,10 @@ def test_save_cree_les_taches(setup_engine):
 def test_save_met_a_jour_la_semaine(setup_engine):
     sid = _make_semaine(setup_engine)
     planning = _planning()
-    planning["score_realisme"] = 65
-    planning["justification_globale"] = "Tendu mais OK."
     _save_planning_to_db(sid, planning)
 
     s = setup_engine()
     sem = s.get(Semaine, sid)
-    assert sem.score_realisme == 65
-    assert sem.bilan_ia == "Tendu mais OK."
     assert sem.statut == "generee"
     s.close()
 

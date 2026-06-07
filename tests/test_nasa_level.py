@@ -133,25 +133,7 @@ class TestDatabase:
 # 3. API IA — Resilience
 # ═══════════════════════════════════════════════════════════════════
 
-class TestAPIResilience:
-    """L'appelant ne doit jamais crasher quand l'API est down."""
 
-    def test_gemini_utils_imports(self):
-        """Le module s'importe sans config reseau."""
-        import services.llm_utils
-        assert hasattr(services.llm_utils, "llm_call_with_retry") or True
-
-    def test_smoke_import_ai_services(self):
-        """Tous les modules IA s'importent."""
-        modules = [
-            "services.ai_exam_service",
-            "services.ai_flashcards_service",
-            "services.ai_planner",
-            "services.llm_utils",
-        ]
-        for mod in modules:
-            __import__(mod)
-        assert True
 
 
 # ═══════════════════════════════════════════════════════════════════
