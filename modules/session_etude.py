@@ -59,6 +59,7 @@ def render() -> None:
     _render_header(chap_snapshot)
     
     st.divider()
+    _render_manual_validation(chap_id)
     _render_pomodoro()
     st.divider()
 
@@ -182,6 +183,63 @@ def _render_pomodoro() -> None:
                 else:
                     st.session_state.pomodoro_start = None
                 st.rerun()
+
+def _render_manual_validation(chap_id: int) -> None:
+    """Interface de validation manuelle pour la méthode des J."""
+    st.subheader("✅ Validation de la Révision")
+    st.caption("Auto-évalue ta maîtrise pour avancer dans la méthode des J sans faire de quiz.")
+    
+    c1, c2, c3 = st.columns(3)
+    score_to_apply = None
+    
+    if c1.button("📚 À retravailler", use_container_width=True, help="Je ne m'en souvenais pas (Niveau -1)"):
+        score_to_apply = 0.0
+    if c2.button("⚡ Correct", use_container_width=True, help="Je m'en souvenais avec un peu d'effort (Niveau maintenu)"):
+        score_to_apply = 0.6
+    if c3.button("🏆 Excellent", use_container_width=True, help="Parfaitement retenu (Niveau +1)"):
+        score_to_apply = 1.0
+
+    if score_to_apply is not None:
+        try:
+            gains_xp: list[dict] = []
+            replanning_auto_fait = False
+            with session_scope() as session:
+                leitner = rs.appliquer_resultat_quiz(session, chap_id, score_to_apply, mode="manuel")
+                profil = get_or_create_utilisateur(session)
+                chap_obj = session.get(Chapitre, chap_id)
+                g_quiz = attribuer_xp_quiz(session, profil, score_to_apply, chap_obj)
+                gains_xp.append({"type": "quiz", "gain": _serialize_gain(g_quiz)})
+                if leitner["niveau_apres"] > leitner["niveau_avant"]:
+                    g_promo = attribuer_xp_promotion_leitner(
+                        session, profil,
+                        leitner["niveau_avant"], leitner["niveau_apres"],
+                        chap_obj, niveau_max_leitner=rs.MAX_NIVEAU,
+                    )
+                    if g_promo:
+                        gains_xp.append({"type": "promo", "gain": _serialize_gain(g_promo)})
+                        
+                # A1 : Replanning auto si activé
+                if profil.replanning_auto_actif:
+                    replanning_auto_fait = _try_replan_auto()
+
+            st.session_state[f"leitner_feedback_{chap_id}"] = {
+                "leitner": leitner,
+                "gains_xp": gains_xp,
+                "replanning_auto_fait": replanning_auto_fait,
+            }
+            st.rerun()
+        except Exception as exc:
+            st.error(f"❌ Erreur de validation : {exc}")
+
+    # Display feedback if any
+    feedback = st.session_state.get(f"leitner_feedback_{chap_id}")
+    if feedback:
+        _render_leitner_evolution(feedback["leitner"])
+        _render_gains_xp_block(feedback["gains_xp"], feedback["replanning_auto_fait"])
+        if st.button("Masquer les résultats"):
+            st.session_state.pop(f"leitner_feedback_{chap_id}", None)
+            st.rerun()
+        st.divider()
 
 
 def _render_back_button() -> None:
