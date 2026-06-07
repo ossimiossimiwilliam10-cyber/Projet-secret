@@ -162,7 +162,7 @@ _EXPECTED_COLUMNS = {
         "quiz_cache_texte_sha":     "VARCHAR(64)",
         # Flashcards & Corbeille (V2)
         "flashcards_cache":         "JSON",
-        "trashed":                  "BOOLEAN DEFAULT 0",
+        "trashed":                  "BOOLEAN DEFAULT FALSE",
         # Notes perso
         "notes":           "TEXT DEFAULT ''",
         # Versioning optimiste pour éviter les écrasements multi-onglets.
@@ -181,7 +181,7 @@ _EXPECTED_COLUMNS = {
         "nb_quiz_total":            "INTEGER DEFAULT 0",
         "nb_chapitres_maitrise":    "INTEGER DEFAULT 0",
         "nb_seances_sport_total":   "INTEGER DEFAULT 0",
-        "replanning_auto_actif":    "BOOLEAN DEFAULT 1",
+        "replanning_auto_actif":    "BOOLEAN DEFAULT TRUE",
         # Quota d'étude — cours + révisions perso confondus.
         "heures_etude_cible_par_semaine": "FLOAT DEFAULT 21.0",
         "heures_etude_plafond_par_jour":  "FLOAT DEFAULT 6.0",
@@ -192,7 +192,7 @@ _EXPECTED_COLUMNS = {
     },
     "taches": {
         # Flag d'idempotence pour bloquer le farming XP par toggle.
-        "xp_attribue": "BOOLEAN DEFAULT 0",
+        "xp_attribue": "BOOLEAN DEFAULT FALSE",
     },
     "ues": {
         "semestre_id": "INTEGER REFERENCES semestres(id) ON DELETE SET NULL",
@@ -236,9 +236,10 @@ def migrate_schema(verbose: bool = True) -> dict[str, list[str]]:
                 if col_name in existing_cols:
                     continue
                 try:
-                    conn.execute(
-                        text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_sql}")
-                    )
+                    with conn.begin_nested():
+                        conn.execute(
+                            text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_sql}")
+                        )
                     ajouts.setdefault(table_name, []).append(col_name)
                     if verbose:
                         logging.getLogger(__name__).info(
