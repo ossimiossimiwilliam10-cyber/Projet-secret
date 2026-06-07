@@ -201,6 +201,7 @@ _EXPECTED_COLUMNS = {
         "google_maps_api_key": "VARCHAR(200) DEFAULT ''",
         "deepseek_api_key": "VARCHAR(500) DEFAULT ''",
         "deepseek_model": "VARCHAR(50) DEFAULT 'deepseek-chat'",
+        "j5_migrated": "BOOLEAN DEFAULT FALSE",
     },
     # `matieres`, `achievements`, `objectifs` sont ENTIÈREMENT
     # créées par create_all() (pas besoin de migration des colonnes existantes).
@@ -335,14 +336,10 @@ def _backfill_j5_insertion(verbose: bool = True) -> int:
         # Vérifier si la migration a déjà eu lieu
         if "systeme_config" in tables:
             cols = {c["name"] for c in inspector.get_columns("systeme_config")}
-            # On utilise une colonne temporaire pour le flag
             if "j5_migrated" not in cols:
-                try:
-                    conn.execute(text(
-                        "ALTER TABLE systeme_config ADD COLUMN j5_migrated BOOLEAN DEFAULT 0"
-                    ))
-                except Exception:  # noqa: BLE001
-                    pass  # Colonne déjà présente (race condition)
+                # La colonne devrait avoir été ajoutée par migrate_schema, mais
+                # par sécurité si la fonction est appelée séparément, on quitte.
+                return 0
 
             row = conn.execute(text(
                 "SELECT j5_migrated FROM systeme_config LIMIT 1"
@@ -360,7 +357,7 @@ def _backfill_j5_insertion(verbose: bool = True) -> int:
         # Marquer la migration comme faite
         if "systeme_config" in tables:
             conn.execute(text(
-                "UPDATE systeme_config SET j5_migrated = 1"
+                "UPDATE systeme_config SET j5_migrated = TRUE"
             ))
 
         if verbose:
