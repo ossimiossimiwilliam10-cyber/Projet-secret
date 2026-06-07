@@ -6,7 +6,7 @@ Cette intégration porte les fonctionnalités de l'ancienne app desktop
 - Système Leitner à 14 niveaux : chaque chapitre a un ``niveau_actuel`` (0–13)
   et une ``date_prochaine`` de révision. Après un quiz, ces deux valeurs sont
   recalculées selon le score.
-- Génération IA :
+- Génération du planning :
   - **Fiche structurée** (idée centrale, notions, formules, pièges, mini-quiz, mnémo)
   - **QCM** à 4 choix (avec explications)
   - **Quiz ouvert** (questions textuelles, réponses libres évaluées par Gemini)

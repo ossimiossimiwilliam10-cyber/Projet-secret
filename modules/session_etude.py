@@ -236,7 +236,7 @@ def _render_back_button() -> None:
             st.session_state.pop("target_chapitre_id", None)
             # Tentative de redirection ; sinon on rerun sur cette page.
             try:
-                st.session_state.active_planif_tab = "✨ Génération IA"
+                st.session_state.active_planif_tab = "✨ Génération du planning"
                 st.switch_page("pages/planification.py")
             except Exception:
                 st.rerun()

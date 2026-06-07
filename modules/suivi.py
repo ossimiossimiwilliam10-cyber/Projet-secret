@@ -44,7 +44,7 @@ def _get_current_week(session: Session) -> Semaine | None:
 
     Le suivi quotidien est par définition ancré dans le présent.
     On ignore ``semaine_target_offset`` qui peut avoir été positionné
-    sur « semaine prochaine » depuis l'onglet Génération IA.
+    sur « semaine prochaine » depuis l'onglet Génération du planning.
     """
     from utils.helpers import get_or_create_week_for_offset
     semaine, _, _ = get_or_create_week_for_offset(session, offset_weeks=0)
@@ -201,14 +201,14 @@ def render() -> None:
         if semaine is None:
             st.warning(
                 "⚠️ Aucune semaine en cours. Va sur l'onglet **Études** pour initialiser la semaine, "
-                "puis sur **Génération IA** pour créer un planning."
+                "puis sur **Génération du planning** pour créer un planning."
             )
             return
 
         if semaine.statut != "generee":
             st.warning(
                 "⚠️ Aucun planning n'a encore été généré pour cette semaine. "
-                "Va sur **Génération IA** pour en créer un."
+                "Va sur **Génération du planning** pour en créer un."
             )
             return
 

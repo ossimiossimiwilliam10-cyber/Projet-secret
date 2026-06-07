@@ -369,7 +369,7 @@ def render() -> None:
         st.divider()
         st.caption(
             "💡 Pour voir le planning complet de la semaine, va sur "
-            "**📊 Suivi quotidien** ou **✨ Génération IA**."
+            "**📊 Suivi quotidien** ou **✨ Génération du planning**."
         )
 
 

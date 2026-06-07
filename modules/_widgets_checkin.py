@@ -1,7 +1,7 @@
 """Widget Streamlit partagé : Check-in biomécanique du jour.
 
 Extrait du dashboard pour pouvoir être réutilisé là où il est utile —
-notamment dans la page **Génération IA** où le check-in influence
+notamment dans la page **Génération du planning** où le check-in influence
 directement le plafond d'étude calculé par le scheduler.
 
 Le widget affiche :

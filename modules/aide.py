@@ -122,7 +122,7 @@ l'IA extrait les créneaux.
     with st.expander("⚡ Action", expanded=False):
         st.markdown(
             """
-**✨ Génération IA** — L'IA construit ton planning. Sélecteur
+**✨ Génération du planning** — L'IA construit ton planning. Sélecteur
 « cette semaine / semaine prochaine ». Check-in biomécanique (impacte
 le plafond). Bouton **🔁 Intégrer mes nouveautés** si ajouts après
 génération.
@@ -177,7 +177,7 @@ def _render_workflows() -> None:
             """
 1. **📖 Études** — les matières avec révisions dues sont pré-cochées.
 2. Décoche/ajoute des chapitres. Vérifie le bandeau live (charge ≤ objectif).
-3. **✨ Génération IA** → fais ton check-in du jour.
+3. **✨ Génération du planning** → fais ton check-in du jour.
 4. Optionnel : consigne libre (« jeudi finir avant 18h »).
 5. Clique **🚀 Générer le planning**.
 6. Valide tes tâches dans **📊 Suivi quotidien** pendant la semaine.
@@ -189,7 +189,7 @@ def _render_workflows() -> None:
             """
 1. **📖 Études** → sélecteur en haut sur **📆 Semaine prochaine**.
 2. Sélectionne tes matières.
-3. **✨ Génération IA** → le sélecteur est déjà synchronisé.
+3. **✨ Génération du planning** → le sélecteur est déjà synchronisé.
 4. Génère. Lundi matin, tout est prêt.
 """
         )
@@ -199,7 +199,7 @@ def _render_workflows() -> None:
             """
 1. **📚 Bibliothèque** → importe le PDF.
 2. **📖 Études** → coche le nouveau chapitre.
-3. **✨ Génération IA** → un bandeau bleu apparaît :
+3. **✨ Génération du planning** → un bandeau bleu apparaît :
    *« ➕ 1 nouveauté détectée »*. Clique **🔁 Intégrer mes nouveautés**.
 4. L'IA ajoute le chapitre dans les créneaux libres, **sans toucher**
    aux tâches déjà validées.
@@ -345,7 +345,7 @@ def _render_tips() -> None:
         ("🎯", "Objectif hebdo", "Définis un objectif réaliste dans ton profil. L'IA répartit "
          "tes heures sur 7 jours sans dépasser ton plafond journalier."),
         ("🔄", "Intégrer les nouveautés", "Ajouté un PDF après génération ? Pas besoin de tout "
-         "regénérer — clique « 🔁 Intégrer mes nouveautés » dans Génération IA."),
+         "regénérer — clique « 🔁 Intégrer mes nouveautés » dans Génération du planning."),
         ("💾", "Backup = tranquillité", "Télécharge un backup chaque dimanche. 30 secondes qui "
          "peuvent sauver des semaines de progression Leitner et d'XP."),
         ("🧠", "Salle d'étude", "Accessible depuis la Bibliothèque (bouton 🧠 sur chaque chapitre) "

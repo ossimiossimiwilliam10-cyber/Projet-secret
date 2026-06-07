@@ -1,4 +1,4 @@
-"""Super onglet : Planification (Préparer la semaine + Génération IA)."""
+"""Super onglet : Planification (Préparer la semaine + Génération du planning)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from modules import preparer_semaine, generation
 
 TABS = [
     "📅 Préparer ma semaine",
-    "✨ Génération IA"
+    "✨ Génération du planning"
 ]
 
 MODULES = {
     "📅 Préparer ma semaine": preparer_semaine,
-    "✨ Génération IA": generation
+    "✨ Génération du planning": generation
 }
 
 def render() -> None:

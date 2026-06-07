@@ -89,5 +89,5 @@ def render() -> None:
                 st.rerun()
         else:
             if st.button("🚀 Tout est prêt ! Générer le planning", type="primary", use_container_width=True):
-                st.success("Parfait ! Rends-toi maintenant dans l'onglet **✨ Génération IA** dans le menu à gauche.")
+                st.success("Parfait ! Rends-toi maintenant dans l'onglet **✨ Génération du planning** dans le menu à gauche.")
                 st.balloons()

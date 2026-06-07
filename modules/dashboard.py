@@ -333,7 +333,7 @@ def _render_planning_grid(session: Session) -> None:
     semaines = session.query(Semaine).order_by(Semaine.date_debut.desc()).all()
     if not semaines:
         st.info(
-            "Aucune semaine planifiée pour le moment. Va dans **✨ Génération IA** "
+            "Aucune semaine planifiée pour le moment. Va dans **✨ Génération du planning** "
             "pour créer ton premier planning."
         )
         return
@@ -416,7 +416,7 @@ def _render_planning_grid(session: Session) -> None:
         else:
             st.info(
                 f"La semaine S{semaine.numero_semaine} n'a pas encore de planning. "
-                f"Va dans **✨ Génération IA** pour la créer."
+                f"Va dans **✨ Génération du planning** pour la créer."
             )
         return
 

@@ -497,7 +497,7 @@ def _render_projection_long_terme(session, matiere_ids: list[int] | None) -> Non
             st.caption(
                 "Autres solutions si tu préfères : "
                 "(a) initialise tes chapitres à des dates différentes ; "
-                "(b) lance une **Génération IA** la semaine concernée — le "
+                "(b) lance une **Génération du planning** la semaine concernée — le "
                 "scheduler répartira en respectant tes limites."
             )
             for d, c in sorted(jours_problematiques):
